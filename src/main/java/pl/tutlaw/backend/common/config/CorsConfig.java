@@ -1,4 +1,4 @@
-package pl.tutlaw.backend.config;
+package pl.tutlaw.backend.common.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
