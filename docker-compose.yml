@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: tutlaw-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tutlaw
+      POSTGRES_USER: tutlaw_user
+      POSTGRES_PASSWORD: tutlaw_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - tutlaw_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  tutlaw_postgres_data:
