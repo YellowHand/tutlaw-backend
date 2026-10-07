@@ -52,14 +52,22 @@ public class AuthService {
         EmailVerificationToken token = tokenRepository.findByToken(rawToken)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid token"));
 
+        User user = token.getUser();
+
         if (token.getUsedAt() != null) {
+            if (user.isActive() && user.isUniversityEmailVerified()) {
+                log.info("Token for {} already used previously - returning success (idempotent)",
+                        user.getPrivateEmail());
+                return;
+            }
             throw new IllegalStateException("Token already used");
         }
+
         if (token.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new IllegalStateException("Token expired");
         }
 
-        User user = token.getUser();
+
         user.setUniversityEmailVerified(true);
         user.setActive(true);
         userRepository.save(user);

@@ -25,6 +25,6 @@ management:
 app:
   jwt:
     secret: "5d8f2a9e1b4c7d0e3f6a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8d"
-    access-token-expiration-ms: 900000
+    access-token-expiration-ms: 86400000
 server:
   port: 8080
