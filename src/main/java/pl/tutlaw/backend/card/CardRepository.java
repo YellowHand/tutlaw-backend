@@ -120,4 +120,46 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             GROUP BY c.source.id
             """)
     List<GroupCount> countBySourceForSubject(@Param("subjectId") Long subjectId);
+
+    /** Wszystkie pytania testowe (karty z poprawną odpowiedzią) w każdym źródle (groupId = id źródła). */
+    @Query("""
+            SELECT c.source.id AS groupId, COUNT(c) AS total
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL
+            GROUP BY c.source.id
+            """)
+    List<GroupCount> countTestQuestionsBySource();
+
+    /** Pytania testowe dostępne dla użytkownika w każdym źródle (pula płaska albo przeczytany rozdział). */
+    @Query("""
+            SELECT c.source.id AS groupId, COUNT(c) AS total
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY c.source.id
+            """)
+    List<GroupCount> countReadableTestQuestionsBySource(@Param("userId") Long userId);
+
+    /** Dostępne karty użytkownika w jednej kategorii (rodzaju), do testu lub nauki z całego działu. */
+    @Query("""
+            SELECT c FROM Card c
+            WHERE c.source.subject.category.id = :categoryId
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            """)
+    List<Card> findReadableCardsForUserAndCategory(
+            @Param("categoryId") Long categoryId,
+            @Param("userId") Long userId
+    );
 }

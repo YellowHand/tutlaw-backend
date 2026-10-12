@@ -17,31 +17,36 @@ public class ReviewController {
     private final ReviewQueueService queueService;
     private final ReviewService reviewService;
 
-    // subjectId i sourceId są opcjonalne: bez nich kolejka obejmuje cały materiał użytkownika.
+    // categoryId, subjectId i sourceId są opcjonalne (od najwęższego: źródło, przedmiot, kategoria).
+    // Bez żadnego z nich kolejka obejmuje cały materiał użytkownika.
     @GetMapping("/queue")
     public List<ReviewQueueItemResponse> getQueue(
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
             Authentication authentication) {
-        return queueService.getQueue(subjectId, sourceId, extraNewCards, authentication);
+        return queueService.getQueue(categoryId, subjectId, sourceId, extraNewCards, authentication);
     }
 
     @GetMapping("/test-queue")
     public List<TestQueueItemResponse> getTestQueue(
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
             Authentication authentication) {
-        return queueService.getTestQueue(subjectId, sourceId, extraNewCards, authentication);
+        return queueService.getTestQueue(categoryId, subjectId, sourceId, extraNewCards, authentication);
     }
 
     @GetMapping("/queue/new-cards-available")
     public NewCardsAvailableResponse getAvailableNewCards(
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             Authentication authentication) {
-        return new NewCardsAvailableResponse(queueService.countAvailableNewCards(subjectId, sourceId, authentication));
+        return new NewCardsAvailableResponse(
+                queueService.countAvailableNewCards(categoryId, subjectId, sourceId, authentication));
     }
 
     @GetMapping("/due-count")

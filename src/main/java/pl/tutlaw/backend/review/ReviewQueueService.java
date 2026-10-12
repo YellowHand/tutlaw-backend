@@ -41,32 +41,32 @@ public class ReviewQueueService {
     private int newTestQuestionsPerDay;
 
     /**
-     * Kolejka fiszek. Gdy {@code subjectId} i {@code sourceId} są puste, kolejka obejmuje
+     * Kolejka fiszek. Gdy {@code categoryId}, {@code subjectId} i {@code sourceId} są puste, kolejka obejmuje
      * cały dostępny materiał użytkownika (globalne „Powtórki na dziś").
      * Zaległe od najstarszej, potem nowe w kolejności rozdziałów.
      */
     public List<ReviewQueueItemResponse> getQueue(
-            Long subjectId, Long sourceId, Integer extraNewCards, Authentication authentication) {
+            Long categoryId, Long subjectId, Long sourceId, Integer extraNewCards, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> eligibleCards = getReadableCards(subjectId, sourceId, user.getId());
+        List<Card> eligibleCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
         List<Card> dueCards = buildDueQueue(eligibleCards, user.getId(), extraNewCards, ReviewMode.FLASHCARD);
         return dueCards.stream().map(ReviewQueueMapper::toResponse).toList();
     }
 
     /** Kolejka testu. Pytania są losowo wymieszane (zaległe osobno, nowe osobno, zaległe na początku). */
     public List<TestQueueItemResponse> getTestQueue(
-            Long subjectId, Long sourceId, Integer extraNewCards, Authentication authentication) {
+            Long categoryId, Long subjectId, Long sourceId, Integer extraNewCards, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> eligibleCards = getReadableCards(subjectId, sourceId, user.getId()).stream()
+        List<Card> eligibleCards = getReadableCards(categoryId, subjectId, sourceId, user.getId()).stream()
                 .filter(c -> c.getCorrectOption() != null)
                 .toList();
         List<Card> dueCards = buildDueQueue(eligibleCards, user.getId(), extraNewCards, ReviewMode.TEST);
         return dueCards.stream().map(ReviewQueueMapper::toTestResponse).toList();
     }
 
-    public int countAvailableNewCards(Long subjectId, Long sourceId, Authentication authentication) {
+    public int countAvailableNewCards(Long categoryId, Long subjectId, Long sourceId, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> readableCards = getReadableCards(subjectId, sourceId, user.getId());
+        List<Card> readableCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
         Map<Long, LocalDateTime> dueByCardId = loadDueByCardId(user.getId());
 
         return (int) readableCards.stream().filter(c -> !dueByCardId.containsKey(c.getId())).count();
@@ -78,12 +78,16 @@ public class ReviewQueueService {
         return stateRepository.countDue(user.getId(), LocalDateTime.now(clock));
     }
 
-    private List<Card> getReadableCards(Long subjectId, Long sourceId, Long userId) {
+    /** Zakres od najwęższego: źródło, przedmiot, kategoria (rodzaj), a bez żadnego cały materiał użytkownika. */
+    private List<Card> getReadableCards(Long categoryId, Long subjectId, Long sourceId, Long userId) {
         if (sourceId != null) {
             return cardRepository.findReadableCardsForUserAndSource(sourceId, userId);
         }
         if (subjectId != null) {
             return cardRepository.findReadableCardsForUserAndSubject(subjectId, userId);
+        }
+        if (categoryId != null) {
+            return cardRepository.findReadableCardsForUserAndCategory(categoryId, userId);
         }
         return cardRepository.findReadableCardsForUser(userId);
     }

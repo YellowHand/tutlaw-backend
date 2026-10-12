@@ -3,6 +3,7 @@ package pl.tutlaw.backend.review;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import pl.tutlaw.backend.common.GroupCount;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -73,4 +74,24 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             @Param("minElapsedDays") double minElapsedDays,
             @Param("minRating") int minRating
     );
+
+    /**
+     * Ile różnych pytań użytkownik rozwiązał co najmniej raz w teście, w każdym źródle (groupId = id źródła).
+     * Liczą się tylko pytania, do których ma teraz dostęp, żeby wynik nie przekraczał liczby dostępnych pytań.
+     */
+    @Query("""
+            SELECT r.card.source.id AS groupId, COUNT(DISTINCT r.card.id) AS total
+            FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND (
+                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY r.card.source.id
+            """)
+    List<GroupCount> countSolvedTestQuestionsBySource(@Param("userId") Long userId);
 }

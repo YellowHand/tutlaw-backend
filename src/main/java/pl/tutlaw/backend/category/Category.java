@@ -21,4 +21,12 @@ public class Category {
 
     @Column(nullable = false, unique = true)
     private String slug;
+
+    /** Jak nazywamy elementy tej kategorii na ekranie, np. „Przedmioty" albo „Akty prawne". */
+    @Column(name = "items_label", nullable = false)
+    private String itemsLabel = "Przedmioty";
+
+    /** Kolejność kategorii na liście (rosnąco). */
+    @Column(name = "sort_order", nullable = false)
+    private int sortOrder = 100;
 }

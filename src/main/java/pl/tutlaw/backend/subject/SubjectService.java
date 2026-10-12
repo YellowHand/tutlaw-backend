@@ -5,10 +5,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import pl.tutlaw.backend.category.Category;
 import pl.tutlaw.backend.category.CategoryRepository;
+import pl.tutlaw.backend.common.PolishSort;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.subject.dto.SubjectRequest;
 import pl.tutlaw.backend.subject.dto.SubjectResponse;
 
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -24,6 +26,7 @@ public class SubjectService {
 
     public List<SubjectResponse> getByCategory(Long categoryId) {
         return subjectRepository.findByCategoryId(categoryId).stream()
+                .sorted(Comparator.comparing(Subject::getName, PolishSort.byName()))
                 .map(SubjectMapper::toResponse)
                 .toList();
     }
