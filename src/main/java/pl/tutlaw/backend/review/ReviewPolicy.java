@@ -2,6 +2,7 @@ package pl.tutlaw.backend.review;
 
 import pl.tutlaw.backend.review.fsrs.Rating;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 /**
@@ -39,5 +40,19 @@ public final class ReviewPolicy {
         }
         long days = Math.round(intervalDays);
         return now.toLocalDate().plusDays(days).atStartOfDay();
+    }
+
+    /** Odpowiedzi tej samej karty przychodzące szybciej niż po tym czasie uznajemy za przypadkowe podwójne wysłanie. */
+    public static final long DUPLICATE_SUBMIT_WINDOW_MILLIS = 1_000;
+
+    /**
+     * Czy to ponowne wysłanie tej samej odpowiedzi (np. podwójne kliknięcie albo automatyczny ponowny strzał
+     * po błędzie sieci). Bez tej ochrony druga kopia byłaby policzona jako powtórka "tego samego dnia"
+     * i zniekształciłaby stabilność karty oraz statystyki.
+     */
+    public static boolean isDuplicateSubmit(LocalDateTime lastReviewAt, LocalDateTime now) {
+        if (lastReviewAt == null) return false;
+        long millis = Duration.between(lastReviewAt, now).toMillis();
+        return millis >= 0 && millis < DUPLICATE_SUBMIT_WINDOW_MILLIS;
     }
 }

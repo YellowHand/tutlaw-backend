@@ -18,12 +18,16 @@ public class CardController {
 
     private final CardService cardService;
 
+    // Odpowiedzi zawierają poprawną opcję i wyjaśnienie, więc ten widok jest tylko dla administratora
+    // (uczeń dostaje karty wyłącznie przez kolejkę powtórek, która pilnuje, co ma już odblokowane).
     @GetMapping("/api/chapters/{chapterId}/cards")
+    @PreAuthorize("hasRole('ADMIN')")
     public List<CardResponse> getByChapter(@PathVariable Long chapterId) {
         return cardService.getByChapter(chapterId);
     }
 
     @GetMapping("/api/sources/{sourceId}/cards")
+    @PreAuthorize("hasRole('ADMIN')")
     public List<CardResponse> getBySource(@PathVariable Long sourceId) {
         return cardService.getBySource(sourceId);
     }

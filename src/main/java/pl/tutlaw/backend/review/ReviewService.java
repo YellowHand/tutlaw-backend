@@ -35,7 +35,7 @@ public class ReviewService {
     @Transactional
     public void submitReview(SubmitReviewRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        Card card = findCard(request.cardId());
+        Card card = findReadableCard(request.cardId(), user);
 
         Rating rating = Rating.values()[request.rating() - 1];
         applyReview(user, card, rating, request.timeSpentSeconds(),
@@ -50,10 +50,10 @@ public class ReviewService {
     @Transactional
     public TestAnswerResultResponse submitTestAnswer(SubmitTestAnswerRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        Card card = findCard(request.cardId());
+        Card card = findReadableCard(request.cardId(), user);
 
         if (card.getCorrectOption() == null) {
-            throw new IllegalStateException("This card has no test format defined");
+            throw new IllegalArgumentException("To pytanie nie ma formatu testowego (brak poprawnej odpowiedzi)");
         }
 
         boolean correct = card.getCorrectOption() == request.selectedOption();
@@ -65,9 +65,18 @@ public class ReviewService {
         return new TestAnswerResultResponse(correct, card.getCorrectOption(), card.getExplanation());
     }
 
-    private Card findCard(Long cardId) {
-        return cardRepository.findById(cardId)
+    /**
+     * Karta musi istnieć i być dostępna dla użytkownika (pula płaska albo przeczytany rozdział podręcznika).
+     * Bez tego wystarczyło znać numer karty, żeby "odpowiadać" na pytania z nieodblokowanych rozdziałów.
+     * Dla karty niedostępnej odpowiadamy tak samo jak dla nieistniejącej.
+     */
+    private Card findReadableCard(Long cardId, User user) {
+        Card card = cardRepository.findById(cardId)
                 .orElseThrow(() -> new ResourceNotFoundException("Card not found"));
+        if (cardRepository.countReadableById(card.getId(), user.getId()) == 0) {
+            throw new ResourceNotFoundException("Card not found");
+        }
+        return card;
     }
 
     private void applyReview(
@@ -85,6 +94,11 @@ public class ReviewService {
         boolean firstReview = state.getReps() == 0;
         double stabilityBefore = state.getStability();
         LocalDateTime now = LocalDateTime.now(clock);
+
+        // Podwójne kliknięcie lub ponowione żądanie nie może policzyć się jako druga powtórka.
+        if (!firstReview && ReviewPolicy.isDuplicateSubmit(state.getLastReviewAt(), now)) {
+            return;
+        }
         Double elapsedDays = null;
         FsrsCardState newFsrsState;
 

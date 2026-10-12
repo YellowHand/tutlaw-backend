@@ -51,4 +51,27 @@ class ReviewPolicyTest {
         LocalDateTime nextMorning = LocalDateTime.of(2026, 10, 13, 8, 0);
         assertThat(due.isAfter(nextMorning)).isFalse();
     }
+
+    @Test
+    void secondSubmitWithinAFewHundredMilliseconds_isTreatedAsDuplicate() {
+        LocalDateTime last = LocalDateTime.of(2026, 10, 12, 14, 30, 0);
+
+        assertThat(ReviewPolicy.isDuplicateSubmit(last, last.plusNanos(300_000_000))).isTrue();
+    }
+
+    @Test
+    void reviewAfterMoreThanTheWindow_isNotADuplicate() {
+        LocalDateTime last = LocalDateTime.of(2026, 10, 12, 14, 30, 0);
+
+        assertThat(ReviewPolicy.isDuplicateSubmit(last, last.plusSeconds(2))).isFalse();
+        assertThat(ReviewPolicy.isDuplicateSubmit(last, last.plusHours(5))).isFalse();
+    }
+
+    @Test
+    void neverReviewedCard_orClockGoingBackwards_isNotADuplicate() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 12, 14, 30, 0);
+
+        assertThat(ReviewPolicy.isDuplicateSubmit(null, now)).isFalse();
+        assertThat(ReviewPolicy.isDuplicateSubmit(now.plusSeconds(5), now)).isFalse();
+    }
 }
