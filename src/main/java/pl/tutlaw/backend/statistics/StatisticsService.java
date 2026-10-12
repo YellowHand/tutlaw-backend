@@ -170,12 +170,15 @@ public class StatisticsService {
         long solved = StatisticsMath.sum(toMap(reviewLogRepository.countSolvedTestQuestionsBySource(userId)).values());
         long answers = reviewLogRepository.countAnswersSince(userId, ReviewMode.TEST, accuracySince);
         long correct = reviewLogRepository.countCorrectAnswersSince(userId, ReviewMode.TEST, accuracySince);
+        long confidentMistakes = reviewLogRepository.countConfidentMistakesSince(userId, ReviewMode.TEST, accuracySince);
+        long luckyGuesses = reviewLogRepository.countLuckyGuessesSince(userId, ReviewMode.TEST, accuracySince);
         List<ActivityHeatmapItem> activity = StatisticsMath.perDay(
                 today, TEST_ACTIVITY_DAYS,
                 reviewLogRepository.findReviewTimesSinceByMode(userId, ReviewMode.TEST, activitySince));
 
         return new TestStatsResponse(
-                (int) total, (int) solved, answers, correct, StatisticsMath.percentage(correct, answers), activity);
+                (int) total, (int) solved, answers, correct, StatisticsMath.percentage(correct, answers),
+                confidentMistakes, luckyGuesses, activity);
     }
 
     /**

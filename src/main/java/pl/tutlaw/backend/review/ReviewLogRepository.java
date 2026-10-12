@@ -94,6 +94,36 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
     );
 
     /**
+     * „Pewne błędy": odpowiedź błędna, choć użytkownik NIE zaznaczył „Nie jestem pewien". To najgroźniejszy rodzaj
+     * błędu, bo oznacza utrwalone błędne przekonanie, a nie lukę, o której użytkownik wie.
+     */
+    @Query("""
+            SELECT COUNT(r) FROM ReviewLog r
+            WHERE r.user.id = :userId AND r.mode = :mode AND r.reviewedAt >= :since
+            AND r.wasCorrect = false AND r.wasGuessed = false
+            """)
+    long countConfidentMistakesSince(
+            @Param("userId") Long userId,
+            @Param("mode") ReviewMode mode,
+            @Param("since") LocalDateTime since
+    );
+
+    /**
+     * „Trafione w ciemno": odpowiedź poprawna, ale z zaznaczonym „Nie jestem pewien". Wynik wygląda dobrze,
+     * a wiedza jest krucha, więc takie pytania warto powtarzać.
+     */
+    @Query("""
+            SELECT COUNT(r) FROM ReviewLog r
+            WHERE r.user.id = :userId AND r.mode = :mode AND r.reviewedAt >= :since
+            AND r.wasCorrect = true AND r.wasGuessed = true
+            """)
+    long countLuckyGuessesSince(
+            @Param("userId") Long userId,
+            @Param("mode") ReviewMode mode,
+            @Param("since") LocalDateTime since
+    );
+
+    /**
      * Liczba prawdziwych powtórek (odpowiedzi na kartę widzianą wcześniej, po co najmniej {@code minElapsedDays}
      * dniach) z oceną co najmniej {@code minRating}. Podstawa wskaźnika zapamiętywania:
      * z minRating = 1 to wszystkie takie powtórki, z minRating = 2 tylko udane.
