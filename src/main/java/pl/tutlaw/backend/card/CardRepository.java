@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pl.tutlaw.backend.common.GroupCount;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface CardRepository extends JpaRepository<Card, Long> {
@@ -145,6 +146,29 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             GROUP BY c.source.id
             """)
     List<GroupCount> countReadableTestQuestionsBySource(@Param("userId") Long userId);
+
+    /**
+     * Pytania testowe do ćwiczenia wskazanych kart: tylko te, do których użytkownik ma dostęp (pula płaska albo
+     * przeczytany rozdział), mają format testowy i NIE są przez niego zawieszone. Źródło pobierane od razu,
+     * bo kolejka pokazuje jego nazwę.
+     */
+    @Query("""
+            SELECT c FROM Card c JOIN FETCH c.source
+            WHERE c.id IN :ids
+            AND c.correctOption IS NOT NULL
+            AND NOT EXISTS (
+                SELECT s.card.id FROM UserCardState s
+                WHERE s.user.id = :userId AND s.card.id = c.id AND s.suspended = true
+            )
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            """)
+    List<Card> findPracticeTestCards(@Param("ids") Collection<Long> ids, @Param("userId") Long userId);
 
     /** Dostępne karty użytkownika w jednej kategorii (rodzaju), do testu lub nauki z całego działu. */
     @Query("""

@@ -16,6 +16,7 @@ public class ReviewController {
 
     private final ReviewQueueService queueService;
     private final ReviewService reviewService;
+    private final MistakesService mistakesService;
 
     // categoryId, subjectId i sourceId są opcjonalne (od najwęższego: źródło, przedmiot, kategoria).
     // Bez żadnego z nich kolejka obejmuje cały materiał użytkownika.
@@ -60,6 +61,17 @@ public class ReviewController {
             @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode,
             Authentication authentication) {
         return queueService.getBacklog(categoryId, subjectId, sourceId, mode, authentication);
+    }
+
+    /** "Powtórz moje błędy": sesja z pytań, w których ostatnia odpowiedź w teście była błędna. */
+    @GetMapping("/mistakes-queue")
+    public List<TestQueueItemResponse> getMistakesQueue(Authentication authentication) {
+        return mistakesService.queue(authentication);
+    }
+
+    @GetMapping("/mistakes-count")
+    public MistakesCountResponse getMistakesCount(Authentication authentication) {
+        return mistakesService.count(authentication);
     }
 
     @GetMapping("/due-count")

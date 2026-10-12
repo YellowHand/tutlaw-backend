@@ -1,5 +1,6 @@
 package pl.tutlaw.backend.review;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -179,6 +180,24 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             """)
     List<GroupCount> countSolvedTestQuestionsBySource(@Param("userId") Long userId);
 
+    /**
+     * Odpowiedzi użytkownika w testach od podanego momentu, od najnowszej. Z tego wylicza się, w których pytaniach
+     * ostatnia odpowiedź była błędna ("Powtórz moje błędy"), bez zapytania korelowanego na każdą kartę.
+     */
+    @Query("""
+            SELECT r.card.id AS cardId, r.wasCorrect AS wasCorrect, r.reviewedAt AS reviewedAt
+            FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND r.reviewedAt >= :since
+            ORDER BY r.reviewedAt DESC, r.id DESC
+            """)
+    List<TestAnswerRow> findTestAnswersSince(
+            @Param("userId") Long userId,
+            @Param("since") LocalDateTime since,
+            Pageable pageable
+    );
+
     /** Cała historia odpowiedzi użytkownika, do eksportu jego danych. */
     @Query("""
             SELECT r.card.id AS cardId, r.reviewedAt AS reviewedAt, r.mode AS mode, r.rating AS rating,
@@ -188,6 +207,14 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             ORDER BY r.reviewedAt, r.id
             """)
     List<ExportedReview> findExportRows(@Param("userId") Long userId);
+
+    interface TestAnswerRow {
+        Long getCardId();
+
+        Boolean getWasCorrect();
+
+        LocalDateTime getReviewedAt();
+    }
 
     interface ExportedReview {
         Long getCardId();
