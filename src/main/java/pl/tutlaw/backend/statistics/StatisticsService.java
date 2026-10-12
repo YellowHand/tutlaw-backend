@@ -190,12 +190,18 @@ public class StatisticsService {
 
     private List<DailyForecastItem> calculateForecast(Long userId, Long subjectId) {
         LocalDateTime now = LocalDateTime.now();
+        LocalDate today = now.toLocalDate();
+        // Bez dolnej granicy: karty z minionym terminem (także z wcześniejszych dni) liczą się do „dziś".
+        // Wcześniej zapytanie zaczynało się od „teraz", więc zaległe powtórki znikały z licznika.
+        LocalDateTime end = today.plusDays(7).atStartOfDay();
         List<UserCardState> dueStates = subjectId != null
-                ? stateRepository.findDueBetween(userId, subjectId, now, now.plusDays(7))
-                : stateRepository.findDueBetweenAnySubject(userId, now, now.plusDays(7));
+                ? stateRepository.findDueUntil(userId, subjectId, end)
+                : stateRepository.findDueUntilAnySubject(userId, end);
 
         Map<LocalDate, Long> countsByDate = dueStates.stream()
-                .collect(Collectors.groupingBy(s -> s.getDueDate().toLocalDate(), Collectors.counting()));
+                .collect(Collectors.groupingBy(
+                        s -> s.getDueDate().toLocalDate().isBefore(today) ? today : s.getDueDate().toLocalDate(),
+                        Collectors.counting()));
 
         List<DailyForecastItem> forecast = new ArrayList<>();
         for (int i = 0; i < 7; i++) {

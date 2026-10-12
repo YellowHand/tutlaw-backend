@@ -17,9 +17,10 @@ public class ReviewController {
     private final ReviewQueueService queueService;
     private final ReviewService reviewService;
 
+    // subjectId i sourceId są opcjonalne: bez nich kolejka obejmuje cały materiał użytkownika.
     @GetMapping("/queue")
     public List<ReviewQueueItemResponse> getQueue(
-            @RequestParam Long subjectId,
+            @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
             Authentication authentication) {
@@ -28,7 +29,7 @@ public class ReviewController {
 
     @GetMapping("/test-queue")
     public List<TestQueueItemResponse> getTestQueue(
-            @RequestParam Long subjectId,
+            @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
             Authentication authentication) {
@@ -37,10 +38,15 @@ public class ReviewController {
 
     @GetMapping("/queue/new-cards-available")
     public NewCardsAvailableResponse getAvailableNewCards(
-            @RequestParam Long subjectId,
+            @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             Authentication authentication) {
         return new NewCardsAvailableResponse(queueService.countAvailableNewCards(subjectId, sourceId, authentication));
+    }
+
+    @GetMapping("/due-count")
+    public DueCountResponse getDueCount(Authentication authentication) {
+        return new DueCountResponse(queueService.countDueNow(authentication));
     }
 
     @PostMapping

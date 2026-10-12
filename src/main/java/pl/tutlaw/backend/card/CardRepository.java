@@ -45,4 +45,21 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             @Param("sourceId") Long sourceId,
             @Param("userId") Long userId
     );
+
+    /**
+     * Wszystkie karty dostępne dla użytkownika we wszystkich przedmiotach
+     * (pule płaskie oraz rozdziały oznaczone jako przeczytane).
+     * Używane przez globalną kolejkę powtórek.
+     */
+    @Query("""
+            SELECT c FROM Card c
+            WHERE (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            """)
+    List<Card> findReadableCardsForUser(@Param("userId") Long userId);
 }

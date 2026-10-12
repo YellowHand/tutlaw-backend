@@ -45,4 +45,17 @@ public class ReviewLog {
 
     @Column(name = "time_spent_seconds")
     private Double timeSpentSeconds;
+
+    /** Fiszka czy test. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ReviewMode mode = ReviewMode.FLASHCARD;
+
+    /** Tylko dla testu: czy wybrana opcja była poprawna (niezależnie od oceny pamięci). */
+    @Column(name = "was_correct")
+    private Boolean wasCorrect;
+
+    /** Tylko dla testu: użytkownik zaznaczył „Nie jestem pewien". */
+    @Column(name = "was_guessed", nullable = false)
+    private boolean wasGuessed = false;
 }
