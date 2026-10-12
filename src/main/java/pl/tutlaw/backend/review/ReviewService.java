@@ -13,6 +13,8 @@ import pl.tutlaw.backend.review.dto.TestAnswerResultResponse;
 import pl.tutlaw.backend.review.fsrs.FsrsCardState;
 import pl.tutlaw.backend.review.fsrs.FsrsEngine;
 import pl.tutlaw.backend.review.fsrs.Rating;
+import pl.tutlaw.backend.settings.EffectiveSettings;
+import pl.tutlaw.backend.settings.LearningSettingsService;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -29,6 +31,8 @@ public class ReviewService {
     private final CardRepository cardRepository;
     private final CurrentUserResolver currentUserResolver;
     private final FsrsEngine fsrsEngine;
+    private final LearningSettingsService settingsService;
+    private final IntervalFuzzer intervalFuzzer;
     private final Clock clock;
 
     /** Ocena fiszki: 1–4 wybrana przez użytkownika. „Nie pamiętam" (1) liczy się jako błąd. */
@@ -111,7 +115,11 @@ public class ReviewService {
             newFsrsState = fsrsEngine.nextState(current, elapsedDays, rating);
         }
 
-        double intervalDays = fsrsEngine.nextIntervalDays(newFsrsState.stability());
+        // Odstęp: retencja użytkownika (w ostatnich dniach przed egzaminem wyższa), potem rozrzut terminów,
+        // a na końcu przycięcie tak, żeby karta wróciła przed egzaminem.
+        EffectiveSettings settings = settingsService.effectiveFor(user.getId());
+        double intervalDays = fsrsEngine.nextIntervalDays(newFsrsState.stability(), settings.effectiveRetention());
+        intervalDays = SchedulingRules.capForExam(intervalFuzzer.apply(intervalDays), settings.daysToExam());
 
         state.setStability(newFsrsState.stability());
         state.setDifficulty(newFsrsState.difficulty());

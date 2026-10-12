@@ -11,6 +11,10 @@ import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 import pl.tutlaw.backend.review.fsrs.FsrsEngine;
 import pl.tutlaw.backend.review.fsrs.FsrsWeights;
+import pl.tutlaw.backend.settings.LearningDefaults;
+import pl.tutlaw.backend.settings.LearningSettingsService;
+import pl.tutlaw.backend.settings.UserSettings;
+import pl.tutlaw.backend.settings.UserSettingsRepository;
 import pl.tutlaw.backend.testsupport.FakeRepos;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.CurrentUserResolver;
@@ -21,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +41,8 @@ class ReviewQueueServiceTest {
         final List<UserCardStateRepository.CardDue> schedule = new ArrayList<>();
         long introducedToday = 0;
         long dueReviewsDoneToday = 0;
+        /** Ustawienia zapisane przez użytkownika (null = same domyślne z konfiguracji). */
+        UserSettings stored;
         ReviewQueueService service;
         final Authentication jan = FakeRepos.authentication("jan@gmail.com");
 
@@ -73,11 +80,23 @@ class ReviewQueueServiceTest {
                 }
             });
 
+            MutableClock clock = new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw"));
+            UserSettingsRepository settingsRepository = FakeRepos.proxy(UserSettingsRepository.class, (method, args) -> {
+                if (method.equals("findById")) {
+                    return Optional.ofNullable(stored);
+                }
+                throw new UnsupportedOperationException("UserSettingsRepository." + method);
+            });
+            CurrentUserResolver resolver = new CurrentUserResolver(FakeRepos.users(users));
+            // Domyślne limity z konfiguracji: nowe fiszki, nowe pytania testowe, zaległe powtórki, retencja.
+            LearningSettingsService settings = new LearningSettingsService(
+                    settingsRepository, new LearningDefaults(newPerDay, 40, dailyLimit, 0.9),
+                    resolver, cardRepository, states, clock);
+
             service = new ReviewQueueService(
-                    cardRepository, states, logs, new CurrentUserResolver(FakeRepos.users(users)),
-                    new FsrsEngine(FsrsWeights.defaults(), 0.9),
-                    new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw")),
-                    new Random(7), newPerDay, 40, dailyLimit);
+                    cardRepository, states, logs, resolver,
+                    new FsrsEngine(FsrsWeights.defaults(), 0.9), clock,
+                    new Random(7), settings);
         }
 
         Card card(long id, boolean test, int chapterOrder) {
@@ -247,5 +266,70 @@ class ReviewQueueServiceTest {
         f.card(9, false, 1);
 
         assertThat(f.service.countAvailableNewCards(null, null, null, f.jan)).isEqualTo(2);
+    }
+
+    // ------------------------------------------------------------------ limity z ustawień użytkownika
+
+    private static UserSettings stored(Integer newCards, Integer newTests, Integer maxReviews) {
+        UserSettings settings = new UserSettings(1L);
+        settings.setNewCardsPerDay(newCards);
+        settings.setNewTestQuestionsPerDay(newTests);
+        settings.setMaxReviewsPerDay(maxReviews);
+        return settings;
+    }
+
+    @Test
+    void theUsersOwnReviewLimitReplacesTheDefault() {
+        Fixture f = new Fixture(100);              // domyślnie 100 powtórek dziennie
+        f.threeDueCards(false);
+        f.stored = stored(null, null, 1);          // użytkownik ustawił 1
+
+        assertThat(f.flashQueue()).containsExactly(3L);
+        BacklogResponse backlog = f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan);
+        assertThat(backlog.dailyLimit()).isEqualTo(1);
+        assertThat(backlog.deferred()).isEqualTo(2L);
+    }
+
+    @Test
+    void anUnsetReviewLimitFallsBackToTheServerDefault() {
+        Fixture f = new Fixture(2);
+        f.threeDueCards(false);
+        f.stored = stored(5, 5, null);             // inne limity ustawione, ten nie
+
+        assertThat(f.flashQueue()).containsExactly(3L, 1L);
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dailyLimit()).isEqualTo(2);
+    }
+
+    @Test
+    void theUsersOwnLimitOfNewFlashcardsReplacesTheDefault() {
+        Fixture f = new Fixture(100, 20);          // domyślnie 20 nowych dziennie
+        f.card(10, false, 1);
+        f.card(20, false, 2);
+        f.card(30, false, 3);
+        f.stored = stored(2, null, null);
+
+        assertThat(f.flashQueue()).containsExactly(10L, 20L);
+    }
+
+    @Test
+    void testsUseTheirOwnNewQuestionLimit_notTheFlashcardOne() {
+        Fixture f = new Fixture(100, 20);
+        f.card(10, true, 1);
+        f.card(20, true, 2);
+        f.card(30, true, 3);
+        f.stored = stored(1, 2, null);             // fiszki: 1 nowa, testy: 2 nowe
+
+        assertThat(f.testQueue()).hasSize(2);
+        assertThat(f.flashQueue()).hasSize(1);
+    }
+
+    @Test
+    void aZeroNewCardLimitOffersNoNewCardsButKeepsTheDueOnes() {
+        Fixture f = new Fixture(100);
+        f.threeDueCards(false);
+        f.card(9, false, 1);
+        f.stored = stored(0, null, null);
+
+        assertThat(f.flashQueue()).containsExactly(3L, 1L, 2L);
     }
 }

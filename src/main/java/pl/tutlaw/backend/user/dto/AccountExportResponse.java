@@ -1,6 +1,7 @@
 package pl.tutlaw.backend.user.dto;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -11,7 +12,8 @@ public record AccountExportResponse(
         List<ChapterProgressItem> chapterProgress,
         List<CardStateItem> cardStates,
         List<ReviewItem> reviewLogs,
-        List<ReportItem> cardReports
+        List<ReportItem> cardReports,
+        LearningSettings learningSettings
 ) {
 
     public record Account(
@@ -54,5 +56,18 @@ public record AccountExportResponse(
             int rating,
             Boolean correct,
             boolean unsure
+    ) {}
+
+    /**
+     * Zapisane ustawienia nauki; pola {@code null} oznaczają wartość domyślną.
+     * Cały obiekt jest {@code null}, gdy użytkownik niczego nie ustawiał.
+     */
+    public record LearningSettings(
+            Integer newCardsPerDay,
+            Integer newTestQuestionsPerDay,
+            Integer maxReviewsPerDay,
+            Double desiredRetention,
+            LocalDate examDate,
+            boolean shuffleOptions
     ) {}
 }

@@ -12,15 +12,19 @@ import pl.tutlaw.backend.review.CardLearningState;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.UserCardStateRepository;
+import pl.tutlaw.backend.settings.UserSettings;
+import pl.tutlaw.backend.settings.UserSettingsRepository;
 import pl.tutlaw.backend.testsupport.FakeRepos;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.dto.AccountExportResponse;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,6 +49,8 @@ class AccountServiceTest {
         };
         final AccountService service;
         final Authentication jan;
+        /** Zapisane ustawienia nauki użytkownika; {@code null} = niczego nie ustawiał. */
+        UserSettings storedSettings;
 
         Fixture() {
             User user = new User();
@@ -115,6 +121,12 @@ class AccountServiceTest {
                 });
             });
 
+            UserSettingsRepository settings = FakeRepos.proxy(UserSettingsRepository.class, (method, args) -> {
+                assertThat(method).isEqualTo("findById");
+                assertThat(args[0]).isEqualTo(1L);
+                return Optional.ofNullable(storedSettings);
+            });
+
             service = new AccountService(
                     new CurrentUserResolver(FakeRepos.users(users)),
                     FakeRepos.users(users),
@@ -123,6 +135,7 @@ class AccountServiceTest {
                     states,
                     logs,
                     reports,
+                    settings,
                     new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw")));
         }
     }
@@ -166,6 +179,33 @@ class AccountServiceTest {
         assertThat(report.reason()).isEqualTo("OUTDATED");
         assertThat(report.comment()).isEqualTo("Przepis się zmienił");
         assertThat(report.status()).isEqualTo("NEW");
+    }
+
+    @Test
+    void exportHasNoLearningSettingsWhenTheUserNeverSetAny() {
+        Fixture f = new Fixture();
+
+        assertThat(f.service.export(f.jan).learningSettings()).isNull();
+    }
+
+    @Test
+    void exportContainsStoredLearningSettings_withNullsMeaningDefaults() {
+        Fixture f = new Fixture();
+        UserSettings stored = new UserSettings(1L);
+        stored.setNewCardsPerDay(15);
+        stored.setMaxReviewsPerDay(300);
+        stored.setExamDate(LocalDate.of(2026, 12, 1));
+        stored.setShuffleOptions(false);
+        f.storedSettings = stored;
+
+        AccountExportResponse.LearningSettings settings = f.service.export(f.jan).learningSettings();
+
+        assertThat(settings.newCardsPerDay()).isEqualTo(15);
+        assertThat(settings.newTestQuestionsPerDay()).isNull();
+        assertThat(settings.maxReviewsPerDay()).isEqualTo(300);
+        assertThat(settings.desiredRetention()).isNull();
+        assertThat(settings.examDate()).isEqualTo(LocalDate.of(2026, 12, 1));
+        assertThat(settings.shuffleOptions()).isFalse();
     }
 
     @Test

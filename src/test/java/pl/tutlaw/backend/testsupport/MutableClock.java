@@ -16,6 +16,11 @@ public final class MutableClock extends Clock {
         this.zone = zone;
     }
 
+    /** Zegar ustawiony na podaną chwilę (ISO, np. {@code 2026-10-12T10:00:00Z}), w strefie Europe/Warsaw. */
+    public static MutableClock at(String isoInstant) {
+        return new MutableClock(Instant.parse(isoInstant), ZoneId.of("Europe/Warsaw"));
+    }
+
     public void advance(Duration duration) {
         now = now.plus(duration);
     }

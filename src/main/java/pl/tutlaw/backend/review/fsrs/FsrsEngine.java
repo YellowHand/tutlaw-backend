@@ -76,9 +76,14 @@ public class FsrsEngine {
         return new FsrsCardState(clampStability(newStability), nextDifficulty(difficulty, rating));
     }
 
-    /** Odstęp (w dniach) do chwili, gdy szansa przypomnienia spadnie do {@code requestRetention}. */
+    /** Odstęp (w dniach) do chwili, gdy szansa przypomnienia spadnie do domyślnej retencji z konfiguracji. */
     public double nextIntervalDays(double stability) {
-        double interval = (stability / factor) * (Math.pow(requestRetention, 1.0 / decay) - 1.0);
+        return nextIntervalDays(stability, requestRetention);
+    }
+
+    /** To samo dla retencji wybranej przez użytkownika (albo podniesionej w trybie egzaminacyjnym). */
+    public double nextIntervalDays(double stability, double retention) {
+        double interval = (stability / factor) * (Math.pow(retention, 1.0 / decay) - 1.0);
         return Math.min(Math.max(interval, 0), MAX_INTERVAL_DAYS);
     }
 

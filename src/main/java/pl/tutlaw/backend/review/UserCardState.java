@@ -54,6 +54,14 @@ public class UserCardState {
     @Column(name = "avg_time_seconds")
     private Double avgTimeSeconds;
 
+    /**
+     * Blokada optymistyczna: gdy dwie odpowiedzi na tę samą kartę (np. dwa okna) zmienią stan równocześnie,
+     * druga dostaje konflikt zamiast po cichu nadpisać pierwszą.
+     */
+    @Version
+    @Column(nullable = false)
+    private long version;
+
     @Getter
     @Setter
     @NoArgsConstructor

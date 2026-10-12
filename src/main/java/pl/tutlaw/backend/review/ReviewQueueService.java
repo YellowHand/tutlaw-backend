@@ -1,7 +1,6 @@
 package pl.tutlaw.backend.review;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import pl.tutlaw.backend.card.Card;
@@ -10,6 +9,8 @@ import pl.tutlaw.backend.review.dto.BacklogResponse;
 import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 import pl.tutlaw.backend.review.fsrs.FsrsEngine;
+import pl.tutlaw.backend.settings.EffectiveSettings;
+import pl.tutlaw.backend.settings.LearningSettingsService;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -33,11 +34,13 @@ public class ReviewQueueService {
     private final FsrsEngine fsrsEngine;
     private final Clock clock;
     private final Random random;
-    private final int newCardsPerDay;
-    /** Osobny limit dla testów: długi test w stylu egzaminu nie powinien zużywać puli nowych fiszek. */
-    private final int newTestQuestionsPerDay;
-    /** Ile zaległych kart dziennie trafia do sesji (osobno dla fiszek i testów). Reszta czeka na kolejne dni. */
-    private final int maxReviewsPerDay;
+    /**
+     * Dzienne limity użytkownika (nowe fiszki, nowe pytania testowe, zaległe powtórki) z jego ustawień nauki;
+     * tam, gdzie niczego nie ustawił, obowiązują wartości domyślne z application.yml (app.fsrs.*).
+     * Limit nowych pytań testowych jest osobny, żeby długi test w stylu egzaminu nie zużywał puli nowych fiszek,
+     * a limit zaległych powtórek liczy się osobno dla fiszek i testów.
+     */
+    private final LearningSettingsService settingsService;
 
     @Autowired
     public ReviewQueueService(
@@ -47,11 +50,9 @@ public class ReviewQueueService {
             CurrentUserResolver currentUserResolver,
             FsrsEngine fsrsEngine,
             Clock clock,
-            @Value("${app.fsrs.new-cards-per-day}") int newCardsPerDay,
-            @Value("${app.fsrs.new-test-questions-per-day:40}") int newTestQuestionsPerDay,
-            @Value("${app.fsrs.max-reviews-per-day:100}") int maxReviewsPerDay) {
+            LearningSettingsService settingsService) {
         this(cardRepository, stateRepository, reviewLogRepository, currentUserResolver, fsrsEngine, clock,
-                new Random(), newCardsPerDay, newTestQuestionsPerDay, maxReviewsPerDay);
+                new Random(), settingsService);
     }
 
     /** Konstruktor z własnym generatorem losowym (testy mogą ustalić kolejność mieszania). */
@@ -63,9 +64,7 @@ public class ReviewQueueService {
             FsrsEngine fsrsEngine,
             Clock clock,
             Random random,
-            int newCardsPerDay,
-            int newTestQuestionsPerDay,
-            int maxReviewsPerDay) {
+            LearningSettingsService settingsService) {
         this.cardRepository = cardRepository;
         this.stateRepository = stateRepository;
         this.reviewLogRepository = reviewLogRepository;
@@ -73,9 +72,7 @@ public class ReviewQueueService {
         this.fsrsEngine = fsrsEngine;
         this.clock = clock;
         this.random = random;
-        this.newCardsPerDay = newCardsPerDay;
-        this.newTestQuestionsPerDay = newTestQuestionsPerDay;
-        this.maxReviewsPerDay = maxReviewsPerDay;
+        this.settingsService = settingsService;
     }
 
     /**
@@ -119,6 +116,7 @@ public class ReviewQueueService {
         LocalDateTime now = LocalDateTime.now(clock);
         long dueNow = splitByDue(eligible, loadScheduleByCardId(user.getId()), now).due().size();
         long doneToday = dueReviewsDoneToday(user.getId(), mode, now);
+        int maxReviewsPerDay = settingsService.effectiveFor(user.getId()).maxReviewsPerDay();
         int remaining = QueueRules.remainingAllowance(maxReviewsPerDay, doneToday, null);
         return new BacklogResponse(dueNow, QueueRules.deferred(dueNow, remaining), maxReviewsPerDay, doneToday);
     }
@@ -196,6 +194,7 @@ public class ReviewQueueService {
     private List<Card> buildQueue(
             List<Card> eligibleCards, Long userId, Integer extraNewCards, Integer extraDueReviews, ReviewMode mode) {
         LocalDateTime now = LocalDateTime.now(clock);
+        EffectiveSettings settings = settingsService.effectiveFor(userId);
         DueSplit split = splitByDue(eligibleCards, loadScheduleByCardId(userId), now);
 
         Map<Long, Card> cardById = new HashMap<>();
@@ -205,7 +204,7 @@ public class ReviewQueueService {
 
         // Najpierw najpilniejsze (najniższa szansa przypomnienia), ale tylko tyle, ile jeszcze mieści się w dziennym limicie.
         int allowance = QueueRules.remainingAllowance(
-                maxReviewsPerDay, dueReviewsDoneToday(userId, mode, now), QueueRules.clampExtra(extraDueReviews));
+                settings.maxReviewsPerDay(), dueReviewsDoneToday(userId, mode, now), QueueRules.clampExtra(extraDueReviews));
         List<Card> dueCards = new ArrayList<>();
         for (QueueRules.DueItem item : QueueRules.prioritize(split.due())) {
             if (dueCards.size() >= allowance) break;
@@ -223,21 +222,24 @@ public class ReviewQueueService {
             Collections.shuffle(candidateNewCards, random);
         }
 
-        int slots = newCardSlots(userId, now, QueueRules.clampExtra(extraNewCards), mode, candidateNewCards.size());
+        int slots = newCardSlots(
+                userId, now, QueueRules.clampExtra(extraNewCards), mode, candidateNewCards.size(), settings);
 
         List<Card> queue = new ArrayList<>(dueCards);
         candidateNewCards.stream().limit(slots).forEach(queue::add);
         return queue;
     }
 
-    private int newCardSlots(Long userId, LocalDateTime now, Integer extraNewCards, ReviewMode mode, int available) {
+    private int newCardSlots(
+            Long userId, LocalDateTime now, Integer extraNewCards, ReviewMode mode, int available,
+            EffectiveSettings settings) {
         if (extraNewCards != null) {
             return Math.min(extraNewCards, available);
         }
         LocalDateTime startOfDay = now.toLocalDate().atStartOfDay();
         long introducedToday = reviewLogRepository.countFirstReviewsBetween(
                 userId, mode, startOfDay, startOfDay.plusDays(1));
-        int dailyLimit = mode == ReviewMode.TEST ? newTestQuestionsPerDay : newCardsPerDay;
+        int dailyLimit = mode == ReviewMode.TEST ? settings.newTestQuestionsPerDay() : settings.newCardsPerDay();
         return (int) Math.max(0, dailyLimit - introducedToday);
     }
 

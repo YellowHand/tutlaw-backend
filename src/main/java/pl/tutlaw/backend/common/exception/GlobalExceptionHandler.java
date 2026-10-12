@@ -2,6 +2,7 @@ package pl.tutlaw.backend.common.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -58,6 +59,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
         return build(HttpStatus.CONFLICT, "Operacja narusza ograniczenia danych (np. taki rekord już istnieje)", request);
+    }
+
+    /**
+     * Ten sam stan karty zmieniły równocześnie dwa żądania (np. dwa otwarte okna z nauką).
+     * Klient może spróbować jeszcze raz: kolejny zapis zobaczy już aktualny stan.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleConcurrentUpdate(OptimisticLockingFailureException ex, HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT,
+                "Ta karta została właśnie zmieniona w innym oknie. Spróbuj jeszcze raz.", request);
     }
 
     @ExceptionHandler(UnauthorizedException.class)
