@@ -1,0 +1,59 @@
+package pl.tutlaw.backend.exam;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import pl.tutlaw.backend.user.User;
+
+import java.time.LocalDateTime;
+
+/** Podsumowanie jednego podejścia do egzaminu próbnego (bez pojedynczych odpowiedzi). */
+@Entity
+@Table(name = "exam_attempts")
+@Getter
+@Setter
+@NoArgsConstructor
+public class ExamAttempt {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "finished_at", nullable = false)
+    private LocalDateTime finishedAt;
+
+    /** Nazwa zakresu w chwili egzaminu (np. "Prawo karne"), żeby historia była czytelna po zmianie nazw. */
+    @Column(name = "scope_label", nullable = false, length = 300)
+    private String scopeLabel;
+
+    @Column(name = "question_count", nullable = false)
+    private int questionCount;
+
+    @Column(name = "answered_count", nullable = false)
+    private int answeredCount;
+
+    @Column(name = "correct_count", nullable = false)
+    private int correctCount;
+
+    @Column(name = "pass_threshold_percent", nullable = false)
+    private int passThresholdPercent;
+
+    @Column(nullable = false)
+    private boolean passed;
+
+    /** Limit czasu w minutach; null = egzamin bez limitu. */
+    @Column(name = "time_limit_minutes")
+    private Integer timeLimitMinutes;
+
+    @Column(name = "duration_seconds", nullable = false)
+    private int durationSeconds;
+
+    /** Czy egzamin został zakończony automatycznie, bo skończył się czas. */
+    @Column(name = "timed_out", nullable = false)
+    private boolean timedOut;
+}

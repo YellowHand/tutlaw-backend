@@ -17,6 +17,7 @@ public class ReviewController {
     private final ReviewQueueService queueService;
     private final ReviewService reviewService;
     private final MistakesService mistakesService;
+    private final PracticeQueueService practiceQueueService;
 
     // categoryId, subjectId i sourceId są opcjonalne (od najwęższego: źródło, przedmiot, kategoria).
     // Bez żadnego z nich kolejka obejmuje cały materiał użytkownika.
@@ -61,6 +62,13 @@ public class ReviewController {
             @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode,
             Authentication authentication) {
         return queueService.getBacklog(categoryId, subjectId, sourceId, mode, authentication);
+    }
+
+    /** Sesja testowa z podanych pytań (np. "Przerób błędy teraz" po egzaminie próbnym), w podanej kolejności. */
+    @GetMapping("/practice-queue")
+    public List<TestQueueItemResponse> getPracticeQueue(
+            @RequestParam List<Long> cardIds, Authentication authentication) {
+        return practiceQueueService.queue(cardIds, authentication);
     }
 
     /** "Powtórz moje błędy": sesja z pytań, w których ostatnia odpowiedź w teście była błędna. */

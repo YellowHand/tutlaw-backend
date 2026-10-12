@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import pl.tutlaw.backend.common.exception.UnauthorizedException;
+import pl.tutlaw.backend.exam.ExamAttempt;
+import pl.tutlaw.backend.exam.ExamAttemptRepository;
 import pl.tutlaw.backend.progress.ChapterProgressRepository;
 import pl.tutlaw.backend.report.CardReportReason;
 import pl.tutlaw.backend.report.CardReportRepository;
@@ -128,6 +130,23 @@ class AccountServiceTest {
                 return Optional.ofNullable(storedSettings);
             });
 
+            ExamAttemptRepository exams = FakeRepos.proxy(ExamAttemptRepository.class, (method, args) -> {
+                assertThat(method).isEqualTo("findAllForUser");
+                assertThat(args[0]).isEqualTo(1L);
+                ExamAttempt attempt = new ExamAttempt();
+                attempt.setFinishedAt(T.minusDays(1));
+                attempt.setScopeLabel("Prawo karne");
+                attempt.setQuestionCount(150);
+                attempt.setAnsweredCount(140);
+                attempt.setCorrectCount(113);
+                attempt.setPassThresholdPercent(75);
+                attempt.setPassed(true);
+                attempt.setTimeLimitMinutes(150);
+                attempt.setDurationSeconds(7_000);
+                attempt.setTimedOut(false);
+                return List.of(attempt);
+            });
+
             service = new AccountService(
                     new CurrentUserResolver(FakeRepos.users(users)),
                     FakeRepos.users(users),
@@ -137,6 +156,7 @@ class AccountServiceTest {
                     logs,
                     reports,
                     settings,
+                    exams,
                     new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw")));
         }
     }
@@ -181,6 +201,13 @@ class AccountServiceTest {
         assertThat(report.reason()).isEqualTo("OUTDATED");
         assertThat(report.comment()).isEqualTo("Przepis się zmienił");
         assertThat(report.status()).isEqualTo("NEW");
+
+        assertThat(export.examAttempts()).hasSize(1);
+        AccountExportResponse.ExamEntry exam = export.examAttempts().get(0);
+        assertThat(exam.scope()).isEqualTo("Prawo karne");
+        assertThat(exam.correctCount()).isEqualTo(113);
+        assertThat(exam.passed()).isTrue();
+        assertThat(exam.timeLimitMinutes()).isEqualTo(150);
     }
 
     @Test

@@ -1,0 +1,45 @@
+package pl.tutlaw.backend.exam.dto;
+
+import pl.tutlaw.backend.card.CorrectOption;
+
+import java.time.LocalDate;
+import java.util.List;
+
+/**
+ * Raport po egzaminie.
+ *
+ * @param excludedCount pytania z przesłanej listy, których nie dało się ocenić (usunięte albo już niedostępne);
+ *                      nie wliczają się do wyniku. Zwykle 0.
+ */
+public record ExamResultResponse(
+        ExamAttemptResponse attempt,
+        int excludedCount,
+        List<SourceBreakdown> bySource,
+        List<QuestionResult> questions
+) {
+
+    /** Wynik w obrębie jednego źródła pytań (np. "Egzamin 2024"). */
+    public record SourceBreakdown(String sourceName, int total, int correct) {
+    }
+
+    /**
+     * Jedno pytanie z raportu, w kolejności egzaminu. Wyjaśnienie i podstawa prawna bywają puste.
+     *
+     * @param selectedOption null = bez odpowiedzi
+     */
+    public record QuestionResult(
+            Long cardId,
+            String front,
+            String optionA,
+            String optionB,
+            String optionC,
+            CorrectOption selectedOption,
+            CorrectOption correctOption,
+            boolean correct,
+            String explanation,
+            String legalBasis,
+            LocalDate validAsOf,
+            String sourceName
+    ) {
+    }
+}

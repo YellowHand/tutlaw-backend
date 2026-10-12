@@ -202,6 +202,10 @@ public interface UserCardStateRepository
             """)
     List<DifficultRow> findSuspendedRows(@Param("userId") Long userId, Pageable pageable);
 
+    /** Numery wszystkich pytań zawieszonych przez użytkownika (egzamin próbny ich nie losuje). */
+    @Query("SELECT s.card.id FROM UserCardState s WHERE s.user.id = :userId AND s.suspended = true")
+    List<Long> findSuspendedCardIds(@Param("userId") Long userId);
+
     /**
      * Trudne pytania, które nadal są w nauce: nie zawieszone, w dostępnym dla użytkownika materiale
      * i z co najmniej {@code threshold} błędami. Najpierw te z największą liczbą błędów.

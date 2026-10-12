@@ -170,6 +170,25 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             """)
     List<Card> findPracticeTestCards(@Param("ids") Collection<Long> ids, @Param("userId") Long userId);
 
+    /**
+     * Pytania testowe o wskazanych numerach, dostępne dla użytkownika (pula płaska albo przeczytany rozdział).
+     * W odróżnieniu od {@link #findPracticeTestCards} nie pomija zawieszonych: służy do sprawdzania egzaminu,
+     * w którym pytania zostały już pokazane. Źródło pobierane od razu (raport pokazuje jego nazwę).
+     */
+    @Query("""
+            SELECT c FROM Card c JOIN FETCH c.source
+            WHERE c.id IN :ids
+            AND c.correctOption IS NOT NULL
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            """)
+    List<Card> findReadableTestCardsByIds(@Param("ids") Collection<Long> ids, @Param("userId") Long userId);
+
     /** Dostępne karty użytkownika w jednej kategorii (rodzaju), do testu lub nauki z całego działu. */
     @Query("""
             SELECT c FROM Card c

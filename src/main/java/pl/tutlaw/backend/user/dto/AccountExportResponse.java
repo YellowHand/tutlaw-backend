@@ -13,6 +13,7 @@ public record AccountExportResponse(
         List<CardStateItem> cardStates,
         List<ReviewItem> reviewLogs,
         List<ReportItem> cardReports,
+        List<ExamEntry> examAttempts,
         LearningSettings learningSettings
 ) {
 
@@ -57,6 +58,20 @@ public record AccountExportResponse(
             int rating,
             Boolean correct,
             boolean unsure
+    ) {}
+
+    /** Podsumowania podejść do egzaminu próbnego (bez pojedynczych odpowiedzi). */
+    public record ExamEntry(
+            LocalDateTime finishedAt,
+            String scope,
+            int questionCount,
+            int answeredCount,
+            int correctCount,
+            int passThresholdPercent,
+            boolean passed,
+            Integer timeLimitMinutes,
+            int durationSeconds,
+            boolean timedOut
     ) {}
 
     /**

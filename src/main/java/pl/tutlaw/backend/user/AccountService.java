@@ -6,6 +6,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pl.tutlaw.backend.exam.ExamAttemptRepository;
 import pl.tutlaw.backend.progress.ChapterProgressRepository;
 import pl.tutlaw.backend.report.CardReportRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
@@ -31,6 +32,7 @@ public class AccountService {
     private final ReviewLogRepository reviewLogRepository;
     private final CardReportRepository cardReportRepository;
     private final UserSettingsRepository userSettingsRepository;
+    private final ExamAttemptRepository examAttemptRepository;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -74,13 +76,21 @@ public class AccountService {
                         r.getStatus().name(), r.getCreatedAt()))
                 .toList();
 
+        List<AccountExportResponse.ExamEntry> exams = examAttemptRepository.findAllForUser(user.getId()).stream()
+                .map(a -> new AccountExportResponse.ExamEntry(
+                        a.getFinishedAt(), a.getScopeLabel(), a.getQuestionCount(), a.getAnsweredCount(),
+                        a.getCorrectCount(), a.getPassThresholdPercent(), a.isPassed(),
+                        a.getTimeLimitMinutes(), a.getDurationSeconds(), a.isTimedOut()))
+                .toList();
+
         AccountExportResponse.LearningSettings settings = userSettingsRepository.findById(user.getId())
                 .map(s -> new AccountExportResponse.LearningSettings(
                         s.getNewCardsPerDay(), s.getNewTestQuestionsPerDay(), s.getMaxReviewsPerDay(),
                         s.getDesiredRetention(), s.getExamDate(), s.isShuffleOptions()))
                 .orElse(null);
 
-        return new AccountExportResponse(Instant.now(clock), account, progress, states, reviews, reports, settings);
+        return new AccountExportResponse(
+                Instant.now(clock), account, progress, states, reviews, reports, exams, settings);
     }
 
     /**
