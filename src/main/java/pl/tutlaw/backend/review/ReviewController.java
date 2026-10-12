@@ -25,8 +25,9 @@ public class ReviewController {
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
+            @RequestParam(required = false) Integer extraDueReviews,
             Authentication authentication) {
-        return queueService.getQueue(categoryId, subjectId, sourceId, extraNewCards, authentication);
+        return queueService.getQueue(categoryId, subjectId, sourceId, extraNewCards, extraDueReviews, authentication);
     }
 
     @GetMapping("/test-queue")
@@ -35,8 +36,9 @@ public class ReviewController {
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
+            @RequestParam(required = false) Integer extraDueReviews,
             Authentication authentication) {
-        return queueService.getTestQueue(categoryId, subjectId, sourceId, extraNewCards, authentication);
+        return queueService.getTestQueue(categoryId, subjectId, sourceId, extraNewCards, extraDueReviews, authentication);
     }
 
     @GetMapping("/queue/new-cards-available")
@@ -47,6 +49,17 @@ public class ReviewController {
             Authentication authentication) {
         return new NewCardsAvailableResponse(
                 queueService.countAvailableNewCards(categoryId, subjectId, sourceId, authentication));
+    }
+
+    /** Zaległości w wybranym zakresie i trybie (FLASHCARD albo TEST): ile czeka i ile nie zmieści się dziś w sesji. */
+    @GetMapping("/queue/backlog")
+    public BacklogResponse getBacklog(
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) Long sourceId,
+            @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode,
+            Authentication authentication) {
+        return queueService.getBacklog(categoryId, subjectId, sourceId, mode, authentication);
     }
 
     @GetMapping("/due-count")

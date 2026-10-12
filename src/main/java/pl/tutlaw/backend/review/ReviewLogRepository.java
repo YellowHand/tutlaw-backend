@@ -29,6 +29,26 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             @Param("endOfDay") LocalDateTime endOfDay
     );
 
+    /**
+     * Ile zaległych kart (nie nowych) użytkownik przerobił w danym przedziale czasu i trybie. Liczymy powtórki
+     * po upływie doby od poprzedniej ({@code elapsedDays >= 1}); poprawki tej samej karty tego samego dnia
+     * (np. po „Nie pamiętam") nie zużywają dziennego limitu.
+     */
+    @Query("""
+            SELECT COUNT(r) FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = :mode
+            AND r.elapsedDays >= 1.0
+            AND r.reviewedAt >= :startOfDay
+            AND r.reviewedAt < :endOfDay
+            """)
+    long countDueReviewsBetween(
+            @Param("userId") Long userId,
+            @Param("mode") ReviewMode mode,
+            @Param("startOfDay") LocalDateTime startOfDay,
+            @Param("endOfDay") LocalDateTime endOfDay
+    );
+
     /** Same chwile odpowiedzi od podanego momentu (do mapy aktywności), bez ładowania całych wpisów. */
     @Query("""
             SELECT r.reviewedAt FROM ReviewLog r

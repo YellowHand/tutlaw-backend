@@ -67,11 +67,12 @@ public interface UserCardStateRepository
     );
 
     /**
-     * Same pary (id karty, termin) – wystarcza do zbudowania kolejki, bez ładowania
-     * całych encji i bez zapytania na każdą kartę osobno.
+     * Id karty, termin, stabilność i data ostatniej powtórki – wystarcza do zbudowania kolejki
+     * (w tym do policzenia szansy przypomnienia), bez ładowania całych encji
+     * i bez zapytania na każdą kartę osobno.
      */
     @Query("""
-            SELECT s.card.id AS cardId, s.dueDate AS dueDate
+            SELECT s.card.id AS cardId, s.dueDate AS dueDate, s.stability AS stability, s.lastReviewAt AS lastReviewAt
             FROM UserCardState s
             WHERE s.user.id = :userId
             """)
@@ -226,5 +227,9 @@ public interface UserCardStateRepository
         Long getCardId();
 
         LocalDateTime getDueDate();
+
+        Double getStability();
+
+        LocalDateTime getLastReviewAt();
     }
 }

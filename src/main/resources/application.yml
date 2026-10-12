@@ -35,6 +35,8 @@ app:
     request-retention: 0.9
     new-cards-per-day: 20
     new-test-questions-per-day: 40
+    # Ile zaległych powtórek dziennie trafia do sesji (osobno fiszki i testy); reszta czeka na kolejne dni.
+    max-reviews-per-day: 100
 
 management:
   endpoint:
