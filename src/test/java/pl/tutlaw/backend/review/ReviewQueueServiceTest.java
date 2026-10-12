@@ -96,7 +96,7 @@ class ReviewQueueServiceTest {
             service = new ReviewQueueService(
                     cardRepository, states, logs, resolver,
                     new FsrsEngine(FsrsWeights.defaults(), 0.9), clock,
-                    new Random(7), settings);
+                    new Random(7), settings, new LeechPolicy(8));
         }
 
         Card card(long id, boolean test, int chapterOrder) {
@@ -119,6 +119,10 @@ class ReviewQueueServiceTest {
 
         /** Karta z historią: ostatnia powtórka {@code lastDaysAgo} dni temu, termin {@code dueDaysAgo} dni temu. */
         void scheduled(long cardId, double stability, int lastDaysAgo, int dueDaysAgo) {
+            scheduled(cardId, stability, lastDaysAgo, dueDaysAgo, 0, false);
+        }
+
+        void scheduled(long cardId, double stability, int lastDaysAgo, int dueDaysAgo, int lapses, boolean suspended) {
             LocalDateTime last = NOW.minusDays(lastDaysAgo);
             LocalDateTime due = NOW.minusDays(dueDaysAgo);
             schedule.add(new UserCardStateRepository.CardDue() {
@@ -126,6 +130,8 @@ class ReviewQueueServiceTest {
                 public LocalDateTime getDueDate() { return due; }
                 public Double getStability() { return stability; }
                 public LocalDateTime getLastReviewAt() { return last; }
+                public Integer getLapses() { return lapses; }
+                public Boolean getSuspended() { return suspended; }
             });
         }
 
@@ -331,5 +337,64 @@ class ReviewQueueServiceTest {
         f.stored = stored(0, null, null);
 
         assertThat(f.flashQueue()).containsExactly(3L, 1L, 2L);
+    }
+
+    // ---------------------------------------------------------------- zawieszone i trudne pytania
+
+    @Test
+    void suspendedCardIsNotInTheFlashcardQueue_andIsNotMistakenForANewCard() {
+        Fixture f = new Fixture(100);
+        f.threeDueCards(false);
+        f.card(4, false, 1);
+        f.scheduled(4, 10, 40, 30, 0, true);    // zawieszona (ma stan), zaległa od dawna
+        f.card(5, false, 1);                    // nowa, bez stanu
+
+        assertThat(f.flashQueue()).containsExactly(3L, 1L, 2L, 5L);
+        assertThat(f.service.countAvailableNewCards(null, null, null, f.jan)).isEqualTo(1);
+    }
+
+    @Test
+    void suspendedCardIsNotInTheTestQueue_andNotInTheBacklog() {
+        Fixture f = new Fixture(100);
+        f.threeDueCards(true);
+        f.card(4, true, 1);
+        f.scheduled(4, 10, 40, 30, 0, true);
+
+        assertThat(f.testQueue()).containsExactlyInAnyOrder(3L, 1L, 2L);
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.TEST, f.jan).dueNow()).isEqualTo(3L);
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(3L);
+    }
+
+    @Test
+    void suspendedCardDoesNotUseUpTheDailyReviewLimit() {
+        Fixture f = new Fixture(2);
+        f.threeDueCards(false);
+        f.card(4, false, 1);
+        f.scheduled(4, 1, 60, 50, 0, true);     // najbardziej zapomniana, ale zawieszona
+
+        assertThat(f.flashQueue()).containsExactly(3L, 1L);
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).deferred()).isEqualTo(1L);
+    }
+
+    @Test
+    void flashcardQueueCarriesLapsesAndTheDifficultFlag() {
+        Fixture f = new Fixture(100);
+        f.card(1, false, 1);
+        f.card(2, false, 1);
+        f.card(3, false, 1);
+        f.scheduled(1, 10, 12, 2, 8, false);    // próg 8: trudne
+        f.scheduled(2, 10, 20, 10, 7, false);   // jeszcze nie
+
+        List<ReviewQueueItemResponse> queue = f.service.getQueue(null, null, null, null, null, f.jan);
+
+        ReviewQueueItemResponse hard = queue.stream().filter(i -> i.cardId() == 1L).findFirst().orElseThrow();
+        ReviewQueueItemResponse almost = queue.stream().filter(i -> i.cardId() == 2L).findFirst().orElseThrow();
+        ReviewQueueItemResponse brandNew = queue.stream().filter(i -> i.cardId() == 3L).findFirst().orElseThrow();
+        assertThat(hard.lapses()).isEqualTo(8);
+        assertThat(hard.leech()).isTrue();
+        assertThat(almost.lapses()).isEqualTo(7);
+        assertThat(almost.leech()).isFalse();
+        assertThat(brandNew.lapses()).isZero();
+        assertThat(brandNew.leech()).isFalse();
     }
 }

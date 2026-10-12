@@ -57,7 +57,7 @@ class ReviewServiceTest {
     void setUp() {
         service = new ReviewService(stateRepository, reviewLogRepository, cardRepository, currentUserResolver,
                 new FsrsEngine(FsrsWeights.defaults(), 0.9), settingsService,
-                new IntervalFuzzer(new Random(3)), clock);
+                new IntervalFuzzer(new Random(3)), new LeechPolicy(8), clock);
         user = new User();
         user.setId(5L);
         card = new Card();
@@ -223,6 +223,67 @@ class ReviewServiceTest {
         assertThat(result.correct()).isTrue();
         assertThat(state.getLapses()).isEqualTo(0);
         assertThat(state.getState()).isEqualTo(CardLearningState.REVIEW);
+    }
+
+    // ---------------------------------------------------------------- trudne pytania
+
+    @Test
+    void wrongAnswer_reachingTheThreshold_marksTheQuestionAsDifficult() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        state.setLapses(7);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+
+        assertThat(result.correct()).isFalse();
+        assertThat(result.lapses()).isEqualTo(8);
+        assertThat(result.leech()).isTrue();
+        assertThat(state.isSuspended()).as("aplikacja niczego nie zawiesza sama").isFalse();
+    }
+
+    @Test
+    void wrongAnswer_belowTheThreshold_isNotYetDifficult() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        state.setLapses(6);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+
+        assertThat(result.lapses()).isEqualTo(7);
+        assertThat(result.leech()).isFalse();
+    }
+
+    @Test
+    void correctAnswer_onAnAlreadyDifficultQuestion_stillReportsItAsDifficult() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        state.setLapses(9);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+
+        assertThat(result.correct()).isTrue();
+        assertThat(result.lapses()).isEqualTo(9);
+        assertThat(result.leech()).isTrue();
+    }
+
+    @Test
+    void suspendedQuestion_canStillBeAnswered_andStaysSuspended() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        state.setSuspended(true);
+        state.setSuspendedAt(NOW.minusDays(1));
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+
+        service.submitTestAnswer(new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+
+        assertThat(state.getReps()).isEqualTo(5);
+        assertThat(state.isSuspended()).isTrue();
     }
 
     @Test

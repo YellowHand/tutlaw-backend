@@ -37,6 +37,9 @@ app:
     new-test-questions-per-day: 40
     # Ile zaległych powtórek dziennie trafia do sesji (osobno fiszki i testy); reszta czeka na kolejne dni.
     max-reviews-per-day: 100
+  review:
+    # Od ilu błędów pytanie uchodzi za „trudne" (podpowiedź, żeby je zawiesić albo zgłosić). Niczego nie zawiesza samo.
+    leech-threshold: 8
 
 management:
   endpoint:

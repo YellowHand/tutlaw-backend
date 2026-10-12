@@ -33,6 +33,7 @@ public class ReviewService {
     private final FsrsEngine fsrsEngine;
     private final LearningSettingsService settingsService;
     private final IntervalFuzzer intervalFuzzer;
+    private final LeechPolicy leechPolicy;
     private final Clock clock;
 
     /** Ocena fiszki: 1–4 wybrana przez użytkownika. „Nie pamiętam" (1) liczy się jako błąd. */
@@ -63,11 +64,12 @@ public class ReviewService {
         boolean correct = card.getCorrectOption() == request.selectedOption();
         boolean guessed = Boolean.TRUE.equals(request.guessed());
 
-        applyReview(user, card, ReviewPolicy.testRating(correct, guessed), request.timeSpentSeconds(),
-                ReviewMode.TEST, correct, guessed, !correct);
+        UserCardState state = applyReview(user, card, ReviewPolicy.testRating(correct, guessed),
+                request.timeSpentSeconds(), ReviewMode.TEST, correct, guessed, !correct);
 
         return new TestAnswerResultResponse(
-                correct, card.getCorrectOption(), card.getExplanation(), card.getLegalBasis(), card.getValidAsOf());
+                correct, card.getCorrectOption(), card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(),
+                state.getLapses(), leechPolicy.isLeech(state.getLapses()));
     }
 
     /**
@@ -84,7 +86,8 @@ public class ReviewService {
         return card;
     }
 
-    private void applyReview(
+    /** Zapisuje odpowiedź i zwraca stan karty po niej (przy zdublowanym żądaniu: stan bez zmian). */
+    private UserCardState applyReview(
             User user, Card card, Rating rating, Double timeSpentSeconds,
             ReviewMode mode, Boolean wasCorrect, boolean wasGuessed, boolean countAsLapse) {
 
@@ -102,7 +105,7 @@ public class ReviewService {
 
         // Podwójne kliknięcie lub ponowione żądanie nie może policzyć się jako druga powtórka.
         if (!firstReview && ReviewPolicy.isDuplicateSubmit(state.getLastReviewAt(), now)) {
-            return;
+            return state;
         }
         Double elapsedDays = null;
         FsrsCardState newFsrsState;
@@ -147,6 +150,7 @@ public class ReviewService {
         log.setWasCorrect(wasCorrect);
         log.setWasGuessed(wasGuessed);
         reviewLogRepository.save(log);
+        return state;
     }
 
     private CardLearningState learningStateAfter(Rating rating, boolean firstReview) {

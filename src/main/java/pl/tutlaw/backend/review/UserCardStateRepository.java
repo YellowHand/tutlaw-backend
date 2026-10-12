@@ -1,5 +1,6 @@
 package pl.tutlaw.backend.review;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -23,6 +24,7 @@ public interface UserCardStateRepository
             SELECT s FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
+            AND s.suspended = false
             AND s.dueDate BETWEEN :start AND :end
             """)
     List<UserCardState> findDueBetween(
@@ -35,6 +37,7 @@ public interface UserCardStateRepository
     @Query("""
             SELECT s FROM UserCardState s
             WHERE s.user.id = :userId
+            AND s.suspended = false
             AND s.dueDate BETWEEN :start AND :end
             """)
     List<UserCardState> findDueBetweenAnySubject(
@@ -48,6 +51,7 @@ public interface UserCardStateRepository
             SELECT s FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
+            AND s.suspended = false
             AND s.dueDate <= :end
             """)
     List<UserCardState> findDueUntil(
@@ -59,6 +63,7 @@ public interface UserCardStateRepository
     @Query("""
             SELECT s FROM UserCardState s
             WHERE s.user.id = :userId
+            AND s.suspended = false
             AND s.dueDate <= :end
             """)
     List<UserCardState> findDueUntilAnySubject(
@@ -69,10 +74,12 @@ public interface UserCardStateRepository
     /**
      * Id karty, termin, stabilność i data ostatniej powtórki – wystarcza do zbudowania kolejki
      * (w tym do policzenia szansy przypomnienia), bez ładowania całych encji
-     * i bez zapytania na każdą kartę osobno.
+     * i bez zapytania na każdą kartę osobno. Zawiera także karty zawieszone (flaga {@code suspended}): sam fakt,
+     * że karta ma stan, odróżnia ją od nowej, więc zawieszonych nie wolno tu pomijać, bo wróciłyby jako „nowe".
      */
     @Query("""
-            SELECT s.card.id AS cardId, s.dueDate AS dueDate, s.stability AS stability, s.lastReviewAt AS lastReviewAt
+            SELECT s.card.id AS cardId, s.dueDate AS dueDate, s.stability AS stability, s.lastReviewAt AS lastReviewAt,
+                   s.lapses AS lapses, s.suspended AS suspended
             FROM UserCardState s
             WHERE s.user.id = :userId
             """)
@@ -85,6 +92,7 @@ public interface UserCardStateRepository
     @Query("""
             SELECT COUNT(s) FROM UserCardState s
             WHERE s.user.id = :userId
+            AND s.suspended = false
             AND s.dueDate <= :now
             AND (
                 s.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
@@ -169,6 +177,7 @@ public interface UserCardStateRepository
             SELECT s.card.id AS cardId, s.stability AS stability, s.lapses AS lapses, s.lastReviewAt AS lastReviewAt
             FROM UserCardState s
             WHERE s.user.id = :userId AND s.reps > 0 AND s.lastReviewAt IS NOT NULL
+            AND s.suspended = false
             """)
     List<StartedCardSummary> findStartedSummaries(@Param("userId") Long userId);
 
@@ -178,15 +187,49 @@ public interface UserCardStateRepository
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
             AND s.reps > 0 AND s.lastReviewAt IS NOT NULL
+            AND s.suspended = false
             """)
     List<StartedCardSummary> findStartedSummariesInSubject(
             @Param("userId") Long userId, @Param("subjectId") Long subjectId);
+
+    /** Zawieszone pytania użytkownika, od ostatnio zawieszonych. */
+    @Query("""
+            SELECT s.card.id AS cardId, s.card.front AS front, s.card.source.name AS sourceName,
+                   s.lapses AS lapses, s.suspendedAt AS suspendedAt
+            FROM UserCardState s
+            WHERE s.user.id = :userId AND s.suspended = true
+            ORDER BY s.suspendedAt DESC, s.card.id
+            """)
+    List<DifficultRow> findSuspendedRows(@Param("userId") Long userId, Pageable pageable);
+
+    /**
+     * Trudne pytania, które nadal są w nauce: nie zawieszone, w dostępnym dla użytkownika materiale
+     * i z co najmniej {@code threshold} błędami. Najpierw te z największą liczbą błędów.
+     */
+    @Query("""
+            SELECT s.card.id AS cardId, s.card.front AS front, s.card.source.name AS sourceName,
+                   s.lapses AS lapses, s.suspendedAt AS suspendedAt
+            FROM UserCardState s
+            WHERE s.user.id = :userId
+            AND s.suspended = false
+            AND s.lapses >= :threshold
+            AND (
+                s.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (s.card.chapter IS NOT NULL AND s.card.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            ORDER BY s.lapses DESC, s.card.id
+            """)
+    List<DifficultRow> findLeechRows(
+            @Param("userId") Long userId, @Param("threshold") int threshold, Pageable pageable);
 
     /** Wszystkie stany kart użytkownika wraz z treścią pytania, do eksportu jego danych. */
     @Query("""
             SELECT s.card.id AS cardId, s.card.front AS cardFront, s.state AS state, s.reps AS reps,
                    s.lapses AS lapses, s.stability AS stability, s.difficulty AS difficulty,
-                   s.dueDate AS dueDate, s.lastReviewAt AS lastReviewAt
+                   s.dueDate AS dueDate, s.lastReviewAt AS lastReviewAt, s.suspended AS suspended
             FROM UserCardState s
             WHERE s.user.id = :userId
             ORDER BY s.card.id
@@ -211,6 +254,20 @@ public interface UserCardStateRepository
         LocalDateTime getDueDate();
 
         LocalDateTime getLastReviewAt();
+
+        Boolean getSuspended();
+    }
+
+    interface DifficultRow {
+        Long getCardId();
+
+        String getFront();
+
+        String getSourceName();
+
+        Integer getLapses();
+
+        LocalDateTime getSuspendedAt();
     }
 
     interface StartedCardSummary {
@@ -231,5 +288,9 @@ public interface UserCardStateRepository
         Double getStability();
 
         LocalDateTime getLastReviewAt();
+
+        Integer getLapses();
+
+        Boolean getSuspended();
     }
 }

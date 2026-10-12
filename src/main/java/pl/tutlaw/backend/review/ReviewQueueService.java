@@ -41,6 +41,7 @@ public class ReviewQueueService {
      * a limit zaległych powtórek liczy się osobno dla fiszek i testów.
      */
     private final LearningSettingsService settingsService;
+    private final LeechPolicy leechPolicy;
 
     @Autowired
     public ReviewQueueService(
@@ -50,9 +51,10 @@ public class ReviewQueueService {
             CurrentUserResolver currentUserResolver,
             FsrsEngine fsrsEngine,
             Clock clock,
-            LearningSettingsService settingsService) {
+            LearningSettingsService settingsService,
+            LeechPolicy leechPolicy) {
         this(cardRepository, stateRepository, reviewLogRepository, currentUserResolver, fsrsEngine, clock,
-                new Random(), settingsService);
+                new Random(), settingsService, leechPolicy);
     }
 
     /** Konstruktor z własnym generatorem losowym (testy mogą ustalić kolejność mieszania). */
@@ -64,7 +66,8 @@ public class ReviewQueueService {
             FsrsEngine fsrsEngine,
             Clock clock,
             Random random,
-            LearningSettingsService settingsService) {
+            LearningSettingsService settingsService,
+            LeechPolicy leechPolicy) {
         this.cardRepository = cardRepository;
         this.stateRepository = stateRepository;
         this.reviewLogRepository = reviewLogRepository;
@@ -73,6 +76,7 @@ public class ReviewQueueService {
         this.clock = clock;
         this.random = random;
         this.settingsService = settingsService;
+        this.leechPolicy = leechPolicy;
     }
 
     /**
@@ -86,8 +90,13 @@ public class ReviewQueueService {
             Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         List<Card> eligibleCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
-        List<Card> queue = buildQueue(eligibleCards, user.getId(), extraNewCards, extraDueReviews, ReviewMode.FLASHCARD);
-        return queue.stream().map(ReviewQueueMapper::toResponse).toList();
+        Map<Long, UserCardStateRepository.CardDue> scheduleByCardId = loadScheduleByCardId(user.getId());
+        List<Card> queue = buildQueue(
+                eligibleCards, scheduleByCardId, user.getId(), extraNewCards, extraDueReviews, ReviewMode.FLASHCARD);
+        return queue.stream().map(card -> {
+            int lapses = lapsesOf(scheduleByCardId.get(card.getId()));
+            return ReviewQueueMapper.toResponse(card, lapses, leechPolicy.isLeech(lapses));
+        }).toList();
     }
 
     /**
@@ -99,7 +108,9 @@ public class ReviewQueueService {
             Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         List<Card> eligibleCards = testCards(getReadableCards(categoryId, subjectId, sourceId, user.getId()));
-        List<Card> queue = buildQueue(eligibleCards, user.getId(), extraNewCards, extraDueReviews, ReviewMode.TEST);
+        List<Card> queue = buildQueue(
+                eligibleCards, loadScheduleByCardId(user.getId()), user.getId(), extraNewCards, extraDueReviews,
+                ReviewMode.TEST);
         return queue.stream().map(ReviewQueueMapper::toTestResponse).toList();
     }
 
@@ -176,7 +187,8 @@ public class ReviewQueueService {
             UserCardStateRepository.CardDue schedule = scheduleByCardId.get(card.getId());
             if (schedule == null) {
                 newCards.add(card);
-            } else if (!schedule.getDueDate().isAfter(now)) {
+            } else if (!Boolean.TRUE.equals(schedule.getSuspended()) && !schedule.getDueDate().isAfter(now)) {
+                // Zawieszona karta ma stan, więc nie jest „nowa", ale też nie wraca do kolejki.
                 double stability = schedule.getStability() == null ? 0 : schedule.getStability();
                 double retrievability = fsrsEngine.retrievability(
                         QueueRules.elapsedDays(schedule.getLastReviewAt(), now), stability);
@@ -191,11 +203,16 @@ public class ReviewQueueService {
         return reviewLogRepository.countDueReviewsBetween(userId, mode, startOfDay, startOfDay.plusDays(1));
     }
 
+    private static int lapsesOf(UserCardStateRepository.CardDue schedule) {
+        return schedule == null || schedule.getLapses() == null ? 0 : schedule.getLapses();
+    }
+
     private List<Card> buildQueue(
-            List<Card> eligibleCards, Long userId, Integer extraNewCards, Integer extraDueReviews, ReviewMode mode) {
+            List<Card> eligibleCards, Map<Long, UserCardStateRepository.CardDue> scheduleByCardId, Long userId,
+            Integer extraNewCards, Integer extraDueReviews, ReviewMode mode) {
         LocalDateTime now = LocalDateTime.now(clock);
         EffectiveSettings settings = settingsService.effectiveFor(userId);
-        DueSplit split = splitByDue(eligibleCards, loadScheduleByCardId(userId), now);
+        DueSplit split = splitByDue(eligibleCards, scheduleByCardId, now);
 
         Map<Long, Card> cardById = new HashMap<>();
         for (Card card : eligibleCards) {

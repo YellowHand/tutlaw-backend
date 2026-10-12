@@ -36,7 +36,8 @@ public record AccountExportResponse(
             double stability,
             double difficulty,
             LocalDateTime dueDate,
-            LocalDateTime lastReviewAt
+            LocalDateTime lastReviewAt,
+            boolean suspended
     ) {}
 
     /** Zgłoszenia błędów w pytaniach wysłane przez użytkownika. */

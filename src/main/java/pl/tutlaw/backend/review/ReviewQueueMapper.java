@@ -6,7 +6,8 @@ import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 
 public class ReviewQueueMapper {
 
-    public static ReviewQueueItemResponse toResponse(Card card) {
+    /** {@code lapses} to liczba dotychczasowych błędów (0 dla nowej karty). */
+    public static ReviewQueueItemResponse toResponse(Card card, int lapses, boolean leech) {
         return new ReviewQueueItemResponse(
                 card.getId(),
                 card.getFront(),
@@ -15,7 +16,9 @@ public class ReviewQueueMapper {
                 card.isVerbatimQuote(),
                 card.getSource() != null ? card.getSource().getName() : null,
                 card.getLegalBasis(),
-                card.getValidAsOf()
+                card.getValidAsOf(),
+                lapses,
+                leech
         );
     }
 

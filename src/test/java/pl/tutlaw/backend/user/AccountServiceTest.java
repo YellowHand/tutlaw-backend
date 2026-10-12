@@ -93,6 +93,7 @@ class AccountServiceTest {
                     public Double getDifficulty() { return null; }
                     public LocalDateTime getDueDate() { return T.plusDays(12); }
                     public LocalDateTime getLastReviewAt() { return T.minusDays(1); }
+                    public Boolean getSuspended() { return true; }
                 });
             });
 
@@ -166,6 +167,7 @@ class AccountServiceTest {
         assertThat(state.reps()).isEqualTo(4);
         assertThat(state.lapses()).isEqualTo(0);
         assertThat(state.difficulty()).isEqualTo(0.0);
+        assertThat(state.suspended()).isTrue();
 
         assertThat(export.reviewLogs()).hasSize(1);
         AccountExportResponse.ReviewItem review = export.reviewLogs().get(0);

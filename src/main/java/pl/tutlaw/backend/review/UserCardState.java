@@ -54,6 +54,13 @@ public class UserCardState {
     @Column(name = "avg_time_seconds")
     private Double avgTimeSeconds;
 
+    /** Zawieszona karta nie trafia do kolejek ani liczników powtórek, ale zachowuje cały postęp. */
+    @Column(nullable = false)
+    private boolean suspended = false;
+
+    @Column(name = "suspended_at")
+    private LocalDateTime suspendedAt;
+
     /**
      * Blokada optymistyczna: gdy dwie odpowiedzi na tę samą kartę (np. dwa okna) zmienią stan równocześnie,
      * druga dostaje konflikt zamiast po cichu nadpisać pierwszą.

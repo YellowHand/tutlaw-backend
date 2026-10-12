@@ -2,6 +2,10 @@ package pl.tutlaw.backend.review.dto;
 
 import java.time.LocalDate;
 
+/**
+ * Fiszka w kolejce. {@code lapses} i {@code leech} opisują stan sprzed tej sesji (dla nowej karty 0 i false):
+ * na odwrocie fiszki pozwalają zaproponować zawieszenie pytania, z którym użytkownik od dawna sobie nie radzi.
+ */
 public record ReviewQueueItemResponse(
         Long cardId,
         String front,
@@ -10,6 +14,8 @@ public record ReviewQueueItemResponse(
         boolean verbatimQuote,
         String sourceName,
         String legalBasis,
-        LocalDate validAsOf
+        LocalDate validAsOf,
+        int lapses,
+        boolean leech
 ) {
 }

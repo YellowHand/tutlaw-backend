@@ -57,7 +57,7 @@ public class AccountService {
                         s.getCardId(), s.getCardFront(), s.getState().name(),
                         orZero(s.getReps()), orZero(s.getLapses()),
                         orZero(s.getStability()), orZero(s.getDifficulty()),
-                        s.getDueDate(), s.getLastReviewAt()))
+                        s.getDueDate(), s.getLastReviewAt(), Boolean.TRUE.equals(s.getSuspended())))
                 .toList();
 
         List<AccountExportResponse.ReviewItem> reviews = reviewLogRepository

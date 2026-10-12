@@ -239,6 +239,8 @@ class LearningSettingsServiceTest {
             public LocalDateTime getDueDate() { return LocalDateTime.of(2026, 10, 20, 0, 0); }
             public Double getStability() { return 3.0; }
             public LocalDateTime getLastReviewAt() { return LocalDateTime.of(2026, 10, 10, 9, 0); }
+            public Integer getLapses() { return 0; }
+            public Boolean getSuspended() { return false; }
         };
     }
 
