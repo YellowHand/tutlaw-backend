@@ -5,7 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pl.tutlaw.backend.auth.dto.*;
+import pl.tutlaw.backend.auth.dto.AuthResponse;
+import pl.tutlaw.backend.auth.dto.LoginRequest;
+import pl.tutlaw.backend.auth.dto.RegisterRequest;
 import pl.tutlaw.backend.user.User;
 import pl.tutlaw.backend.user.UserRepository;
 
@@ -21,6 +23,7 @@ public class AuthService {
     private final EmailVerificationTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final EmailService emailService;
 
     @Transactional
     public void register(RegisterRequest request) {
@@ -45,6 +48,7 @@ public class AuthService {
 
         log.info("Verification link generated for university email {}: http://localhost:5173/verify?token={}",
                 user.getUniversityEmail(), token.getToken());
+        emailService.sendVerificationEmail(user.getUniversityEmail(), token.getToken());
     }
 
     @Transactional
@@ -90,6 +94,6 @@ public class AuthService {
             throw new IllegalStateException("Account not verified yet");
         }
 
-        return new AuthResponse(jwtService.generateToken(user.getPrivateEmail()));
+        return new AuthResponse(jwtService.generateToken(user.getPrivateEmail(), user.getRole()));
     }
 }

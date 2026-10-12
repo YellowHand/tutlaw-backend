@@ -4,6 +4,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import pl.tutlaw.backend.user.Role;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
@@ -22,16 +23,22 @@ public class JwtService {
         this.expirationMs = expirationMs;
     }
 
-    public String generateToken(String subjectEmail) {
+    public String generateToken(String subjectEmail, Role role) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
                 .subject(subjectEmail)
+                .claim("role", role.name())
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key)
                 .compact();
+    }
+
+    public String extractRole(String token) {
+        return Jwts.parser().verifyWith(key).build()
+                .parseSignedClaims(token).getPayload().get("role", String.class);
     }
 
     public String extractEmail(String token) {

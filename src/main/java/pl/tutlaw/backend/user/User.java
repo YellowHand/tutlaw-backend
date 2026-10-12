@@ -30,6 +30,10 @@ public class User {
     @Column(name = "is_university_email_verified", nullable = false)
     private boolean universityEmailVerified = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role = Role.STUDENT;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = false;
 

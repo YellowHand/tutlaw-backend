@@ -2,29 +2,46 @@ spring:
   application:
     name: tutlaw-backend
   datasource:
-    url: jdbc:postgresql://localhost:5432/tutlaw
-    username: tutlaw_user
-    password: tutlaw_password
-    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/tutlaw}
+    username: ${SPRING_DATASOURCE_USERNAME:tutlaw_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:tutlaw_password}
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
   flyway:
     enabled: true
     locations: classpath:db/migration
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_STARTTLS:false}
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET:lokalny-dev-sekret-min-32-znaki-zmien-koniecznie-na-produkcji}
+    access-token-expiration-ms: ${APP_JWT_EXPIRATION_MS:86400000}
+  cors:
+    allowed-origin: ${FRONTEND_URL:http://localhost:5173}
+  fsrs:
+    request-retention: 0.9
+    new-cards-per-day: 20
+
 management:
+  endpoint:
+    health:
+      show-details: always
   endpoints:
     web:
       cors:
-        allowed-origins: "http://localhost:5173"
-        allowed-methods: "GET"
-app:
-  jwt:
-    secret: "5d8f2a9e1b4c7d0e3f6a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8d"
-    access-token-expiration-ms: 86400000
+        allowed-origins: ${FRONTEND_URL:http://localhost:5173}
+        allowed-methods: GET
+
 server:
-  port: 8080
+  port: ${PORT:8080}
