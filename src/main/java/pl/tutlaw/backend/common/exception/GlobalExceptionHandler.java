@@ -65,6 +65,18 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
     }
 
+    /** Za dużo prób (np. logowania). Nagłówek Retry-After mówi przeglądarce i narzędziom, kiedy spróbować znowu. */
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyRequests(TooManyRequestsException ex, HttpServletRequest request) {
+        ErrorResponse body = new ErrorResponse(
+                Instant.now(), HttpStatus.TOO_MANY_REQUESTS.value(),
+                HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(), ex.getMessage(), request.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .body(body);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
@@ -72,7 +84,7 @@ public class GlobalExceptionHandler {
 
     private static String describe(FieldError error) {
         String reason = error.getDefaultMessage() == null ? "nieprawidłowa wartość" : error.getDefaultMessage();
-        return error.getField() + ": " + reason;
+        return FieldLabels.label(error.getField()) + ": " + reason;
     }
 
     private ResponseEntity<ErrorResponse> build(HttpStatus status, String message, HttpServletRequest request) {

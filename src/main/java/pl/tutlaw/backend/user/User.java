@@ -39,4 +39,8 @@ public class User {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    /** Kiedy zaakceptowano regulamin i politykę prywatności. Null: konto założone przed ich wprowadzeniem. */
+    @Column(name = "terms_accepted_at")
+    private LocalDateTime termsAcceptedAt;
 }

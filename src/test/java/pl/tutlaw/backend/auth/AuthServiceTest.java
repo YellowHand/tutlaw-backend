@@ -17,6 +17,7 @@ class AuthServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private EmailVerificationTokenRepository tokenRepository;
+    @Mock private PasswordResetTokenRepository resetTokenRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtService jwtService;
 
@@ -26,12 +27,12 @@ class AuthServiceTest {
     @Test
     void shouldThrowWhenPrivateEmailAlreadyExists() {
         RegisterRequest request = new RegisterRequest(
-                "existing@gmail.com", "existing@studms.ug.edu.pl", "password123");
+                "existing@gmail.com", "existing@studms.ug.edu.pl", "password123", true);
 
-        when(userRepository.existsByPrivateEmail("existing@gmail.com")).thenReturn(true);
+        when(userRepository.existsByPrivateEmailIgnoreCase("existing@gmail.com")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Private email already registered");
+                .hasMessage("Konto z tym adresem e-mail już istnieje");
     }
 }

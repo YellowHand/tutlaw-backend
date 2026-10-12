@@ -29,6 +29,8 @@ app:
     access-token-expiration-ms: ${APP_JWT_EXPIRATION_MS:86400000}
   cors:
     allowed-origin: ${FRONTEND_URL:http://localhost:5173}
+  # Adres frontendu w linkach z maili o zmianie hasła (ten sam FRONTEND_URL co CORS).
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
   fsrs:
     request-retention: 0.9
     new-cards-per-day: 20
