@@ -26,6 +26,7 @@ import pl.tutlaw.backend.source.Source;
 import pl.tutlaw.backend.source.SourceRepository;
 import pl.tutlaw.backend.subject.Subject;
 import pl.tutlaw.backend.subject.SubjectRepository;
+import pl.tutlaw.backend.testsupport.CardRefs;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -128,6 +130,12 @@ class ExamServiceTest {
                 .thenReturn(List.of(cards));
     }
 
+    /** Pełne karty wylosowanych numerów (jedno zapytanie po numerach). Lenient, bo nie każdy test do niego dociera. */
+    private void givenLoadable(List<Card> cards) {
+        lenient().when(cardRepository.findAllWithSourceByIdIn(any()))
+                .thenAnswer(invocation -> CardRefs.byIds(cards, invocation.getArgument(0)));
+    }
+
     private ExamAttempt savedAttempt() {
         ArgumentCaptor<ExamAttempt> captor = ArgumentCaptor.forClass(ExamAttempt.class);
         verify(attemptRepository).save(captor.capture());
@@ -138,7 +146,8 @@ class ExamServiceTest {
 
     @Test
     void start_drawsTheRequestedNumberOfDistinctQuestions() {
-        when(cardRepository.findReadableCardsForUser(5L)).thenReturn(tests(1, 30));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 30)));
+        givenLoadable(tests(1, 30));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
         ExamStartResponse response = service.start(startRequest(10), authentication);
@@ -152,10 +161,28 @@ class ExamServiceTest {
     }
 
     @Test
+    void start_loadsFullCardsOnlyForTheDrawnQuestions_inTheDrawnOrder() {
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 300)));
+        givenLoadable(tests(1, 300));
+        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
+
+        ExamStartResponse response = service.start(startRequest(25), authentication);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<Long>> captor = ArgumentCaptor.forClass(Collection.class);
+        verify(cardRepository).findAllWithSourceByIdIn(captor.capture());
+        // z 300 dostępnych pytań do bazy po pełne treści idzie tylko 25 numerów, a kolejność egzaminu to kolejność losowania
+        assertThat(captor.getValue()).hasSize(25);
+        assertThat(response.questions()).extracting(TestQueueItemResponse::cardId)
+                .containsExactlyElementsOf(new ArrayList<>(captor.getValue()));
+    }
+
+    @Test
     void start_neverDrawsSuspendedOrNonTestCards() {
         List<Card> pool = new ArrayList<>(tests(1, 6));
         pool.add(card(7, null, source("Podręcznik"))); // fiszka bez formatu testowego
-        when(cardRepository.findReadableCardsForUser(5L)).thenReturn(pool);
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(pool));
+        givenLoadable(pool);
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of(2L, 4L));
 
         // prosimy o więcej, niż jest dostępnych, więc dostajemy wszystkie możliwe
@@ -168,7 +195,8 @@ class ExamServiceTest {
 
     @Test
     void start_withFewerQuestionsThanRequestedReturnsAllOfThem() {
-        when(cardRepository.findReadableCardsForUser(5L)).thenReturn(tests(1, 8));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 8)));
+        givenLoadable(tests(1, 8));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
         ExamStartResponse response = service.start(startRequest(100), authentication);
@@ -179,7 +207,8 @@ class ExamServiceTest {
 
     @Test
     void start_withNothingToDrawIsABadRequest() {
-        when(cardRepository.findReadableCardsForUser(5L)).thenReturn(tests(1, 3));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 3)));
+        givenLoadable(tests(1, 3));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of(1L, 2L, 3L));
 
         assertThatThrownBy(() -> service.start(startRequest(10), authentication))
@@ -188,7 +217,8 @@ class ExamServiceTest {
 
     @Test
     void start_writesNothingToTheDatabase() {
-        when(cardRepository.findReadableCardsForUser(5L)).thenReturn(tests(1, 10));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 10)));
+        givenLoadable(tests(1, 10));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
         service.start(startRequest(5), authentication);
@@ -202,16 +232,17 @@ class ExamServiceTest {
     void start_usesTheNarrowestScope_andLabelsIt() {
         Source source = source("Egzamin 2024");
         when(sourceRepository.findById(9L)).thenReturn(Optional.of(source));
-        when(cardRepository.findReadableCardsForUserAndSource(9L, 5L)).thenReturn(tests(1, 6));
+        when(cardRepository.findReadableRefsForUserAndSource(9L, 5L)).thenReturn(CardRefs.of(tests(1, 6)));
+        givenLoadable(tests(1, 6));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
         // źródło wygrywa z przedmiotem i kategorią
         ExamStartResponse response = service.start(new ExamStartRequest(1L, 2L, 9L, 5), authentication);
 
         assertThat(response.scopeLabel()).isEqualTo("Prawo karne → Egzamin 2024");
-        verify(cardRepository, never()).findReadableCardsForUserAndSubject(any(), any());
-        verify(cardRepository, never()).findReadableCardsForUserAndCategory(any(), any());
-        verify(cardRepository, never()).findReadableCardsForUser(any());
+        verify(cardRepository, never()).findReadableRefsForUserAndSubject(any(), any());
+        verify(cardRepository, never()).findReadableRefsForUserAndCategory(any(), any());
+        verify(cardRepository, never()).findReadableRefsForUser(any());
     }
 
     @Test
@@ -219,7 +250,8 @@ class ExamServiceTest {
         Subject subject = new Subject();
         subject.setName("Prawo cywilne");
         when(subjectRepository.findById(2L)).thenReturn(Optional.of(subject));
-        when(cardRepository.findReadableCardsForUserAndSubject(2L, 5L)).thenReturn(tests(1, 6));
+        when(cardRepository.findReadableRefsForUserAndSubject(2L, 5L)).thenReturn(CardRefs.of(tests(1, 6)));
+        givenLoadable(tests(1, 6));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
         ExamStartResponse response = service.start(new ExamStartRequest(1L, 2L, null, 5), authentication);
@@ -232,7 +264,8 @@ class ExamServiceTest {
         Category category = new Category();
         category.setName("Student");
         when(categoryRepository.findById(1L)).thenReturn(Optional.of(category));
-        when(cardRepository.findReadableCardsForUserAndCategory(1L, 5L)).thenReturn(tests(1, 6));
+        when(cardRepository.findReadableRefsForUserAndCategory(1L, 5L)).thenReturn(CardRefs.of(tests(1, 6)));
+        givenLoadable(tests(1, 6));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
         ExamStartResponse response = service.start(new ExamStartRequest(1L, null, null, 5), authentication);

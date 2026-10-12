@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
+import pl.tutlaw.backend.card.CardScopes;
 import pl.tutlaw.backend.category.CategoryRepository;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
@@ -70,10 +71,14 @@ public class ExamService {
         String label = scopeLabel(request.categoryId(), request.subjectId(), request.sourceId());
 
         Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedCardIds(user.getId()));
-        List<Card> pool = new ArrayList<>(
-                readableCards(request.categoryId(), request.subjectId(), request.sourceId(), user.getId()).stream()
-                        .filter(card -> card.getCorrectOption() != null)
-                        .filter(card -> !suspended.contains(card.getId()))
+        // Losujemy na samych numerach; pełne karty ładujemy dopiero dla wylosowanych (jedno zapytanie).
+        List<Long> pool = new ArrayList<>(
+                CardScopes.readableRefs(
+                                cardRepository, request.categoryId(), request.subjectId(), request.sourceId(), user.getId())
+                        .stream()
+                        .filter(CardScopes::isTest)
+                        .map(CardRepository.CardRef::getId)
+                        .filter(id -> !suspended.contains(id))
                         .toList());
         if (pool.isEmpty()) {
             throw new IllegalArgumentException(
@@ -81,8 +86,8 @@ public class ExamService {
         }
 
         Collections.shuffle(pool, random);
-        List<TestQueueItemResponse> questions = pool.stream()
-                .limit(request.questionCount())
+        List<Long> drawn = pool.stream().limit(request.questionCount()).toList();
+        List<TestQueueItemResponse> questions = CardScopes.loadInOrder(cardRepository, drawn).stream()
                 .map(ReviewQueueMapper::toTestResponse)
                 .toList();
         return new ExamStartResponse(label, request.questionCount(), questions);
@@ -180,20 +185,6 @@ public class ExamService {
                 ExamScoring.scorePercent(attempt.getCorrectCount(), attempt.getQuestionCount()),
                 attempt.getPassThresholdPercent(), attempt.isPassed(),
                 attempt.getTimeLimitMinutes(), attempt.getDurationSeconds(), attempt.isTimedOut());
-    }
-
-    /** Zakres od najwęższego: źródło, przedmiot, kategoria (rodzaj), a bez żadnego cały materiał użytkownika. */
-    private List<Card> readableCards(Long categoryId, Long subjectId, Long sourceId, Long userId) {
-        if (sourceId != null) {
-            return cardRepository.findReadableCardsForUserAndSource(sourceId, userId);
-        }
-        if (subjectId != null) {
-            return cardRepository.findReadableCardsForUserAndSubject(subjectId, userId);
-        }
-        if (categoryId != null) {
-            return cardRepository.findReadableCardsForUserAndCategory(categoryId, userId);
-        }
-        return cardRepository.findReadableCardsForUser(userId);
     }
 
     /** Czytelna nazwa zakresu do raportu i historii. Nieistniejący zakres to 404. */

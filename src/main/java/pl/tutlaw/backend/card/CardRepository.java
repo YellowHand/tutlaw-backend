@@ -1,5 +1,7 @@
 package pl.tutlaw.backend.card;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,8 +16,29 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     List<Card> findBySourceId(Long sourceId);
 
+    /** Strona kart rozdziału (lista dla administratora). Sortowanie podaje wywołujący w {@code pageable}. */
+    Page<Card> findByChapterId(Long chapterId, Pageable pageable);
+
+    /** Strona kart źródła (lista dla administratora). */
+    Page<Card> findBySourceId(Long sourceId, Pageable pageable);
+
+    /**
+     * Odchudzony widok karty do układania kolejek, planów i losowania egzaminu: samo id, kolejność rozdziału
+     * (null, gdy karta nie należy do rozdziału) i poprawna opcja (null, gdy to fiszka bez formatu testowego).
+     * Bez treści pytań, bo przy tysiącach kart i kilkudziesięciu pytaniach w sesji ładowanie całych kart
+     * tylko po to, żeby większość z nich odrzucić, byłoby marnotrawstwem.
+     */
+    interface CardRef {
+        Long getId();
+
+        Integer getChapterOrder();
+
+        CorrectOption getCorrectOption();
+    }
+
     @Query("""
-            SELECT c FROM Card c
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.id = :subjectId
             AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
@@ -25,13 +48,14 @@ public interface CardRepository extends JpaRepository<Card, Long> {
                 ))
             )
             """)
-    List<Card> findReadableCardsForUserAndSubject(
+    List<CardRef> findReadableRefsForUserAndSubject(
             @Param("subjectId") Long subjectId,
             @Param("userId") Long userId
     );
 
     @Query("""
-            SELECT c FROM Card c
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.id = :sourceId
             AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
@@ -41,7 +65,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
                 ))
             )
             """)
-    List<Card> findReadableCardsForUserAndSource(
+    List<CardRef> findReadableRefsForUserAndSource(
             @Param("sourceId") Long sourceId,
             @Param("userId") Long userId
     );
@@ -52,7 +76,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      * Używane przez globalną kolejkę powtórek.
      */
     @Query("""
-            SELECT c FROM Card c
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            FROM Card c LEFT JOIN c.chapter ch
             WHERE (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
                 OR (c.chapter IS NOT NULL AND c.chapter.id IN (
@@ -61,7 +86,14 @@ public interface CardRepository extends JpaRepository<Card, Long> {
                 ))
             )
             """)
-    List<Card> findReadableCardsForUser(@Param("userId") Long userId);
+    List<CardRef> findReadableRefsForUser(@Param("userId") Long userId);
+
+    /**
+     * Pełne karty o podanych numerach, ze źródłem pobranym od razu (mapowanie odpowiedzi pokazuje jego nazwę).
+     * Kolejność jest dowolna: kto jej potrzebuje, układa ją sam (zob. {@link CardScopes#loadInOrder}).
+     */
+    @Query("SELECT c FROM Card c JOIN FETCH c.source WHERE c.id IN :ids")
+    List<Card> findAllWithSourceByIdIn(@Param("ids") Collection<Long> ids);
 
     /** Czy ta karta jest dostępna dla użytkownika (pula płaska albo przeczytany rozdział): 1 albo 0. */
     @Query("""
@@ -191,7 +223,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     /** Dostępne karty użytkownika w jednej kategorii (rodzaju), do testu lub nauki z całego działu. */
     @Query("""
-            SELECT c FROM Card c
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.category.id = :categoryId
             AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
@@ -201,7 +234,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
                 ))
             )
             """)
-    List<Card> findReadableCardsForUserAndCategory(
+    List<CardRef> findReadableRefsForUserAndCategory(
             @Param("categoryId") Long categoryId,
             @Param("userId") Long userId
     );

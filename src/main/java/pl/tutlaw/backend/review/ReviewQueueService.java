@@ -3,8 +3,8 @@ package pl.tutlaw.backend.review;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
-import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
+import pl.tutlaw.backend.card.CardScopes;
 import pl.tutlaw.backend.review.dto.BacklogResponse;
 import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
@@ -89,11 +89,12 @@ public class ReviewQueueService {
             Long categoryId, Long subjectId, Long sourceId, Integer extraNewCards, Integer extraDueReviews,
             Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> eligibleCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
+        List<CardRepository.CardRef> eligibleCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
         Map<Long, UserCardStateRepository.CardDue> scheduleByCardId = loadScheduleByCardId(user.getId());
-        List<Card> queue = buildQueue(
+        List<Long> queue = buildQueue(
                 eligibleCards, scheduleByCardId, user.getId(), extraNewCards, extraDueReviews, ReviewMode.FLASHCARD);
-        return queue.stream().map(card -> {
+        // Pełne karty ładujemy dopiero dla tych, które naprawdę trafiły do sesji (jedno zapytanie).
+        return CardScopes.loadInOrder(cardRepository, queue).stream().map(card -> {
             int lapses = lapsesOf(scheduleByCardId.get(card.getId()));
             return ReviewQueueMapper.toResponse(card, lapses, leechPolicy.isLeech(lapses));
         }).toList();
@@ -107,11 +108,12 @@ public class ReviewQueueService {
             Long categoryId, Long subjectId, Long sourceId, Integer extraNewCards, Integer extraDueReviews,
             Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> eligibleCards = testCards(getReadableCards(categoryId, subjectId, sourceId, user.getId()));
-        List<Card> queue = buildQueue(
+        List<CardRepository.CardRef> eligibleCards =
+                testCards(getReadableCards(categoryId, subjectId, sourceId, user.getId()));
+        List<Long> queue = buildQueue(
                 eligibleCards, loadScheduleByCardId(user.getId()), user.getId(), extraNewCards, extraDueReviews,
                 ReviewMode.TEST);
-        return queue.stream().map(ReviewQueueMapper::toTestResponse).toList();
+        return CardScopes.loadInOrder(cardRepository, queue).stream().map(ReviewQueueMapper::toTestResponse).toList();
     }
 
     /**
@@ -121,8 +123,8 @@ public class ReviewQueueService {
     public BacklogResponse getBacklog(
             Long categoryId, Long subjectId, Long sourceId, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> readable = getReadableCards(categoryId, subjectId, sourceId, user.getId());
-        List<Card> eligible = mode == ReviewMode.TEST ? testCards(readable) : readable;
+        List<CardRepository.CardRef> readable = getReadableCards(categoryId, subjectId, sourceId, user.getId());
+        List<CardRepository.CardRef> eligible = mode == ReviewMode.TEST ? testCards(readable) : readable;
 
         LocalDateTime now = LocalDateTime.now(clock);
         long dueNow = splitByDue(eligible, loadScheduleByCardId(user.getId()), now).due().size();
@@ -134,7 +136,7 @@ public class ReviewQueueService {
 
     public int countAvailableNewCards(Long categoryId, Long subjectId, Long sourceId, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> readableCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
+        List<CardRepository.CardRef> readableCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
         Map<Long, UserCardStateRepository.CardDue> scheduleByCardId = loadScheduleByCardId(user.getId());
 
         return (int) readableCards.stream().filter(c -> !scheduleByCardId.containsKey(c.getId())).count();
@@ -147,22 +149,14 @@ public class ReviewQueueService {
     }
 
     /** Pytania testowe (z poprawną odpowiedzią) spośród podanych kart. */
-    private static List<Card> testCards(List<Card> cards) {
-        return cards.stream().filter(c -> c.getCorrectOption() != null).toList();
+    private static List<CardRepository.CardRef> testCards(List<CardRepository.CardRef> cards) {
+        return cards.stream().filter(CardScopes::isTest).toList();
     }
 
     /** Zakres od najwęższego: źródło, przedmiot, kategoria (rodzaj), a bez żadnego cały materiał użytkownika. */
-    private List<Card> getReadableCards(Long categoryId, Long subjectId, Long sourceId, Long userId) {
-        if (sourceId != null) {
-            return cardRepository.findReadableCardsForUserAndSource(sourceId, userId);
-        }
-        if (subjectId != null) {
-            return cardRepository.findReadableCardsForUserAndSubject(subjectId, userId);
-        }
-        if (categoryId != null) {
-            return cardRepository.findReadableCardsForUserAndCategory(categoryId, userId);
-        }
-        return cardRepository.findReadableCardsForUser(userId);
+    private List<CardRepository.CardRef> getReadableCards(
+            Long categoryId, Long subjectId, Long sourceId, Long userId) {
+        return CardScopes.readableRefs(cardRepository, categoryId, subjectId, sourceId, userId);
     }
 
     /** Jedno zapytanie na użytkownika zamiast jednego na każdą kartę osobno. */
@@ -175,15 +169,16 @@ public class ReviewQueueService {
     }
 
     /** Karty z minionym terminem (z szansą przypomnienia) i karty jeszcze nietknięte. */
-    private record DueSplit(List<QueueRules.DueItem> due, List<Card> newCards) {
+    private record DueSplit(List<QueueRules.DueItem> due, List<CardRepository.CardRef> newCards) {
     }
 
     private DueSplit splitByDue(
-            List<Card> eligibleCards, Map<Long, UserCardStateRepository.CardDue> scheduleByCardId, LocalDateTime now) {
+            List<CardRepository.CardRef> eligibleCards,
+            Map<Long, UserCardStateRepository.CardDue> scheduleByCardId, LocalDateTime now) {
         List<QueueRules.DueItem> due = new ArrayList<>();
-        List<Card> newCards = new ArrayList<>();
+        List<CardRepository.CardRef> newCards = new ArrayList<>();
 
-        for (Card card : eligibleCards) {
+        for (CardRepository.CardRef card : eligibleCards) {
             UserCardStateRepository.CardDue schedule = scheduleByCardId.get(card.getId());
             if (schedule == null) {
                 newCards.add(card);
@@ -207,43 +202,40 @@ public class ReviewQueueService {
         return schedule == null || schedule.getLapses() == null ? 0 : schedule.getLapses();
     }
 
-    private List<Card> buildQueue(
-            List<Card> eligibleCards, Map<Long, UserCardStateRepository.CardDue> scheduleByCardId, Long userId,
+    /** Numery kart w kolejności sesji: najpierw zaległe do dziennego limitu, potem nowe. Same numery, bez treści. */
+    private List<Long> buildQueue(
+            List<CardRepository.CardRef> eligibleCards,
+            Map<Long, UserCardStateRepository.CardDue> scheduleByCardId, Long userId,
             Integer extraNewCards, Integer extraDueReviews, ReviewMode mode) {
         LocalDateTime now = LocalDateTime.now(clock);
         EffectiveSettings settings = settingsService.effectiveFor(userId);
         DueSplit split = splitByDue(eligibleCards, scheduleByCardId, now);
 
-        Map<Long, Card> cardById = new HashMap<>();
-        for (Card card : eligibleCards) {
-            cardById.put(card.getId(), card);
-        }
-
         // Najpierw najpilniejsze (najniższa szansa przypomnienia), ale tylko tyle, ile jeszcze mieści się w dziennym limicie.
         int allowance = QueueRules.remainingAllowance(
                 settings.maxReviewsPerDay(), dueReviewsDoneToday(userId, mode, now), QueueRules.clampExtra(extraDueReviews));
-        List<Card> dueCards = new ArrayList<>();
+        List<Long> dueIds = new ArrayList<>();
         for (QueueRules.DueItem item : QueueRules.prioritize(split.due())) {
-            if (dueCards.size() >= allowance) break;
-            dueCards.add(cardById.get(item.cardId()));
+            if (dueIds.size() >= allowance) break;
+            dueIds.add(item.cardId());
         }
 
-        List<Card> candidateNewCards = new ArrayList<>(split.newCards());
+        List<CardRepository.CardRef> candidateNewCards = new ArrayList<>(split.newCards());
         // Bez ORDER BY baza zwraca karty w nieokreślonej kolejności, więc „pierwsze 20 nowych" byłoby przypadkowe.
         candidateNewCards.sort(Comparator
                 .comparingInt(ReviewQueueService::chapterOrder)
-                .thenComparing(Card::getId));
+                .thenComparing(CardRepository.CardRef::getId));
 
         if (mode == ReviewMode.TEST) {
-            Collections.shuffle(dueCards, random);
+            Collections.shuffle(dueIds, random);
             Collections.shuffle(candidateNewCards, random);
         }
 
         int slots = newCardSlots(
                 userId, now, QueueRules.clampExtra(extraNewCards), mode, candidateNewCards.size(), settings);
 
-        List<Card> queue = new ArrayList<>(dueCards);
-        candidateNewCards.stream().limit(slots).forEach(queue::add);
+        List<Long> queue = new ArrayList<>(dueIds);
+        candidateNewCards.stream().limit(slots).map(CardRepository.CardRef::getId).forEach(queue::add);
         return queue;
     }
 
@@ -260,7 +252,7 @@ public class ReviewQueueService {
         return (int) Math.max(0, dailyLimit - introducedToday);
     }
 
-    private static int chapterOrder(Card card) {
-        return card.getChapter() == null ? 0 : card.getChapter().getOrderIndex();
+    private static int chapterOrder(CardRepository.CardRef card) {
+        return card.getChapterOrder() == null ? 0 : card.getChapterOrder();
     }
 }

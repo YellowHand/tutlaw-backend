@@ -13,6 +13,7 @@ import pl.tutlaw.backend.card.CorrectOption;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
 import pl.tutlaw.backend.settings.dto.UpdateLearningSettingsRequest;
+import pl.tutlaw.backend.testsupport.CardRefs;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
@@ -216,7 +217,7 @@ class LearningSettingsServiceTest {
     void update_examToday_isAllowed() {
         when(currentUserResolver.resolve(authentication)).thenReturn(user());
         when(repository.findById(5L)).thenReturn(Optional.empty());
-        when(cardRepository.findReadableCardsForUser(5L)).thenReturn(List.of());
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(List.of());
         when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
 
         LearningSettingsResponse response = service.update(request(null, null, null, null, TODAY, null), authentication);
@@ -252,7 +253,7 @@ class LearningSettingsServiceTest {
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
         List<Card> readable = new java.util.ArrayList<>();
         for (long id = 1; id <= 100; id++) readable.add(card(id, id <= 70)); // 70 pytań testowych, 30 fiszek
-        when(cardRepository.findReadableCardsForUser(5L)).thenReturn(readable);
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
         // użytkownik ruszył już 10 pytań testowych (1..10) i 5 fiszek (71..75)
         List<UserCardStateRepository.CardDue> schedule = new java.util.ArrayList<>();
         for (long id = 1; id <= 10; id++) schedule.add(started(id));
@@ -276,6 +277,6 @@ class LearningSettingsServiceTest {
         LearningSettingsResponse response = service.get(authentication);
 
         assertThat(response.plan()).isNull();
-        verify(cardRepository, never()).findReadableCardsForUser(any());
+        verify(cardRepository, never()).findReadableRefsForUser(any());
     }
 }

@@ -4,8 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
+import pl.tutlaw.backend.card.CardScopes;
 import pl.tutlaw.backend.review.SchedulingRules;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
@@ -117,7 +117,7 @@ public class LearningSettingsService {
      * liczymy osobno, bo mają osobne dzienne limity.
      */
     private LearningSettingsResponse.Plan buildPlan(Long userId, long daysToExam) {
-        List<Card> readable = cardRepository.findReadableCardsForUser(userId);
+        List<CardRepository.CardRef> readable = CardScopes.readableRefs(cardRepository, null, null, null, userId);
         Set<Long> started = new HashSet<>();
         for (UserCardStateRepository.CardDue row : stateRepository.findCardDueByUserId(userId)) {
             started.add(row.getCardId());
@@ -125,9 +125,9 @@ public class LearningSettingsService {
 
         long newTests = 0;
         long newFlashcards = 0;
-        for (Card card : readable) {
+        for (CardRepository.CardRef card : readable) {
             if (started.contains(card.getId())) continue;
-            if (card.getCorrectOption() != null) newTests++;
+            if (CardScopes.isTest(card)) newTests++;
             else newFlashcards++;
         }
 

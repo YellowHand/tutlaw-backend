@@ -1,6 +1,8 @@
 package pl.tutlaw.backend.card;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.card.dto.BulkImportResult;
@@ -8,6 +10,8 @@ import pl.tutlaw.backend.card.dto.CardRequest;
 import pl.tutlaw.backend.card.dto.CardResponse;
 import pl.tutlaw.backend.chapter.Chapter;
 import pl.tutlaw.backend.chapter.ChapterRepository;
+import pl.tutlaw.backend.common.PageParams;
+import pl.tutlaw.backend.common.PageResponse;
 import pl.tutlaw.backend.common.exception.ConflictException;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.source.Source;
@@ -33,13 +37,22 @@ public class CardService {
     private final SourceRepository sourceRepository;
     private final TagRepository tagRepository;
 
-    public List<CardResponse> getByChapter(Long chapterId) {
-        return cardRepository.findByChapterId(chapterId).stream()
-                .map(CardMapper::toResponse).toList();
+    /** Strona kart rozdziału (domyślnie 50, najwyżej 200 na stronę), w kolejności numerów. */
+    @Transactional(readOnly = true)
+    public PageResponse<CardResponse> getByChapter(Long chapterId, Integer page, Integer size) {
+        PageParams params = PageParams.of(page, size);
+        return PageResponse.of(cardRepository
+                .findByChapterId(chapterId, PageRequest.of(params.page(), params.size(), Sort.by("id")))
+                .map(CardMapper::toResponse));
     }
 
-    public List<CardResponse> getBySource(Long sourceId) {
-        return cardRepository.findBySourceId(sourceId).stream().map(CardMapper::toResponse).toList();
+    /** Strona kart źródła (domyślnie 50, najwyżej 200 na stronę), w kolejności numerów. */
+    @Transactional(readOnly = true)
+    public PageResponse<CardResponse> getBySource(Long sourceId, Integer page, Integer size) {
+        PageParams params = PageParams.of(page, size);
+        return PageResponse.of(cardRepository
+                .findBySourceId(sourceId, PageRequest.of(params.page(), params.size(), Sort.by("id")))
+                .map(CardMapper::toResponse));
     }
 
     /**

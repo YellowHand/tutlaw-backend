@@ -15,6 +15,7 @@ import pl.tutlaw.backend.settings.LearningDefaults;
 import pl.tutlaw.backend.settings.LearningSettingsService;
 import pl.tutlaw.backend.settings.UserSettings;
 import pl.tutlaw.backend.settings.UserSettingsRepository;
+import pl.tutlaw.backend.testsupport.CardRefs;
 import pl.tutlaw.backend.testsupport.FakeRepos;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.CurrentUserResolver;
@@ -24,6 +25,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
@@ -39,6 +41,8 @@ class ReviewQueueServiceTest {
     private static final class Fixture {
         final List<Card> cards = new ArrayList<>();
         final List<UserCardStateRepository.CardDue> schedule = new ArrayList<>();
+        /** Numery kart, o których pełne treści poproszono bazę (powinny to być tylko karty z sesji). */
+        final List<Long> loadedCardIds = new ArrayList<>();
         long introducedToday = 0;
         long dueReviewsDoneToday = 0;
         /** Ustawienia zapisane przez użytkownika (null = same domyślne z konfiguracji). */
@@ -58,8 +62,13 @@ class ReviewQueueServiceTest {
             users.add(user);
 
             CardRepository cardRepository = FakeRepos.proxy(CardRepository.class, (method, args) -> {
-                if (method.startsWith("findReadableCardsForUser")) {
-                    return new ArrayList<>(cards);
+                if (method.startsWith("findReadableRefsForUser")) {
+                    return CardRefs.of(cards);
+                }
+                if (method.equals("findAllWithSourceByIdIn")) {
+                    Collection<Long> ids = (Collection<Long>) args[0];
+                    loadedCardIds.addAll(ids);
+                    return CardRefs.byIds(cards, ids);
                 }
                 throw new UnsupportedOperationException("CardRepository." + method);
             });
@@ -396,5 +405,71 @@ class ReviewQueueServiceTest {
         assertThat(almost.leech()).isFalse();
         assertThat(brandNew.lapses()).isZero();
         assertThat(brandNew.leech()).isFalse();
+    }
+
+    @Test
+    void onlyTheCardsOfTheSessionAreLoadedInFull_notTheWholePool() {
+        Fixture f = new Fixture(100, 20);
+        for (long id = 1; id <= 300; id++) {
+            f.card(id, false, (int) (id / 50));
+        }
+
+        List<Long> queue = f.service.getQueue(null, null, null, null, null, f.jan)
+                .stream().map(ReviewQueueItemResponse::cardId).toList();
+
+        assertThat(queue).hasSize(20);
+        // z 300 dostępnych kart pełne treści ładuje się tylko dla 20 z sesji, w kolejności sesji
+        assertThat(f.loadedCardIds).hasSize(20).containsExactlyElementsOf(queue);
+    }
+
+    @Test
+    void testQueueLoadsFullQuestionsOnlyForTheSession() {
+        Fixture f = new Fixture(100);
+        f.threeDueCards(true);
+        for (long id = 10; id < 200; id++) {
+            f.card(id, true, 1);
+        }
+
+        List<TestQueueItemResponse> queue = f.service.getTestQueue(null, null, null, null, null, f.jan);
+
+        // 3 zaległe + dzienny limit nowych pytań testowych (40), z 190 dostępnych nowych
+        assertThat(queue).hasSize(3 + 40);
+        assertThat(f.loadedCardIds).hasSize(43).containsExactlyInAnyOrderElementsOf(
+                queue.stream().map(TestQueueItemResponse::cardId).toList());
+    }
+
+    @Test
+    void backlogAndNewCardCountsLoadNoFullCardsAtAll() {
+        Fixture f = new Fixture(2);
+        f.threeDueCards(true);
+        f.card(50, true, 1);
+
+        f.service.getBacklog(null, null, null, ReviewMode.TEST, f.jan);
+        f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan);
+        f.service.countAvailableNewCards(null, null, null, f.jan);
+
+        assertThat(f.loadedCardIds).isEmpty();
+    }
+
+    @Test
+    void anEmptyQueueDoesNotAskTheDatabaseForCards() {
+        Fixture f = new Fixture(100);
+
+        assertThat(f.service.getQueue(null, null, null, null, null, f.jan)).isEmpty();
+        assertThat(f.loadedCardIds).isEmpty();
+    }
+
+    @Test
+    void aCardWithoutAChapterSortsFirstAmongNewCards() {
+        Fixture f = new Fixture(100, 3);
+        Card noChapter = f.card(7, false, 5);
+        noChapter.setChapter(null);
+        f.card(2, false, 1);
+        f.card(1, false, 2);
+
+        List<Long> queue = f.service.getQueue(null, null, null, null, null, f.jan)
+                .stream().map(ReviewQueueItemResponse::cardId).toList();
+
+        assertThat(queue).containsExactly(7L, 2L, 1L);
     }
 }

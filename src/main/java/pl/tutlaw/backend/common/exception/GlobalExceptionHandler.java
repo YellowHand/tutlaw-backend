@@ -1,14 +1,20 @@
 package pl.tutlaw.backend.common.exception;
 
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
@@ -16,9 +22,12 @@ import java.util.stream.Collectors;
 
 /**
  * Jedno miejsce zamieniające wyjątki na odpowiedzi HTTP w jednym formacie ({@link ErrorResponse}).
- * Celowo nie ma tu łapacza ogólnego {@code Exception}: przechwyciłby też odmowę dostępu (403)
- * i zamienił ją w błąd 500.
+ * Na końcu jest łapacz ogólnego {@code Exception}, który zamienia NIEOCZEKIWANE błędy w czytelne 500 bez
+ * szczegółów technicznych. Przepuszcza dalej wszystko, co ma własną, poprawną obsługę (odmowa dostępu 403,
+ * brak logowania 401, błędy żądania 400/404/405/415 ze Springa i wyjątki z @ResponseStatus), żeby ich nie
+ * zamienić w 500 (zob. {@link #isHandledElsewhere}).
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -91,6 +100,36 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    /**
+     * Ostatnia deska ratunku dla błędów, których nikt nie przewidział (np. awaria bazy, błąd programisty).
+     * Szczegóły trafiają tylko do logu, klient dostaje ogólny komunikat. Wyjątki obsługiwane gdzie indziej
+     * rzucamy dalej: Spring (albo filtr bezpieczeństwa) odpowie na nie tak, jak zawsze.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) throws Exception {
+        if (isHandledElsewhere(ex)) {
+            throw ex;
+        }
+        log.error("Nieoczekiwany błąd w {} {}", request.getMethod(), request.getRequestURI(), ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR,
+                "Wystąpił nieoczekiwany błąd. Spróbuj ponownie za chwilę.", request);
+    }
+
+    /**
+     * Wyjątki, które mają własną obsługę i nie wolno ich zamieniać w 500:
+     * odmowa dostępu (403) i brak uwierzytelnienia (401) ze Spring Security, wszystkie wyjątki Springa MVC
+     * z własnym statusem (interfejs ErrorResponse: 404 dla nieznanego adresu, 405, 415, brak parametru...),
+     * błędy typu parametru (np. ?categoryId=abc to 400), błędy serwletu i wyjątki oznaczone @ResponseStatus.
+     */
+    static boolean isHandledElsewhere(Exception ex) {
+        return ex instanceof AccessDeniedException
+                || ex instanceof AuthenticationException
+                || ex instanceof org.springframework.web.ErrorResponse
+                || ex instanceof TypeMismatchException
+                || ex instanceof ServletException
+                || ex.getClass().isAnnotationPresent(ResponseStatus.class);
     }
 
     private static String describe(FieldError error) {

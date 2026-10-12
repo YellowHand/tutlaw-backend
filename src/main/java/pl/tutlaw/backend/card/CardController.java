@@ -9,8 +9,7 @@ import pl.tutlaw.backend.card.dto.BulkCardImportRequest;
 import pl.tutlaw.backend.card.dto.BulkImportResult;
 import pl.tutlaw.backend.card.dto.CardRequest;
 import pl.tutlaw.backend.card.dto.CardResponse;
-
-import java.util.List;
+import pl.tutlaw.backend.common.PageResponse;
 
 @RestController
 @RequiredArgsConstructor
@@ -22,14 +21,20 @@ public class CardController {
     // (uczeń dostaje karty wyłącznie przez kolejkę powtórek, która pilnuje, co ma już odblokowane).
     @GetMapping("/api/chapters/{chapterId}/cards")
     @PreAuthorize("hasRole('ADMIN')")
-    public List<CardResponse> getByChapter(@PathVariable Long chapterId) {
-        return cardService.getByChapter(chapterId);
+    public PageResponse<CardResponse> getByChapter(
+            @PathVariable Long chapterId,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return cardService.getByChapter(chapterId, page, size);
     }
 
     @GetMapping("/api/sources/{sourceId}/cards")
     @PreAuthorize("hasRole('ADMIN')")
-    public List<CardResponse> getBySource(@PathVariable Long sourceId) {
-        return cardService.getBySource(sourceId);
+    public PageResponse<CardResponse> getBySource(
+            @PathVariable Long sourceId,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return cardService.getBySource(sourceId, page, size);
     }
 
     @PostMapping("/api/cards")

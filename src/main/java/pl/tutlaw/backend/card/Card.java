@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import pl.tutlaw.backend.chapter.Chapter;
 import pl.tutlaw.backend.source.Source;
 import pl.tutlaw.backend.tag.Tag;
@@ -24,11 +25,11 @@ public class Card {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "chapter_id")
     private Chapter chapter;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "source_id", nullable = false)
     private Source source;
 
@@ -72,6 +73,8 @@ public class Card {
     @Column(name = "valid_as_of")
     private LocalDate validAsOf;
 
+    /** Etykiety wczytywane partiami (po 100 kart naraz), żeby lista kart nie robiła osobnego zapytania na każdą kartę. */
+    @BatchSize(size = 100)
     @ManyToMany
     @JoinTable(
             name = "card_tags",
