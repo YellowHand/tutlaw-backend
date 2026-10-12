@@ -181,6 +181,37 @@ public interface UserCardStateRepository
     List<StartedCardSummary> findStartedSummariesInSubject(
             @Param("userId") Long userId, @Param("subjectId") Long subjectId);
 
+    /** Wszystkie stany kart użytkownika wraz z treścią pytania, do eksportu jego danych. */
+    @Query("""
+            SELECT s.card.id AS cardId, s.card.front AS cardFront, s.state AS state, s.reps AS reps,
+                   s.lapses AS lapses, s.stability AS stability, s.difficulty AS difficulty,
+                   s.dueDate AS dueDate, s.lastReviewAt AS lastReviewAt
+            FROM UserCardState s
+            WHERE s.user.id = :userId
+            ORDER BY s.card.id
+            """)
+    List<ExportedCardState> findExportRows(@Param("userId") Long userId);
+
+    interface ExportedCardState {
+        Long getCardId();
+
+        String getCardFront();
+
+        CardLearningState getState();
+
+        Integer getReps();
+
+        Integer getLapses();
+
+        Double getStability();
+
+        Double getDifficulty();
+
+        LocalDateTime getDueDate();
+
+        LocalDateTime getLastReviewAt();
+    }
+
     interface StartedCardSummary {
         Long getCardId();
 

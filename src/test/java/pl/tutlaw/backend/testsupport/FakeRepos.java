@@ -24,12 +24,13 @@ public final class FakeRepos {
     private FakeRepos() {
     }
 
-    interface Handler {
+    public interface Handler {
         Object handle(String method, Object[] args) throws Throwable;
     }
 
+    /** Atrapa dowolnego interfejsu: każde wywołanie trafia do {@code handler}, a toString/equals/hashCode działają same. */
     @SuppressWarnings("unchecked")
-    private static <T> T proxy(Class<T> type, Handler handler) {
+    public static <T> T proxy(Class<T> type, Handler handler) {
         return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (self, method, args) -> {
             switch (method.getName()) {
                 case "toString":
@@ -68,6 +69,9 @@ public final class FakeRepos {
                     return store.stream().anyMatch(u -> u.getUniversityEmail().equalsIgnoreCase((String) args[0]));
                 case "findByPrivateEmail":
                     return store.stream().filter(u -> u.getPrivateEmail().equals(args[0])).findFirst();
+                case "delete":
+                    store.remove(args[0]);
+                    return null;
                 default:
                     throw new UnsupportedOperationException("UserRepository." + method);
             }
@@ -126,6 +130,20 @@ public final class FakeRepos {
                             .toList());
                 default:
                     throw new UnsupportedOperationException("PasswordResetTokenRepository." + method);
+            }
+        });
+    }
+
+    /** Zalogowany użytkownik o podanym adresie (tak jak w tokenie JWT: nazwa = adres e-mail). */
+    public static org.springframework.security.core.Authentication authentication(String name) {
+        return proxy(org.springframework.security.core.Authentication.class, (method, args) -> {
+            switch (method) {
+                case "getName":
+                    return name;
+                case "isAuthenticated":
+                    return Boolean.TRUE;
+                default:
+                    throw new UnsupportedOperationException("Authentication." + method);
             }
         });
     }

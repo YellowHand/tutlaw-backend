@@ -128,4 +128,28 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             GROUP BY r.card.source.id
             """)
     List<GroupCount> countSolvedTestQuestionsBySource(@Param("userId") Long userId);
+
+    /** Cała historia odpowiedzi użytkownika, do eksportu jego danych. */
+    @Query("""
+            SELECT r.card.id AS cardId, r.reviewedAt AS reviewedAt, r.mode AS mode, r.rating AS rating,
+                   r.wasCorrect AS wasCorrect, r.wasGuessed AS wasGuessed
+            FROM ReviewLog r
+            WHERE r.user.id = :userId
+            ORDER BY r.reviewedAt, r.id
+            """)
+    List<ExportedReview> findExportRows(@Param("userId") Long userId);
+
+    interface ExportedReview {
+        Long getCardId();
+
+        LocalDateTime getReviewedAt();
+
+        ReviewMode getMode();
+
+        Integer getRating();
+
+        Boolean getWasCorrect();
+
+        Boolean getWasGuessed();
+    }
 }
