@@ -5,6 +5,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import pl.tutlaw.backend.common.exception.UnauthorizedException;
 import pl.tutlaw.backend.progress.ChapterProgressRepository;
+import pl.tutlaw.backend.report.CardReportReason;
+import pl.tutlaw.backend.report.CardReportRepository;
+import pl.tutlaw.backend.report.CardReportStatus;
 import pl.tutlaw.backend.review.CardLearningState;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
@@ -99,6 +102,19 @@ class AccountServiceTest {
                 });
             });
 
+            CardReportRepository reports = FakeRepos.proxy(CardReportRepository.class, (method, args) -> {
+                assertThat(method).isEqualTo("findExportRows");
+                assertThat(args[0]).isEqualTo(1L);
+                return List.of(new CardReportRepository.ExportedReport() {
+                    public Long getCardId() { return 10L; }
+                    public String getCardFront() { return "Co to jest dolus?"; }
+                    public CardReportReason getReason() { return CardReportReason.OUTDATED; }
+                    public String getComment() { return "Przepis się zmienił"; }
+                    public CardReportStatus getStatus() { return CardReportStatus.NEW; }
+                    public LocalDateTime getCreatedAt() { return T.minusHours(3); }
+                });
+            });
+
             service = new AccountService(
                     new CurrentUserResolver(FakeRepos.users(users)),
                     FakeRepos.users(users),
@@ -106,6 +122,7 @@ class AccountServiceTest {
                     progress,
                     states,
                     logs,
+                    reports,
                     new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw")));
         }
     }
@@ -142,6 +159,13 @@ class AccountServiceTest {
         assertThat(review.mode()).isEqualTo("TEST");
         assertThat(review.correct()).isEqualTo(true);
         assertThat(review.unsure()).isFalse();
+
+        assertThat(export.cardReports()).hasSize(1);
+        AccountExportResponse.ReportItem report = export.cardReports().get(0);
+        assertThat(report.question()).isEqualTo("Co to jest dolus?");
+        assertThat(report.reason()).isEqualTo("OUTDATED");
+        assertThat(report.comment()).isEqualTo("Przepis się zmienił");
+        assertThat(report.status()).isEqualTo("NEW");
     }
 
     @Test

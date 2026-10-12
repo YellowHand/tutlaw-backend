@@ -7,6 +7,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.progress.ChapterProgressRepository;
+import pl.tutlaw.backend.report.CardReportRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.user.dto.AccountExportResponse;
@@ -27,6 +28,7 @@ public class AccountService {
     private final ChapterProgressRepository chapterProgressRepository;
     private final UserCardStateRepository stateRepository;
     private final ReviewLogRepository reviewLogRepository;
+    private final CardReportRepository cardReportRepository;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -63,7 +65,14 @@ public class AccountService {
                         r.getWasCorrect(), Boolean.TRUE.equals(r.getWasGuessed())))
                 .toList();
 
-        return new AccountExportResponse(Instant.now(clock), account, progress, states, reviews);
+        List<AccountExportResponse.ReportItem> reports = cardReportRepository
+                .findExportRows(user.getId()).stream()
+                .map(r -> new AccountExportResponse.ReportItem(
+                        r.getCardId(), r.getCardFront(), r.getReason().name(), r.getComment(),
+                        r.getStatus().name(), r.getCreatedAt()))
+                .toList();
+
+        return new AccountExportResponse(Instant.now(clock), account, progress, states, reviews, reports);
     }
 
     /**

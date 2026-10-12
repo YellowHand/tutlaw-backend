@@ -13,7 +13,9 @@ public class ReviewQueueMapper {
                 card.getBack(),
                 card.getPageNumber(),
                 card.isVerbatimQuote(),
-                card.getSource() != null ? card.getSource().getName() : null
+                card.getSource() != null ? card.getSource().getName() : null,
+                card.getLegalBasis(),
+                card.getValidAsOf()
         );
     }
 

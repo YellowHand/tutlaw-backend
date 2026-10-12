@@ -11,7 +11,9 @@ public final class FieldLabels {
             "password", "Hasło",
             "newPassword", "Nowe hasło",
             "acceptedTerms", "Regulamin",
-            "token", "Link"
+            "token", "Link",
+            "reason", "Powód",
+            "comment", "Komentarz"
     );
 
     private FieldLabels() {

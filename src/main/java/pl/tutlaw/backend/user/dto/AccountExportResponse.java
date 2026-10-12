@@ -10,7 +10,8 @@ public record AccountExportResponse(
         Account account,
         List<ChapterProgressItem> chapterProgress,
         List<CardStateItem> cardStates,
-        List<ReviewItem> reviewLogs
+        List<ReviewItem> reviewLogs,
+        List<ReportItem> cardReports
 ) {
 
     public record Account(
@@ -34,6 +35,16 @@ public record AccountExportResponse(
             double difficulty,
             LocalDateTime dueDate,
             LocalDateTime lastReviewAt
+    ) {}
+
+    /** Zgłoszenia błędów w pytaniach wysłane przez użytkownika. */
+    public record ReportItem(
+            Long cardId,
+            String question,
+            String reason,
+            String comment,
+            String status,
+            LocalDateTime createdAt
     ) {}
 
     public record ReviewItem(

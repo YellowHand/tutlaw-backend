@@ -129,4 +129,15 @@ class CardContentRulesTest {
         assertThat(CardContentRules.blankToNull("   ")).isNull();
         assertThat(CardContentRules.blankToNull(null)).isNull();
     }
+
+    @Test
+    void legalBasis_isOptionalAndLimitedTo500Characters() {
+        assertThat(CardContentRules.legalBasisProblem(null)).isNull();
+        assertThat(CardContentRules.legalBasisProblem("   ")).isNull();
+        assertThat(CardContentRules.legalBasisProblem("art. 415 k.c.")).isNull();
+        assertThat(CardContentRules.legalBasisProblem("a".repeat(500))).isNull();
+        assertThat(CardContentRules.legalBasisProblem("a".repeat(501))).isNotNull();
+        // Spacje na brzegach nie liczą się do limitu, tak jak przy zapisie (strip).
+        assertThat(CardContentRules.legalBasisProblem("  " + "a".repeat(500) + "  ")).isNull();
+    }
 }

@@ -62,7 +62,8 @@ public class ReviewService {
         applyReview(user, card, ReviewPolicy.testRating(correct, guessed), request.timeSpentSeconds(),
                 ReviewMode.TEST, correct, guessed, !correct);
 
-        return new TestAnswerResultResponse(correct, card.getCorrectOption(), card.getExplanation());
+        return new TestAnswerResultResponse(
+                correct, card.getCorrectOption(), card.getExplanation(), card.getLegalBasis(), card.getValidAsOf());
     }
 
     /**

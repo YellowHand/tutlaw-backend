@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import pl.tutlaw.backend.card.CardType;
 import pl.tutlaw.backend.card.CorrectOption;
 
+import java.time.LocalDate;
 import java.util.List;
 
 public record CardRequest(
@@ -20,6 +21,8 @@ public record CardRequest(
         String optionB,
         String optionC,
         CorrectOption correctOption,
-        String explanation
+        String explanation,
+        String legalBasis,
+        LocalDate validAsOf
 ) {
 }

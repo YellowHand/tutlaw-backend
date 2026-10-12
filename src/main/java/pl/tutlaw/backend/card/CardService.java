@@ -118,6 +118,10 @@ public class CardService {
                 chapter != null,
                 request.front(), request.back(), request.pageNumber(),
                 request.optionA(), request.optionB(), request.optionC(), request.correctOption());
+        String legalBasisProblem = CardContentRules.legalBasisProblem(request.legalBasis());
+        if (legalBasisProblem != null) {
+            problems.add(legalBasisProblem);
+        }
         if (!problems.isEmpty()) {
             throw new IllegalArgumentException(String.join(" ", problems));
         }
@@ -135,6 +139,8 @@ public class CardService {
         card.setOptionC(CardContentRules.blankToNull(request.optionC()));
         card.setCorrectOption(request.correctOption());
         card.setExplanation(CardContentRules.blankToNull(request.explanation()));
+        card.setLegalBasis(CardContentRules.blankToNull(request.legalBasis()));
+        card.setValidAsOf(request.validAsOf());
         card.setTags(context.tags(request.tagIds()));
         return card;
     }

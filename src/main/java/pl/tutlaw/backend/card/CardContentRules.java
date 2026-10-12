@@ -62,6 +62,18 @@ final class CardContentRules {
         return problems;
     }
 
+    static final int LEGAL_BASIS_MAX_LENGTH = 500;
+
+    /** Podstawa prawna jest opcjonalna, ale ma limit długości (taki sam jak ograniczenie w bazie). Zwraca opis błędu albo null. */
+    static String legalBasisProblem(String legalBasis) {
+        if (legalBasis == null) return null;
+        String trimmed = legalBasis.strip();
+        if (trimmed.codePointCount(0, trimmed.length()) > LEGAL_BASIS_MAX_LENGTH) {
+            return "Podstawa prawna może mieć najwyżej " + LEGAL_BASIS_MAX_LENGTH + " znaków.";
+        }
+        return null;
+    }
+
     /** Pytanie testowe to takie, które ma poprawną odpowiedź (i, po walidacji, komplet opcji). */
     static boolean isTest(CorrectOption correctOption) {
         return correctOption != null;

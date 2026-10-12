@@ -11,6 +11,8 @@ class FieldLabelsTest {
         assertThat(FieldLabels.label("password")).isEqualTo("Hasło");
         assertThat(FieldLabels.label("privateEmail")).isEqualTo("Mail prywatny");
         assertThat(FieldLabels.label("acceptedTerms")).isEqualTo("Regulamin");
+        assertThat(FieldLabels.label("reason")).isEqualTo("Powód");
+        assertThat(FieldLabels.label("comment")).isEqualTo("Komentarz");
     }
 
     @Test

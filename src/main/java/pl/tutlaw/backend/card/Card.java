@@ -8,6 +8,7 @@ import pl.tutlaw.backend.chapter.Chapter;
 import pl.tutlaw.backend.source.Source;
 import pl.tutlaw.backend.tag.Tag;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
@@ -62,6 +63,14 @@ public class Card {
 
     @Column(columnDefinition = "TEXT")
     private String explanation;
+
+    /** Podstawa prawna, np. "art. 415 k.c." Opcjonalna; pokazywana uczącemu się przy odpowiedzi. */
+    @Column(name = "legal_basis", columnDefinition = "TEXT")
+    private String legalBasis;
+
+    /** Na jaki dzień sprawdzono stan prawny pytania. Opcjonalne. */
+    @Column(name = "valid_as_of")
+    private LocalDate validAsOf;
 
     @ManyToMany
     @JoinTable(

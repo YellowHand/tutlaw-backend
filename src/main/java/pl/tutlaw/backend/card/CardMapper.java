@@ -13,7 +13,8 @@ public class CardMapper {
                 card.getPageNumber(), card.isVerbatimQuote(),
                 card.getTags().stream().map(Tag::getName).toList(),
                 card.getOptionA(), card.getOptionB(), card.getOptionC(),
-                card.getCorrectOption(), card.getExplanation()
+                card.getCorrectOption(), card.getExplanation(),
+                card.getLegalBasis(), card.getValidAsOf()
         );
     }
 }
