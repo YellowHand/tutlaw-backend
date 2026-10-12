@@ -6,7 +6,8 @@ public record OverviewResponse(
         int totalCards,
         int cardsStarted,
         int matureCards,
-        double retentionRate,
+        /** Procent udanych powtórek z 30 dni; {@code null}, gdy nie było jeszcze żadnej prawdziwej powtórki. */
+        Double retentionRate,
         List<DailyForecastItem> upcomingReviews
 ) {
 }

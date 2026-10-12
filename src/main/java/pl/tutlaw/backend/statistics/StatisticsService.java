@@ -9,6 +9,7 @@ import pl.tutlaw.backend.chapter.Chapter;
 import pl.tutlaw.backend.chapter.ChapterRepository;
 import pl.tutlaw.backend.common.GroupCount;
 import pl.tutlaw.backend.review.ReviewLogRepository;
+import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.UserCardState;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.review.UserCardStateRepository.StartedCardSummary;
@@ -42,6 +43,8 @@ public class StatisticsService {
     private static final double RETENTION_MIN_ELAPSED_DAYS = 1.0;
     private static final int MAX_ACTIVITY_DAYS = 365;
     private static final int MAX_WEAK_CARDS = 100;
+    private static final int TEST_ACCURACY_WINDOW_DAYS = 30;
+    private static final int TEST_ACTIVITY_DAYS = 28;
 
     private final CardRepository cardRepository;
     private final ChapterRepository chapterRepository;
@@ -74,7 +77,7 @@ public class StatisticsService {
             matureCards = stateRepository.countStartedReadable(userId, MATURE_STABILITY_THRESHOLD);
         }
 
-        double retentionRate = calculateRetentionRate(userId, subjectId);
+        Double retentionRate = calculateRetentionRate(userId, subjectId);
         List<DailyForecastItem> forecast = calculateForecast(userId, subjectId);
 
         return new OverviewResponse((int) totalCards, (int) startedCards, (int) matureCards, retentionRate, forecast);
@@ -148,15 +151,31 @@ public class StatisticsService {
         LocalDate today = LocalDate.now(clock);
         LocalDateTime since = today.minusDays(safeDays - 1L).atStartOfDay();
 
-        Map<LocalDate, Long> countsByDate = reviewLogRepository.findReviewTimesSince(user.getId(), since).stream()
-                .collect(Collectors.groupingBy(LocalDateTime::toLocalDate, Collectors.counting()));
+        return StatisticsMath.perDay(today, safeDays, reviewLogRepository.findReviewTimesSince(user.getId(), since));
+    }
 
-        List<ActivityHeatmapItem> result = new ArrayList<>();
-        for (int i = safeDays - 1; i >= 0; i--) {
-            LocalDate date = today.minusDays(i);
-            result.add(new ActivityHeatmapItem(date, countsByDate.getOrDefault(date, 0L)));
-        }
-        return result;
+    /**
+     * Statystyki Testów: ile pytań jest do rozwiązania, ile już rozwiązano, skuteczność z ostatnich 30 dni
+     * i aktywność z 28 dni. Pytania policzone są tak jak w katalogu Testów, więc liczby na pulpicie i w Testach się zgadzają.
+     */
+    public TestStatsResponse getTestStats(Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        Long userId = user.getId();
+
+        LocalDate today = LocalDate.now(clock);
+        LocalDateTime accuracySince = LocalDateTime.now(clock).minusDays(TEST_ACCURACY_WINDOW_DAYS);
+        LocalDateTime activitySince = today.minusDays(TEST_ACTIVITY_DAYS - 1L).atStartOfDay();
+
+        long total = StatisticsMath.sum(toMap(cardRepository.countReadableTestQuestionsBySource(userId)).values());
+        long solved = StatisticsMath.sum(toMap(reviewLogRepository.countSolvedTestQuestionsBySource(userId)).values());
+        long answers = reviewLogRepository.countAnswersSince(userId, ReviewMode.TEST, accuracySince);
+        long correct = reviewLogRepository.countCorrectAnswersSince(userId, ReviewMode.TEST, accuracySince);
+        List<ActivityHeatmapItem> activity = StatisticsMath.perDay(
+                today, TEST_ACTIVITY_DAYS,
+                reviewLogRepository.findReviewTimesSinceByMode(userId, ReviewMode.TEST, activitySince));
+
+        return new TestStatsResponse(
+                (int) total, (int) solved, answers, correct, StatisticsMath.percentage(correct, answers), activity);
     }
 
     /**
@@ -184,9 +203,9 @@ public class StatisticsService {
      * Wskaźnik zapamiętywania: jaki odsetek prawdziwych powtórek z ostatnich 30 dni skończył się
      * przypomnieniem sobie karty. Nie liczy pierwszego zobaczenia karty ani powtórek tego samego dnia,
      * bo te nie mówią nic o tym, czy materiał się utrwala (wcześniej zawyżały wynik).
-     * Brak takich powtórek to 0.
+     * Brak takich powtórek to {@code null} („brak danych"), a nie 0%.
      */
-    private double calculateRetentionRate(Long userId, Long subjectId) {
+    private Double calculateRetentionRate(Long userId, Long subjectId) {
         LocalDateTime since = LocalDateTime.now(clock).minusDays(RETENTION_WINDOW_DAYS);
 
         long all;
@@ -199,8 +218,7 @@ public class StatisticsService {
             successful = reviewLogRepository.countRecalls(userId, since, RETENTION_MIN_ELAPSED_DAYS, 2);
         }
 
-        if (all == 0) return 0;
-        return successful * 100.0 / all;
+        return StatisticsMath.percentage(successful, all);
     }
 
     private List<DailyForecastItem> calculateForecast(Long userId, Long subjectId) {

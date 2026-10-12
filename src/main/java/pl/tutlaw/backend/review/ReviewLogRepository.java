@@ -39,6 +39,40 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             @Param("since") LocalDateTime since
     );
 
+    /** Chwile odpowiedzi w danym trybie (fiszki albo test) od podanego momentu, do wykresu aktywności. */
+    @Query("""
+            SELECT r.reviewedAt FROM ReviewLog r
+            WHERE r.user.id = :userId AND r.mode = :mode AND r.reviewedAt >= :since
+            """)
+    List<LocalDateTime> findReviewTimesSinceByMode(
+            @Param("userId") Long userId,
+            @Param("mode") ReviewMode mode,
+            @Param("since") LocalDateTime since
+    );
+
+    /** Ile odpowiedzi w danym trybie użytkownik dał od podanego momentu. */
+    @Query("""
+            SELECT COUNT(r) FROM ReviewLog r
+            WHERE r.user.id = :userId AND r.mode = :mode AND r.reviewedAt >= :since
+            """)
+    long countAnswersSince(
+            @Param("userId") Long userId,
+            @Param("mode") ReviewMode mode,
+            @Param("since") LocalDateTime since
+    );
+
+    /** Ile z nich było poprawnych ({@code wasCorrect} jest zapisywane tylko w testach). */
+    @Query("""
+            SELECT COUNT(r) FROM ReviewLog r
+            WHERE r.user.id = :userId AND r.mode = :mode AND r.reviewedAt >= :since
+            AND r.wasCorrect = true
+            """)
+    long countCorrectAnswersSince(
+            @Param("userId") Long userId,
+            @Param("mode") ReviewMode mode,
+            @Param("since") LocalDateTime since
+    );
+
     /**
      * Liczba prawdziwych powtórek (odpowiedzi na kartę widzianą wcześniej, po co najmniej {@code minElapsedDays}
      * dniach) z oceną co najmniej {@code minRating}. Podstawa wskaźnika zapamiętywania:

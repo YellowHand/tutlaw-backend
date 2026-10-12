@@ -43,6 +43,11 @@ public class StatisticsController {
     }
 
 
+    @GetMapping("/tests")
+    public TestStatsResponse getTestStats(Authentication authentication) {
+        return statisticsService.getTestStats(authentication);
+    }
+
     @GetMapping("/activity")
     public List<ActivityHeatmapItem> getActivity(
             @RequestParam(defaultValue = "30") int days,
