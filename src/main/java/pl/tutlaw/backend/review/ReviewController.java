@@ -32,6 +32,10 @@ public class ReviewController {
         return queueService.getQueue(categoryId, subjectId, sourceId, extraNewCards, extraDueReviews, authentication);
     }
 
+    /**
+     * Kolejka testu. {@code extraNewCards=0} oznacza sesję bez nowych pytań (same zaległe powtórki, do dziennego limitu):
+     * z niej korzysta „Powtórz zaległe" na stronie Testy. Bez parametru do zaległych dochodzą nowe pytania w dziennym limicie.
+     */
     @GetMapping("/test-queue")
     public List<TestQueueItemResponse> getTestQueue(
             @RequestParam(required = false) Long categoryId,

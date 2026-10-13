@@ -288,6 +288,51 @@ class ReviewQueueServiceTest {
     }
 
     @Test
+    void zeroNewQuestionsGivesADueOnlyTestSession() {
+        Fixture f = new Fixture(100);
+        f.threeDueCards(true);
+        f.card(50, true, 1); // pytania bez historii: zwykły test by je dołożył
+        f.card(51, true, 1);
+
+        List<Long> dueOnly = f.service.getTestQueue(null, null, null, 0, null, f.jan)
+                .stream().map(TestQueueItemResponse::cardId).toList();
+
+        // To jest sesja „Powtórz zaległe": same pytania z minionym terminem, ani jednego nowego.
+        assertThat(dueOnly).containsExactlyInAnyOrder(1L, 2L, 3L);
+        // Kontrola, że test coś mierzy: bez parametru nowe pytania dochodzą do zaległych.
+        assertThat(f.testQueue()).containsExactlyInAnyOrder(1L, 2L, 3L, 50L, 51L);
+        // Pełne treści ładują się tylko dla pytań z sesji.
+        assertThat(f.loadedCardIds).hasSize(8);
+    }
+
+    @Test
+    void aDueOnlyTestSessionStillRespectsTheDailyReviewLimitAndSkipsTestsFromOtherWorlds() {
+        Fixture f = new Fixture(2);
+        f.threeDueCards(true);
+        f.card(50, true, 1);
+        f.card(60, false, 1);        // fiszka: zaległa, ale to nie Testy
+        f.scheduled(60, 1, 30, 20);
+
+        List<Long> dueOnly = f.service.getTestQueue(null, null, null, 0, null, f.jan)
+                .stream().map(TestQueueItemResponse::cardId).toList();
+
+        // Limit 2 zaległych dziennie: dwa najpilniejsze pytania, bez nowego 50 i bez fiszki 60.
+        assertThat(dueOnly).containsExactlyInAnyOrder(3L, 1L);
+    }
+
+    @Test
+    void aDueOnlyTestSessionIsEmptyWhenNothingIsDueAndLoadsNothing() {
+        Fixture f = new Fixture(100);
+        f.card(50, true, 1);
+        f.card(51, true, 1);
+        f.card(52, true, 1);
+        f.scheduled(52, 5, 1, -3); // termin za 3 dni
+
+        assertThat(f.service.getTestQueue(null, null, null, 0, null, f.jan)).isEmpty();
+        assertThat(f.loadedCardIds).isEmpty();
+    }
+
+    @Test
     void availableNewCardsCountsOnlyCardsWithoutHistory() {
         Fixture f = new Fixture(100);
         f.threeDueCards(false);
