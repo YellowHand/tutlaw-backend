@@ -359,4 +359,44 @@ public interface UserCardStateRepository
 
         Boolean getSuspended();
     }
+
+    /** Stan nauki pytań testowych w jednym pochodzeniu i roku egzaminu: utrwalone i z minionym terminem powtórki. */
+    interface OriginYearStates {
+        QuestionOrigin getOrigin();
+
+        Integer getExamYear();
+
+        Long getMature();
+
+        Long getDue();
+    }
+
+    /**
+     * Pytania testowe, które użytkownik już zaczął, w każdym pochodzeniu i roku egzaminu: ile jest utrwalonych
+     * (stabilność powyżej progu) i ile ma już miniony termin powtórki (bez zawieszonych). Dostępność taka sama jak
+     * w {@link #countDue} i {@link #countStartedReadable}.
+     */
+    @Query("""
+            SELECT s.card.origin AS origin, s.card.examYear AS examYear,
+                   SUM(CASE WHEN s.stability > :matureStability THEN 1 ELSE 0 END) AS mature,
+                   SUM(CASE WHEN s.suspended = false AND s.dueDate <= :now THEN 1 ELSE 0 END) AS due
+            FROM UserCardState s
+            WHERE s.user.id = :userId
+            AND s.card.correctOption IS NOT NULL
+            AND s.card.hidden = false
+            AND s.reps > 0
+            AND (
+                s.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (s.card.chapter IS NOT NULL AND s.card.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY s.card.origin, s.card.examYear
+            """)
+    List<OriginYearStates> countTestStatesByOriginYear(
+            @Param("userId") Long userId,
+            @Param("now") LocalDateTime now,
+            @Param("matureStability") double matureStability
+    );
 }

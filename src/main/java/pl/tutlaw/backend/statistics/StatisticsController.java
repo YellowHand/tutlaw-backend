@@ -17,6 +17,7 @@ import java.util.List;
 public class StatisticsController {
 
     private final StatisticsService statisticsService;
+    private final OriginStatisticsService originStatisticsService;
 
     /** Przegląd nauki. {@code mode}: FLASHCARD (tylko fiszki), TEST (tylko pytania testowe), bez trybu: cały materiał. */
     @GetMapping("/overview")
@@ -56,6 +57,12 @@ public class StatisticsController {
     @GetMapping("/tests")
     public TestStatsResponse getTestStats(Authentication authentication) {
         return statisticsService.getTestStats(authentication);
+    }
+
+    /** Statystyki Testów według pochodzenia pytań i roku egzaminu (wszystkie pochodzenia, bez filtra z Testów). */
+    @GetMapping("/origins")
+    public OriginStatsResponse getOriginStats(Authentication authentication) {
+        return originStatisticsService.getOriginStats(authentication);
     }
 
     @GetMapping("/activity")

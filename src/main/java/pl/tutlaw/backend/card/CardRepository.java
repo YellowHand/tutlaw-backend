@@ -316,4 +316,23 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             @Param("userId") Long userId,
             @Param("origins") Collection<QuestionOrigin> origins
     );
+
+    /**
+     * Pytania testowe dostępne dla użytkownika (nieukryte, z puli płaskiej albo z przeczytanego rozdziału) w każdym
+     * pochodzeniu i roku egzaminu. Ta sama definicja „dostępne" co w katalogu Testów, więc liczby się zgadzają.
+     */
+    @Query("""
+            SELECT c.origin AS origin, c.examYear AS examYear, COUNT(c) AS total
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY c.origin, c.examYear
+            """)
+    List<OriginYearCount> countReadableTestQuestionsByOriginYear(@Param("userId") Long userId);
 }

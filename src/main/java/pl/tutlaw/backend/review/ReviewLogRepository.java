@@ -4,6 +4,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import pl.tutlaw.backend.card.OriginYearCount;
 import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.common.GroupCount;
 
@@ -286,4 +287,67 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
 
         Boolean getWasGuessed();
     }
+
+    /**
+     * Ile różnych dostępnych pytań użytkownik rozwiązał co najmniej raz w teście, w każdym pochodzeniu i roku egzaminu.
+     * Ta sama definicja co {@link #countSolvedTestQuestionsBySource}, tylko pogrupowana inaczej.
+     */
+    @Query("""
+            SELECT r.card.origin AS origin, r.card.examYear AS examYear, COUNT(DISTINCT r.card.id) AS total
+            FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND r.card.hidden = false
+            AND (
+                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY r.card.origin, r.card.examYear
+            """)
+    List<OriginYearCount> countSolvedTestQuestionsByOriginYear(@Param("userId") Long userId);
+
+    /** Odpowiedzi w testach w jednym pochodzeniu i roku: wszystkie, poprawne i pewne błędy (bez „Nie jestem pewien"). */
+    interface OriginYearAnswers {
+        QuestionOrigin getOrigin();
+
+        Integer getExamYear();
+
+        Long getAnswers();
+
+        Long getCorrect();
+
+        Long getConfidentMistakes();
+    }
+
+    /**
+     * Odpowiedzi w testach od podanego momentu, pogrupowane po pochodzeniu i roku egzaminu pytania. Liczą się tylko
+     * pytania dostępne teraz dla użytkownika (nieukryte, z puli płaskiej albo z przeczytanego rozdziału), tak jak
+     * w liczbie pytań i rozwiązanych.
+     */
+    @Query("""
+            SELECT r.card.origin AS origin, r.card.examYear AS examYear,
+                   COUNT(r) AS answers,
+                   SUM(CASE WHEN r.wasCorrect = true THEN 1 ELSE 0 END) AS correct,
+                   SUM(CASE WHEN r.wasCorrect = false AND r.wasGuessed = false THEN 1 ELSE 0 END) AS confidentMistakes
+            FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND r.reviewedAt >= :since
+            AND r.card.hidden = false
+            AND (
+                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY r.card.origin, r.card.examYear
+            """)
+    List<OriginYearAnswers> countTestAnswersByOriginYear(
+            @Param("userId") Long userId,
+            @Param("since") LocalDateTime since
+    );
 }
