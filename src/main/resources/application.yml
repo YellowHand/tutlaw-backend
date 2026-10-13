@@ -53,3 +53,6 @@ management:
 
 server:
   port: ${PORT:8080}
+  # Za serwerem pośredniczącym (nginx, hosting) ustaw FORWARD_HEADERS_STRATEGY=native, inaczej limiter prób logowania
+  # widzi adres serwera pośredniczącego zamiast klienta (wszyscy mają wtedy jeden wspólny limit). Lokalnie: none.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}

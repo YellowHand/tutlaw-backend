@@ -7,9 +7,12 @@ import pl.tutlaw.backend.auth.dto.AuthResponse;
 import pl.tutlaw.backend.auth.dto.LoginRequest;
 import pl.tutlaw.backend.auth.dto.RegisterRequest;
 import pl.tutlaw.backend.testsupport.FakeRepos;
+import pl.tutlaw.backend.common.exception.UnauthorizedException;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.Role;
 import pl.tutlaw.backend.user.User;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -37,10 +40,12 @@ class AuthFlowTest {
         final List<PasswordResetToken> resetTokens = new ArrayList<>();
         final FakeRepos.Mailbox mailbox = new FakeRepos.Mailbox();
         int dummyChecks = 0;
+        int encodes = 0;
 
         final PasswordEncoder encoder = new PasswordEncoder() {
             @Override
             public String encode(CharSequence raw) {
+                encodes++;
                 return "hash:" + raw;
             }
 
@@ -65,6 +70,7 @@ class AuthFlowTest {
                 encoder,
                 jwt,
                 new EmailService(mailbox.sender(), "https://tutlaw.example/"),
+                new AfterCommitMailer(Runnable::run),
                 clock);
 
         LocalDateTime now() {
@@ -121,17 +127,93 @@ class AuthFlowTest {
     }
 
     @Test
-    void registerRejectsDuplicatesIgnoringCase() {
+    void registerForAnExistingAddressLooksLikeSuccessAndChangesNothing() {
+        Fixture f = new Fixture();
+        f.register("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        f.mailbox.sent.clear();
+
+        // Ten sam adres prywatny (inna wielkość liter), potem ten sam uczelniany: żadnego wyjątku, żadnej poczty.
+        f.register("JAN@gmail.com", "inny@uni.pl", "innehaslo99");
+        f.register("inny@gmail.com", "Jan@Uni.pl", "innehaslo99");
+
+        assertThat(f.users).hasSize(1);
+        assertThat(f.users.get(0).getPasswordHash()).isEqualTo("hash:haslo1234");
+        assertThat(f.verificationTokens).hasSize(1);
+        assertThat(f.mailbox.sent).isEmpty();
+    }
+
+    @Test
+    void registerHashesThePasswordEvenWhenTheAccountExists_soTheTimingDoesNotGiveItAway() {
         Fixture f = new Fixture();
         f.register("jan@gmail.com", "jan@uni.pl", "haslo1234");
 
-        assertThatThrownBy(() -> f.register("JAN@gmail.com", "inny@uni.pl", "haslo1234"))
+        f.encodes = 0;
+        f.register("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        int encodesForExisting = f.encodes;
+        f.encodes = 0;
+        f.register("nowy@gmail.com", "nowy@uni.pl", "haslo1234");
+
+        assertThat(encodesForExisting).isEqualTo(1);
+        assertThat(f.encodes).isEqualTo(encodesForExisting);
+    }
+
+    @Test
+    void registerStillRejectsTermsAndPasswordProblemsForExistingAddressesToo() {
+        Fixture f = new Fixture();
+        f.register("jan@gmail.com", "jan@uni.pl", "haslo1234");
+
+        // Te błędy nie zależą od tego, czy konto istnieje, więc nie zdradzają niczego i nadal są zgłaszane.
+        assertThatThrownBy(() -> f.register("jan@gmail.com", "jan@uni.pl", "krotkie"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("już istnieje");
-        assertThatThrownBy(() -> f.register("inny@gmail.com", "Jan@Uni.pl", "haslo1234"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("uczelniany");
+                .hasMessageContaining("co najmniej 8");
+    }
+
+    @Test
+    void registerSendsTheActivationMailOnlyAfterCommit() {
+        Fixture f = new Fixture();
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            f.register("jan@gmail.com", "jan@uni.pl", "haslo1234");
+            assertThat(f.mailbox.sent).isEmpty(); // transakcja jeszcze trwa
+
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        assertThat(f.mailbox.sent).hasSize(1);
+        assertThat(f.mailbox.last().getTo()[0]).isEqualTo("jan@uni.pl");
+    }
+
+    @Test
+    void registerSendsNothingWhenTheTransactionRollsBack() {
+        Fixture f = new Fixture();
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            f.register("jan@gmail.com", "jan@uni.pl", "haslo1234");
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK); // bez afterCommit
+            }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        assertThat(f.mailbox.sent).isEmpty();
+    }
+
+    @Test
+    void registerSucceedsEvenWhenTheMailServerIsDown() {
+        Fixture f = new Fixture();
+        f.mailbox.failing = true;
+
+        f.register("jan@gmail.com", "jan@uni.pl", "haslo1234"); // wcześniej kończyło się błędem 500 i wycofaniem konta
+
         assertThat(f.users).hasSize(1);
+        assertThat(f.verificationTokens).hasSize(1);
     }
 
     @Test
@@ -372,5 +454,125 @@ class AuthFlowTest {
         assertThatThrownBy(() -> g.service.resetPassword(expiredToken, "nowehaslo99"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(AuthService.INVALID_RESET_LINK);
+    }
+
+    // ---------------------------------------------------------------- zmiana hasła z konta i unieważnianie sesji
+
+    private long nowEpochSeconds(Fixture f) {
+        return f.clock.instant().getEpochSecond();
+    }
+
+    @Test
+    void changePasswordSetsNewHashInvalidatesOldSessionsAndReturnsAFreshToken() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        f.mailbox.sent.clear();
+        User user = f.users.get(0);
+        assertThat(user.getTokensValidFrom()).isNull();
+
+        AuthResponse response = f.service.changePassword("jan@gmail.com", "haslo1234", "nowehaslo99");
+
+        assertThat(response.accessToken()).isEqualTo("jwt:jan@gmail.com:STUDENT");
+        assertThat(user.getPasswordHash()).isEqualTo("hash:nowehaslo99");
+        assertThat(user.getTokensValidFrom()).isEqualTo(nowEpochSeconds(f));
+        assertThatThrownBy(() -> f.service.login(new LoginRequest("jan@gmail.com", "haslo1234")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(f.service.login(new LoginRequest("jan@gmail.com", "nowehaslo99")).accessToken()).isNotNull();
+    }
+
+    @Test
+    void changePasswordNotifiesTheUniversityAddressWithoutAnyToken() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        f.mailbox.sent.clear();
+
+        f.service.changePassword("jan@gmail.com", "haslo1234", "nowehaslo99");
+
+        assertThat(f.mailbox.sent).hasSize(1);
+        SimpleMailMessage mail = f.mailbox.last();
+        assertThat(mail.getTo()[0]).isEqualTo("jan@uni.pl");
+        assertThat(mail.getSubject()).contains("zostało zmienione");
+        assertThat(mail.getText()).contains("https://tutlaw.example/forgot-password");
+        assertThat(mail.getText()).doesNotContain("token=").doesNotContain("nowehaslo99").doesNotContain("haslo1234");
+    }
+
+    @Test
+    void changePasswordClosesOpenResetLinks() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        f.service.forgotPassword("jan@gmail.com");
+        String resetToken = f.tokenFromLastMail();
+
+        f.service.changePassword("jan@gmail.com", "haslo1234", "nowehaslo99");
+
+        assertThatThrownBy(() -> f.service.resetPassword(resetToken, "jeszczeinne99"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(AuthService.INVALID_RESET_LINK);
+    }
+
+    @Test
+    void changePasswordWithAWrongCurrentPasswordIsRefusedAndChangesNothing() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        f.mailbox.sent.clear();
+
+        assertThatThrownBy(() -> f.service.changePassword("jan@gmail.com", "zlehaslo99", "nowehaslo99"))
+                .isInstanceOf(WrongPasswordException.class)
+                .hasMessageContaining("Obecne hasło");
+
+        User user = f.users.get(0);
+        assertThat(user.getPasswordHash()).isEqualTo("hash:haslo1234");
+        assertThat(user.getTokensValidFrom()).isNull();
+        assertThat(f.mailbox.sent).isEmpty();
+    }
+
+    @Test
+    void changePasswordRejectsWeakAndUnchangedPasswords_withoutCountingThemAsWrongGuesses() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+
+        assertThatThrownBy(() -> f.service.changePassword("jan@gmail.com", "haslo1234", "krotkie"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .isNotInstanceOf(WrongPasswordException.class)
+                .hasMessageContaining("co najmniej 8");
+        assertThatThrownBy(() -> f.service.changePassword("jan@gmail.com", "haslo1234", "haslo1234"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .isNotInstanceOf(WrongPasswordException.class)
+                .hasMessageContaining("inne niż obecne");
+
+        assertThat(f.users.get(0).getPasswordHash()).isEqualTo("hash:haslo1234");
+        assertThat(f.users.get(0).getTokensValidFrom()).isNull();
+    }
+
+    @Test
+    void changePasswordForAnUnknownAccountIsUnauthorized() {
+        Fixture f = new Fixture();
+
+        assertThatThrownBy(() -> f.service.changePassword("nikt@gmail.com", "haslo1234", "nowehaslo99"))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void changePasswordSucceedsEvenWhenTheNotificationCannotBeSent() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        f.mailbox.failing = true;
+
+        f.service.changePassword("jan@gmail.com", "haslo1234", "nowehaslo99"); // bez wyjątku
+
+        assertThat(f.users.get(0).getPasswordHash()).isEqualTo("hash:nowehaslo99");
+    }
+
+    @Test
+    void resetPasswordAlsoInvalidatesExistingSessions() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        f.service.forgotPassword("jan@gmail.com");
+        String rawToken = f.tokenFromLastMail();
+        f.clock.advance(Duration.ofMinutes(5));
+
+        f.service.resetPassword(rawToken, "nowehaslo99");
+
+        assertThat(f.users.get(0).getTokensValidFrom()).isEqualTo(nowEpochSeconds(f));
     }
 }

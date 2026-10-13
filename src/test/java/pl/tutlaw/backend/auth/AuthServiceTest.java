@@ -9,7 +9,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import pl.tutlaw.backend.auth.dto.RegisterRequest;
 import pl.tutlaw.backend.user.UserRepository;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -25,14 +28,14 @@ class AuthServiceTest {
     private AuthService authService;
 
     @Test
-    void shouldThrowWhenPrivateEmailAlreadyExists() {
+    void registerForAnExistingAddressIsSilentlyIgnored() {
         RegisterRequest request = new RegisterRequest(
                 "existing@gmail.com", "existing@studms.ug.edu.pl", "password123", true);
 
         when(userRepository.existsByPrivateEmailIgnoreCase("existing@gmail.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.register(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Konto z tym adresem e-mail już istnieje");
+        // Odpowiedź ma być taka sama jak dla nowego konta: żadnego błędu, który zdradzałby, że konto istnieje.
+        assertThatCode(() -> authService.register(request)).doesNotThrowAnyException();
+        verify(userRepository, never()).save(any());
     }
 }

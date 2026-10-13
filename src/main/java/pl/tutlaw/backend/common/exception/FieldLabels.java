@@ -10,6 +10,7 @@ public final class FieldLabels {
             "universityEmail", "Mail uczelniany",
             "password", "Hasło",
             "newPassword", "Nowe hasło",
+            "currentPassword", "Obecne hasło",
             "acceptedTerms", "Regulamin",
             "token", "Link",
             "reason", "Powód",

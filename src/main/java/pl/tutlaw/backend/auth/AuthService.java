@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.auth.dto.AuthResponse;
 import pl.tutlaw.backend.auth.dto.LoginRequest;
 import pl.tutlaw.backend.auth.dto.RegisterRequest;
+import pl.tutlaw.backend.common.exception.UnauthorizedException;
 import pl.tutlaw.backend.user.User;
 import pl.tutlaw.backend.user.UserRepository;
 
@@ -38,11 +39,19 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailService emailService;
+    private final AfterCommitMailer mailer;
     private final Clock clock;
 
     /** Skrót nieistniejącego hasła: logowanie na nieznany adres kosztuje tyle samo czasu co błędne hasło. */
     private volatile String dummyHash;
 
+    /**
+     * Zakłada konto. Odpowiedź dla klienta jest taka sama, czy adres był wolny, czy konto już istnieje: obcy nie może
+     * tą drogą sprawdzać, kto ma konto. Dla istniejącego konta nic się nie dzieje (nie wysyłamy też maila, bo
+     * takie maile można by wykorzystać do zalewania cudzej skrzynki). Hasło jest haszowane zawsze i na początku,
+     * żeby czas odpowiedzi nie zdradzał, czy konto istnieje. Kto zgubił link aktywacyjny, ma "wyślij ponownie";
+     * kto zapomniał hasła, ma reset.
+     */
     @Transactional
     public void register(RegisterRequest request) {
         if (!Boolean.TRUE.equals(request.acceptedTerms())) {
@@ -53,20 +62,21 @@ public class AuthService {
             throw new IllegalArgumentException(passwordProblem);
         }
 
+        String passwordHash = passwordEncoder.encode(request.password());
+
         String privateEmail = AuthRules.normalizeEmail(request.privateEmail());
         String universityEmail = AuthRules.normalizeEmail(request.universityEmail());
-        if (userRepository.existsByPrivateEmailIgnoreCase(privateEmail)) {
-            throw new IllegalArgumentException("Konto z tym adresem e-mail już istnieje");
-        }
-        if (userRepository.existsByUniversityEmailIgnoreCase(universityEmail)) {
-            throw new IllegalArgumentException("Ten adres uczelniany jest już użyty w innym koncie");
+        if (userRepository.existsByPrivateEmailIgnoreCase(privateEmail)
+                || userRepository.existsByUniversityEmailIgnoreCase(universityEmail)) {
+            log.info("Registration ignored: an account with one of these addresses already exists");
+            return;
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
         User user = new User();
         user.setPrivateEmail(privateEmail);
         user.setUniversityEmail(universityEmail);
-        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setPasswordHash(passwordHash);
         user.setTermsAcceptedAt(now);
         userRepository.save(user);
 
@@ -74,7 +84,7 @@ public class AuthService {
 
         log.info("Verification link generated for university email {}: http://localhost:5173/verify?token={}",
                 user.getUniversityEmail(), token.getToken());
-        emailService.sendVerificationEmail(user.getUniversityEmail(), token.getToken());
+        sendVerificationAfterCommit(user, token);
     }
 
     @Transactional
@@ -126,12 +136,8 @@ public class AuthService {
         }
 
         EmailVerificationToken token = newVerificationToken(user, now);
-        try {
-            emailService.sendVerificationEmail(user.getUniversityEmail(), token.getToken());
-        } catch (RuntimeException e) {
-            // Błąd poczty nie może zdradzić, że konto istnieje, więc odpowiedź dla użytkownika zostaje taka sama.
-            log.error("Nie udało się wysłać ponownie linku aktywacyjnego (użytkownik {})", user.getId(), e);
-        }
+        // Mail wychodzi po zatwierdzeniu i poza żądaniem: błąd poczty ani czas wysyłki nie zdradzają, że konto istnieje.
+        sendVerificationAfterCommit(user, token);
     }
 
     /**
@@ -160,11 +166,9 @@ public class AuthService {
         token.setCreatedAt(now);
         resetTokenRepository.save(token);
 
-        try {
-            emailService.sendPasswordResetEmail(user.getUniversityEmail(), rawToken);
-        } catch (RuntimeException e) {
-            log.error("Nie udało się wysłać linku do zmiany hasła (użytkownik {})", user.getId(), e);
-        }
+        String universityEmail = user.getUniversityEmail();
+        mailer.send("zmiana hasła, użytkownik " + user.getId(),
+                () -> emailService.sendPasswordResetEmail(universityEmail, rawToken));
     }
 
     @Transactional
@@ -183,14 +187,48 @@ public class AuthService {
 
         User user = token.getUser();
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        // Po resecie hasła wszystkie dotychczasowe sesje przestają działać (ktoś mógł mieć dostęp do konta).
+        user.setTokensValidFrom(nowEpochSeconds());
         userRepository.save(user);
 
-        // Ten link i wszystkie wcześniejsze, których nikt nie użył, przestają działać.
-        for (PasswordResetToken open : resetTokenRepository.findByUserIdAndUsedAtIsNull(user.getId())) {
-            open.setUsedAt(now);
-            resetTokenRepository.save(open);
-        }
+        closeOpenResetTokens(user, now);
         log.info("Password changed for user {}", user.getId());
+    }
+
+    /**
+     * Zmiana hasła zalogowanego użytkownika. Wymaga obecnego hasła (zły: {@link WrongPasswordException}).
+     * Wszystkie dotychczasowe sesje przestają działać, a wywołujący dostaje świeży token dla bieżącej, więc nie zostaje wylogowany.
+     * Otwarte linki do resetu hasła są unieważniane, a na adres uczelniany idzie powiadomienie o zmianie.
+     */
+    @Transactional
+    public AuthResponse changePassword(String email, String currentPassword, String newPassword) {
+        User user = userRepository.findByPrivateEmail(email)
+                .orElseThrow(() -> new UnauthorizedException("Konto użytkownika nie istnieje"));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            log.warn("Password change refused for user {}: wrong current password", user.getId());
+            throw new WrongPasswordException("Obecne hasło jest nieprawidłowe");
+        }
+        String passwordProblem = AuthRules.passwordProblem(newPassword);
+        if (passwordProblem != null) {
+            throw new IllegalArgumentException(passwordProblem);
+        }
+        if (newPassword.equals(currentPassword)) {
+            throw new IllegalArgumentException("Nowe hasło musi być inne niż obecne");
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setTokensValidFrom(nowEpochSeconds());
+        userRepository.save(user);
+        closeOpenResetTokens(user, now);
+
+        String universityEmail = user.getUniversityEmail();
+        mailer.send("zmiana hasła z konta, użytkownik " + user.getId(),
+                () -> emailService.sendPasswordChangedEmail(universityEmail));
+        log.info("Password changed from the account page for user {}", user.getId());
+
+        return new AuthResponse(jwtService.generateToken(user.getPrivateEmail(), user.getRole()));
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -210,6 +248,25 @@ public class AuthService {
         }
 
         return new AuthResponse(jwtService.generateToken(user.getPrivateEmail(), user.getRole()));
+    }
+
+    /** Unieważnia ten link i wszystkie wcześniejsze, których nikt nie użył. */
+    private void closeOpenResetTokens(User user, LocalDateTime now) {
+        for (PasswordResetToken open : resetTokenRepository.findByUserIdAndUsedAtIsNull(user.getId())) {
+            open.setUsedAt(now);
+            resetTokenRepository.save(open);
+        }
+    }
+
+    private void sendVerificationAfterCommit(User user, EmailVerificationToken token) {
+        String universityEmail = user.getUniversityEmail();
+        String rawToken = token.getToken();
+        mailer.send("aktywacja konta " + user.getId(), () -> emailService.sendVerificationEmail(universityEmail, rawToken));
+    }
+
+    /** Aktualna chwila w sekundach od 1970, w tej samej mierze co claim iat w tokenie. */
+    private long nowEpochSeconds() {
+        return clock.instant().getEpochSecond();
     }
 
     private EmailVerificationToken newVerificationToken(User user, LocalDateTime now) {

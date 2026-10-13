@@ -3,6 +3,8 @@ package pl.tutlaw.backend.auth;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pl.tutlaw.backend.auth.dto.*;
@@ -10,15 +12,23 @@ import pl.tutlaw.backend.auth.dto.*;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
     private final AuthRateLimiter rateLimiter;
 
+    /** Odpowiedź jest zawsze taka sama (200), czy konto już istniało, czy nie. */
     @PostMapping("/register")
     public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest http) {
         rateLimiter.checkRegister(http.getRemoteAddr());
-        authService.register(request);
+        try {
+            authService.register(request);
+        } catch (DataIntegrityViolationException e) {
+            // Dwa równoległe żądania z tym samym adresem: unikalność w bazie przepuściła tylko jedno. Dla drugiego
+            // (transakcja już wycofana) odpowiedź jest taka sama jak dla każdego istniejącego konta.
+            log.info("Registration raced with another request for the same address; treated as existing account");
+        }
         return ResponseEntity.ok().build();
     }
 

@@ -43,4 +43,11 @@ public class User {
     /** Kiedy zaakceptowano regulamin i politykę prywatności. Null: konto założone przed ich wprowadzeniem. */
     @Column(name = "terms_accepted_at")
     private LocalDateTime termsAcceptedAt;
+
+    /**
+     * Tokeny JWT wystawione przed tą chwilą (sekundy od 1970, jak claim iat) przestają działać. Ustawiane przy zmianie
+     * i resecie hasła. Null: brak ograniczenia.
+     */
+    @Column(name = "tokens_valid_from")
+    private Long tokensValidFrom;
 }

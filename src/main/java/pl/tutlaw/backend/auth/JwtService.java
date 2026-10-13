@@ -46,6 +46,13 @@ public class JwtService {
                 .parseSignedClaims(token).getPayload().getSubject();
     }
 
+    /** Kiedy token wystawiono (claim iat), w sekundach od 1970. Null, gdy token nie ma tego claimu. */
+    public Long extractIssuedAtEpochSeconds(String token) {
+        Date issuedAt = Jwts.parser().verifyWith(key).build()
+                .parseSignedClaims(token).getPayload().getIssuedAt();
+        return issuedAt == null ? null : issuedAt.getTime() / 1000;
+    }
+
     public boolean isTokenValid(String token) {
         try {
             Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
