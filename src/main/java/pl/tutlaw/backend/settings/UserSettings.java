@@ -46,6 +46,13 @@ public class UserSettings {
     @Column(name = "shuffle_options", nullable = false)
     private boolean shuffleOptions = true;
 
+    /**
+     * Filtr pochodzenia pytań w Testach: kody {@code QuestionOrigin} oddzielone przecinkami albo {@code null}
+     * (wszystkie). Zapisywany i odczytywany przez {@code OriginFilterService}.
+     */
+    @Column(name = "test_origins", length = 200)
+    private String testOrigins;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 

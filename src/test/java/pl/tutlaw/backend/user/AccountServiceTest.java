@@ -251,6 +251,17 @@ class AccountServiceTest {
         assertThat(settings.desiredRetention()).isNull();
         assertThat(settings.examDate()).isEqualTo(LocalDate.of(2026, 12, 1));
         assertThat(settings.shuffleOptions()).isFalse();
+        assertThat(settings.testOrigins()).isNull(); // brak filtra = wszystkie pochodzenia
+    }
+
+    @Test
+    void exportContainsTheOriginFilter() {
+        Fixture f = new Fixture();
+        UserSettings stored = new UserSettings(1L);
+        stored.setTestOrigins("NOTARY,BAILIFF");
+        f.storedSettings = stored;
+
+        assertThat(f.service.export(f.jan).learningSettings().testOrigins()).isEqualTo("NOTARY,BAILIFF");
     }
 
     @Test

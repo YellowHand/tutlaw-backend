@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CardScopes;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.review.SchedulingRules;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
@@ -99,7 +100,8 @@ public class LearningSettingsService {
 
     private LearningSettingsResponse describe(Long userId, UserSettings stored, LocalDate today) {
         EffectiveSettings e = resolve(stored, today);
-        LearningSettingsResponse.Plan plan = e.daysToExam() == null ? null : buildPlan(userId, e.daysToExam());
+        LearningSettingsResponse.Plan plan = e.daysToExam() == null
+                ? null : buildPlan(userId, e.daysToExam(), OriginFilterService.parse(stored == null ? null : stored.getTestOrigins()));
 
         return new LearningSettingsResponse(
                 e.newCardsPerDay(), e.newTestQuestionsPerDay(), e.maxReviewsPerDay(), e.desiredRetention(),
@@ -114,9 +116,9 @@ public class LearningSettingsService {
     /**
      * Ile nowych pytań i fiszek zostało do rozpoczęcia i ile dziennie trzeba, żeby zdążyć przed egzaminem.
      * „Nowe" to dostępne dla użytkownika karty, których jeszcze nie ruszył. Pytania testowe i zwykłe fiszki
-     * liczymy osobno, bo mają osobne dzienne limity.
+     * liczymy osobno, bo mają osobne dzienne limity. Pytania liczą się tylko z wybranych pochodzeń (filtr w Testach).
      */
-    private LearningSettingsResponse.Plan buildPlan(Long userId, long daysToExam) {
+    private LearningSettingsResponse.Plan buildPlan(Long userId, long daysToExam, Set<QuestionOrigin> testOrigins) {
         List<CardRepository.CardRef> readable = CardScopes.readableRefs(cardRepository, null, null, null, userId);
         Set<Long> started = new HashSet<>();
         for (UserCardStateRepository.CardDue row : stateRepository.findCardDueByUserId(userId)) {
@@ -127,8 +129,12 @@ public class LearningSettingsService {
         long newFlashcards = 0;
         for (CardRepository.CardRef card : readable) {
             if (started.contains(card.getId())) continue;
-            if (CardScopes.isTest(card)) newTests++;
-            else newFlashcards++;
+            if (CardScopes.isTest(card)) {
+                // Pytania spoza filtra pochodzenia nie pojawią się w Testach, więc nie liczą się do planu.
+                if (CardScopes.matchesOrigins(card, testOrigins)) newTests++;
+            } else {
+                newFlashcards++;
+            }
         }
 
         return new LearningSettingsResponse.Plan(

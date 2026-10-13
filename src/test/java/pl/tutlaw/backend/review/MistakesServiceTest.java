@@ -12,8 +12,10 @@ import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.review.dto.MistakesCountResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
+import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
@@ -21,10 +23,12 @@ import pl.tutlaw.backend.user.User;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -40,16 +44,19 @@ class MistakesServiceTest {
     @Mock private ReviewLogRepository reviewLogRepository;
     @Mock private CardRepository cardRepository;
     @Mock private CurrentUserResolver currentUserResolver;
+    @Mock private OriginFilterService originFilter;
     private final Authentication authentication = mock(Authentication.class);
 
     private MistakesService service;
 
     @BeforeEach
     void setUp() {
-        service = new MistakesService(reviewLogRepository, cardRepository, currentUserResolver, clock);
+        service = new MistakesService(reviewLogRepository, cardRepository, currentUserResolver, clock, originFilter);
         User user = new User();
         user.setId(5L);
         when(currentUserResolver.resolve(authentication)).thenReturn(user);
+        // Domyślnie wszystkie pochodzenia; testy filtra ustawiają własny zbiór.
+        lenient().when(originFilter.activeFor(5L)).thenReturn(EnumSet.allOf(QuestionOrigin.class));
     }
 
     private static Card card(long id) {
@@ -230,5 +237,37 @@ class MistakesServiceTest {
         service.count(authentication);
 
         assertThat(idsAskedAboutAvailability()).hasSize(1_000);
+    }
+
+    // ---------------------------------------------------------------- filtr pochodzenia
+
+    private static Card cardFrom(long id, QuestionOrigin origin) {
+        Card card = card(id);
+        card.setOrigin(origin);
+        card.setExamYear(origin == QuestionOrigin.AUTHORED ? null : 2021);
+        return card;
+    }
+
+    @Test
+    void mistakesFromOriginsOutsideTheFilterAreNeitherCountedNorQueued() {
+        answers(answer(1, false, 1), answer(2, false, 2), answer(3, false, 3));
+        practicable(cardFrom(1, QuestionOrigin.NOTARY), cardFrom(2, QuestionOrigin.BAILIFF),
+                cardFrom(3, QuestionOrigin.AUTHORED));
+        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY, QuestionOrigin.AUTHORED));
+
+        assertThat(service.count(authentication).count()).isEqualTo(2);
+        assertThat(service.queue(authentication)).extracting(TestQueueItemResponse::cardId)
+                .containsExactlyInAnyOrder(1L, 3L);
+    }
+
+    @Test
+    void aMistakeInAFilteredOutOriginComesBackWhenTheFilterIsWidened() {
+        answers(answer(1, false, 1));
+        practicable(cardFrom(1, QuestionOrigin.BAILIFF));
+        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY));
+        assertThat(service.count(authentication).count()).isZero();
+
+        when(originFilter.activeFor(5L)).thenReturn(EnumSet.allOf(QuestionOrigin.class));
+        assertThat(service.count(authentication).count()).isEqualTo(1);
     }
 }

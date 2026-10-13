@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CardScopes;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.category.CategoryRepository;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
@@ -18,6 +19,7 @@ import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
 import pl.tutlaw.backend.review.ReviewQueueMapper;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
+import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.source.SourceRepository;
 import pl.tutlaw.backend.subject.SubjectRepository;
 import pl.tutlaw.backend.user.CurrentUserResolver;
@@ -58,12 +60,14 @@ public class ExamService {
     private final SourceRepository sourceRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
+    private final OriginFilterService originFilter;
 
     private final Random random = new Random();
 
     /**
-     * Losuje pytania z zakresu: tylko w formacie testowym, dostępne dla użytkownika (pula płaska albo przeczytany
-     * rozdział) i niezawieszone. Gdy jest ich mniej niż chciał, dostaje wszystkie.
+     * Losuje pytania z zakresu: tylko w formacie testowym, z wybranych pochodzeń (filtr pochodzenia w Testach),
+     * dostępne dla użytkownika (pula płaska albo przeczytany rozdział) i niezawieszone. Gdy jest ich mniej niż
+     * chciał, dostaje wszystkie. Ocena egzaminu (submit) filtra nie stosuje: ocenia to, co zostało pokazane.
      */
     @Transactional(readOnly = true)
     public ExamStartResponse start(ExamStartRequest request, Authentication authentication) {
@@ -71,18 +75,23 @@ public class ExamService {
         String label = scopeLabel(request.categoryId(), request.subjectId(), request.sourceId());
 
         Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedCardIds(user.getId()));
+        Set<QuestionOrigin> origins = originFilter.activeFor(user.getId());
         // Losujemy na samych numerach; pełne karty ładujemy dopiero dla wylosowanych (jedno zapytanie).
-        List<Long> pool = new ArrayList<>(
-                CardScopes.readableRefs(
-                                cardRepository, request.categoryId(), request.subjectId(), request.sourceId(), user.getId())
-                        .stream()
-                        .filter(CardScopes::isTest)
-                        .map(CardRepository.CardRef::getId)
-                        .filter(id -> !suspended.contains(id))
-                        .toList());
+        List<CardRepository.CardRef> inScope = CardScopes.readableRefs(
+                        cardRepository, request.categoryId(), request.subjectId(), request.sourceId(), user.getId())
+                .stream()
+                .filter(CardScopes::isTest)
+                .filter(ref -> !suspended.contains(ref.getId()))
+                .toList();
+        List<Long> pool = new ArrayList<>(inScope.stream()
+                .filter(ref -> CardScopes.matchesOrigins(ref, origins))
+                .map(CardRepository.CardRef::getId)
+                .toList());
         if (pool.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "W wybranym zakresie nie ma teraz pytań testowych, które możesz rozwiązać.");
+            // Gdy pytania są, ale wszystkie spoza wybranych pochodzeń, podpowiadamy filtr zamiast mylić brakiem pytań.
+            throw new IllegalArgumentException(inScope.isEmpty()
+                    ? "W wybranym zakresie nie ma teraz pytań testowych, które możesz rozwiązać."
+                    : "W wybranym zakresie nie ma pytań z wybranych pochodzeń. Zmień filtr pochodzenia w Testach.");
         }
 
         Collections.shuffle(pool, random);

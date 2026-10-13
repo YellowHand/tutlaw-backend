@@ -6,8 +6,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.review.dto.MistakesCountResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
+import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -27,7 +29,8 @@ import java.util.Set;
  * "Powtórz moje błędy": sesja testowa z pytań, w których OSTATNIA odpowiedź użytkownika w teście była błędna
  * (z ostatnich {@value #LOOKBACK_DAYS} dni). Pytanie, na które później odpowiedział dobrze, już się tu nie pojawia.
  * Odpowiedzi w tej sesji idą zwykłą drogą testu (z oceną pamięci i terminami), więc to dodatkowe ćwiczenie,
- * a nie osobny tor nauki. Zawieszone i niedostępne pytania odpadają.
+ * a nie osobny tor nauki. Zawieszone i niedostępne pytania odpadają, a także te spoza wybranych pochodzeń
+ * (filtr pochodzenia w Testach).
  */
 @Service
 @RequiredArgsConstructor
@@ -44,6 +47,7 @@ public class MistakesService {
     private final CardRepository cardRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
+    private final OriginFilterService originFilter;
 
     private final Random random = new Random();
 
@@ -68,9 +72,13 @@ public class MistakesService {
             return List.of();
         }
 
+        // Filtr pochodzenia z Testów obowiązuje także tutaj: błędy z wyłączonych pochodzeń nie wchodzą do sesji ani do licznika.
+        Set<QuestionOrigin> origins = originFilter.activeFor(user.getId());
         Map<Long, Card> practicable = new HashMap<>();
         for (Card card : cardRepository.findPracticeTestCards(mistakeIds, user.getId())) {
-            practicable.put(card.getId(), card);
+            if (card.getOrigin() == null || origins.contains(card.getOrigin())) {
+                practicable.put(card.getId(), card);
+            }
         }
         // Kolejność z listy błędów (najświeższy pierwszy); karty, których nie zwróciło zapytanie, odpadają.
         return mistakeIds.stream().map(practicable::get).filter(card -> card != null).toList();

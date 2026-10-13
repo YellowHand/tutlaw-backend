@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.chapter.Chapter;
 import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
 import pl.tutlaw.backend.flashcard.FlashcardUnlockService;
@@ -15,6 +16,7 @@ import pl.tutlaw.backend.review.fsrs.FsrsEngine;
 import pl.tutlaw.backend.review.fsrs.FsrsWeights;
 import pl.tutlaw.backend.settings.LearningDefaults;
 import pl.tutlaw.backend.settings.LearningSettingsService;
+import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.settings.UserSettings;
 import pl.tutlaw.backend.settings.UserSettingsRepository;
 import pl.tutlaw.backend.testsupport.CardRefs;
@@ -28,6 +30,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
@@ -52,6 +55,9 @@ class ReviewQueueServiceTest {
         final List<Long> manualAdditions = new ArrayList<>();
         long introducedToday = 0;
         long dueReviewsDoneToday = 0;
+        /** Pochodzenia przekazane do ostatniego zapytania o liczbę zaległych (odznaka). */
+        Collection<QuestionOrigin> lastCountDueOrigins;
+        boolean lastCountDueWithTests;
         /** Ustawienia zapisane przez użytkownika (null = same domyślne z konfiguracji). */
         UserSettings stored;
         ReviewQueueService service;
@@ -82,6 +88,11 @@ class ReviewQueueServiceTest {
             UserCardStateRepository states = FakeRepos.proxy(UserCardStateRepository.class, (method, args) -> {
                 if (method.equals("findCardDueByUserId")) {
                     return new ArrayList<>(schedule);
+                }
+                if (method.equals("countDue")) {
+                    lastCountDueWithTests = (boolean) args[3];
+                    lastCountDueOrigins = (Collection<QuestionOrigin>) args[4];
+                    return 7L;
                 }
                 throw new UnsupportedOperationException("UserCardStateRepository." + method);
             });
@@ -122,7 +133,8 @@ class ReviewQueueServiceTest {
             service = new ReviewQueueService(
                     cardRepository, states, logs, resolver,
                     new FsrsEngine(FsrsWeights.defaults(), 0.9), clock,
-                    new Random(7), settings, new LeechPolicy(8), new FlashcardUnlockService(logs, additions));
+                    new Random(7), settings, new LeechPolicy(8), new FlashcardUnlockService(logs, additions),
+                    new OriginFilterService(settingsRepository, cardRepository, resolver, clock));
         }
 
         Card card(long id, boolean test, int chapterOrder) {
@@ -184,6 +196,20 @@ class ReviewQueueServiceTest {
 
         List<Long> flashQueue() {
             return service.getQueue(null, null, null, null, null, jan).stream().map(ReviewQueueItemResponse::cardId).toList();
+        }
+
+        /** Użytkownik zawęził Testy do podanych pochodzeń. */
+        void filterTo(QuestionOrigin... origins) {
+            if (stored == null) {
+                stored = new UserSettings(1L);
+            }
+            stored.setTestOrigins(String.join(",", java.util.Arrays.stream(origins).map(Enum::name).toList()));
+        }
+
+        Card question(long id, QuestionOrigin origin) {
+            Card card = card(id, true, 1);
+            card.setOrigin(origin);
+            return card;
         }
 
         List<Long> testQueue() {
@@ -698,5 +724,82 @@ class ReviewQueueServiceTest {
 
         assertThat(f.testQueue()).containsExactly(1L);
         assertThat(f.confidentMistakeLookups).isZero();
+    }
+
+    // ---------------------------------------------------------------- filtr pochodzenia pytań
+
+    @Test
+    void testQueueContainsOnlyQuestionsFromTheSelectedOrigins() {
+        Fixture f = new Fixture(100);
+        f.question(1, QuestionOrigin.NOTARY);
+        f.question(2, QuestionOrigin.BAILIFF);
+        f.question(3, QuestionOrigin.AUTHORED);
+        f.question(4, QuestionOrigin.NOTARY);
+        f.filterTo(QuestionOrigin.NOTARY, QuestionOrigin.AUTHORED);
+
+        assertThat(f.testQueue()).containsExactlyInAnyOrder(1L, 3L, 4L);
+        assertThat(f.loadedCardIds).doesNotContain(2L);
+    }
+
+    @Test
+    void withoutAFilterTheTestQueueHasEveryOrigin() {
+        Fixture f = new Fixture(100);
+        f.question(1, QuestionOrigin.NOTARY);
+        f.question(2, QuestionOrigin.BAILIFF);
+
+        assertThat(f.testQueue()).containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void dueQuestionsFromFilteredOutOriginsStayOutOfTheQueueAndTheBacklog() {
+        Fixture f = new Fixture(100);
+        f.question(1, QuestionOrigin.NOTARY);
+        f.question(2, QuestionOrigin.BAILIFF);
+        f.scheduled(1, 3, 5, 2);
+        f.scheduled(2, 3, 5, 2);
+        f.filterTo(QuestionOrigin.NOTARY);
+
+        assertThat(f.testQueue()).containsExactly(1L);
+        BacklogResponse backlog = f.service.getBacklog(null, null, null, ReviewMode.TEST, f.jan);
+        assertThat(backlog.dueNow()).isEqualTo(1L);
+    }
+
+    @Test
+    void availableNewQuestionsAreCountedWithinTheFilter_butNewFlashcardsAreNot() {
+        Fixture f = new Fixture(100);
+        f.question(1, QuestionOrigin.NOTARY);
+        f.question(2, QuestionOrigin.BAILIFF);
+        f.question(3, QuestionOrigin.BAILIFF);
+        f.card(10, false, 1); // fiszka
+        f.card(11, false, 1); // fiszka
+        f.filterTo(QuestionOrigin.NOTARY);
+
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.TEST, f.jan)).isEqualTo(1);
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(2);
+    }
+
+    @Test
+    void theFlashcardQueueIgnoresTheOriginFilter() {
+        Fixture f = new Fixture(100);
+        f.question(1, QuestionOrigin.BAILIFF);
+        f.card(10, false, 1);
+        f.card(11, false, 1);
+        f.filterTo(QuestionOrigin.NOTARY);
+
+        assertThat(f.flashQueue()).containsExactlyInAnyOrder(10L, 11L);
+    }
+
+    @Test
+    void theDueBadgeForTestsUsesTheFilter_theBadgeForFlashcardsUsesEverything() {
+        Fixture f = new Fixture(100);
+        f.filterTo(QuestionOrigin.NOTARY, QuestionOrigin.BAILIFF);
+
+        assertThat(f.service.countDueNow(ReviewMode.TEST, f.jan)).isEqualTo(7L);
+        assertThat(f.lastCountDueWithTests).isTrue();
+        assertThat(f.lastCountDueOrigins).containsExactlyInAnyOrder(QuestionOrigin.NOTARY, QuestionOrigin.BAILIFF);
+
+        f.service.countDueNow(ReviewMode.FLASHCARD, f.jan);
+        assertThat(f.lastCountDueWithTests).isFalse();
+        assertThat(f.lastCountDueOrigins).isEqualTo(EnumSet.allOf(QuestionOrigin.class));
     }
 }

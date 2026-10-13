@@ -39,6 +39,14 @@ public final class CardScopes {
         return ref.getCorrectOption() != null;
     }
 
+    /**
+     * Czy pytanie testowe mieści się w filtrze pochodzenia użytkownika. Karta bez znanego pochodzenia
+     * (czego baza nie dopuszcza) nie jest odrzucana, żeby filtr nigdy nie ukrył niczego przez pomyłkę.
+     */
+    public static boolean matchesOrigins(CardRepository.CardRef ref, Set<QuestionOrigin> origins) {
+        return ref.getOrigin() == null || origins.contains(ref.getOrigin());
+    }
+
     /** Czy to fiszka (karta bez opcji). Takie karty żyją tylko w Fiszkach. */
     public static boolean isFlashcard(CardRepository.CardRef ref) {
         return ref.getCorrectOption() == null;

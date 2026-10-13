@@ -4,9 +4,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.common.GroupCount;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
@@ -209,6 +211,31 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             GROUP BY r.card.source.id
             """)
     List<GroupCount> countSolvedTestQuestionsBySource(@Param("userId") Long userId);
+
+    /**
+     * Jak {@link #countSolvedTestQuestionsBySource}, ale tylko pytania z wybranych pochodzeń (katalog Testów
+     * z filtrem pochodzenia).
+     */
+    @Query("""
+            SELECT r.card.source.id AS groupId, COUNT(DISTINCT r.card.id) AS total
+            FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND r.card.hidden = false
+            AND r.card.origin IN :origins
+            AND (
+                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY r.card.source.id
+            """)
+    List<GroupCount> countSolvedTestQuestionsBySourceInOrigins(
+            @Param("userId") Long userId,
+            @Param("origins") Collection<QuestionOrigin> origins
+    );
 
     /**
      * Odpowiedzi użytkownika w testach od podanego momentu, od najnowszej. Z tego wylicza się, w których pytaniach

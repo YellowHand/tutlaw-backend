@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
 import pl.tutlaw.backend.settings.dto.UpdateLearningSettingsRequest;
@@ -278,5 +279,27 @@ class LearningSettingsServiceTest {
 
         assertThat(response.plan()).isNull();
         verify(cardRepository, never()).findReadableRefsForUser(any());
+    }
+
+    @Test
+    void get_planCountsOnlyQuestionsFromTheSelectedOrigins_andAllFlashcards() {
+        UserSettings stored = new UserSettings(5L);
+        stored.setExamDate(TODAY.plusDays(37));
+        stored.setTestOrigins("NOTARY,BAILIFF");
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        List<Card> readable = new java.util.ArrayList<>();
+        for (long id = 1; id <= 40; id++) {
+            Card card = card(id, id <= 30); // 30 pytań testowych, 10 fiszek
+            card.setOrigin(id <= 10 ? QuestionOrigin.NOTARY : id <= 20 ? QuestionOrigin.BAILIFF : QuestionOrigin.AUTHORED);
+            readable.add(card);
+        }
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
+        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+
+        LearningSettingsResponse.Plan plan = service.get(authentication).plan();
+
+        assertThat(plan.newTestQuestionsLeft()).isEqualTo(20); // tylko NOTARY i BAILIFF
+        assertThat(plan.newFlashcardsLeft()).isEqualTo(10);    // fiszki bez filtra
     }
 }

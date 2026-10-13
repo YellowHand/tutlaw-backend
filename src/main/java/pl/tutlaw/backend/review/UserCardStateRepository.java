@@ -6,9 +6,11 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.common.GroupCount;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -102,6 +104,7 @@ public interface UserCardStateRepository
      * Liczba kart, których termin już minął, w dostępnym dla użytkownika materiale.
      * Ten sam filtr dostępności co w kolejce, więc liczba zgadza się z tym, co dostanie w sesji.
      * {@code withFlashcards} i {@code withTests} wybierają rodzaj kart: fiszki (bez opcji) i/albo pytania testowe.
+     * {@code testOrigins} (filtr pochodzenia, niepusty) zawęża tylko pytania testowe; fiszki go nie widzą.
      */
     @Query("""
             SELECT COUNT(s) FROM UserCardState s
@@ -117,13 +120,15 @@ public interface UserCardStateRepository
                 ))
             )
             AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
-                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true
+                     AND s.card.origin IN :testOrigins))
             """)
     long countDue(
             @Param("userId") Long userId,
             @Param("now") LocalDateTime now,
             @Param("withFlashcards") boolean withFlashcards,
-            @Param("withTests") boolean withTests
+            @Param("withTests") boolean withTests,
+            @Param("testOrigins") Collection<QuestionOrigin> testOrigins
     );
 
     /**

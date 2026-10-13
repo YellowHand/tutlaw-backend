@@ -118,4 +118,16 @@ class CardScopesTest {
         assertThat(CardScopes.anyLinked(none)).isFalse();
         assertThat(CardScopes.anyLinked(some)).isTrue();
     }
+
+    @Test
+    void matchesOrigins_acceptsOnlySelectedOrigins_andNeverRejectsAnUnknownOne() {
+        java.util.Set<QuestionOrigin> chosen = java.util.EnumSet.of(QuestionOrigin.NOTARY);
+
+        assertThat(CardScopes.matchesOrigins(
+                CardRefs.of(1, null, CorrectOption.A, null, QuestionOrigin.NOTARY), chosen)).isTrue();
+        assertThat(CardScopes.matchesOrigins(
+                CardRefs.of(2, null, CorrectOption.A, null, QuestionOrigin.AUTHORED), chosen)).isFalse();
+        // baza nie dopuszcza pustego pochodzenia, ale filtr ma nie ukrywać niczego przez pomyłkę
+        assertThat(CardScopes.matchesOrigins(CardRefs.of(3, null, CorrectOption.A, null, null), chosen)).isTrue();
+    }
 }

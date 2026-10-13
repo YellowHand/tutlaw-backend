@@ -44,11 +44,14 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
         /** Tylko fiszka powiązana z pytaniem testowym: numer tego pytania (inaczej null). */
         Long getLinkedTestCardId();
+
+        /** Pochodzenie karty (filtr pochodzenia w Testach). */
+        QuestionOrigin getOrigin();
     }
 
     @Query("""
             SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
-                   c.linkedTestCardId AS linkedTestCardId
+                   c.linkedTestCardId AS linkedTestCardId, c.origin AS origin
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.id = :subjectId
             AND c.hidden = false
@@ -67,7 +70,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     @Query("""
             SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
-                   c.linkedTestCardId AS linkedTestCardId
+                   c.linkedTestCardId AS linkedTestCardId, c.origin AS origin
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.id = :sourceId
             AND c.hidden = false
@@ -91,7 +94,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      */
     @Query("""
             SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
-                   c.linkedTestCardId AS linkedTestCardId
+                   c.linkedTestCardId AS linkedTestCardId, c.origin AS origin
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.hidden = false
             AND (
@@ -252,7 +255,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     /** Dostępne karty użytkownika w jednej kategorii (rodzaju), do testu lub nauki z całego działu. */
     @Query("""
             SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
-                   c.linkedTestCardId AS linkedTestCardId
+                   c.linkedTestCardId AS linkedTestCardId, c.origin AS origin
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.category.id = :categoryId
             AND c.hidden = false
@@ -267,5 +270,50 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     List<CardRef> findReadableRefsForUserAndCategory(
             @Param("categoryId") Long categoryId,
             @Param("userId") Long userId
+    );
+
+    /** Liczba pytań testowych (bez ukrytych) w każdym pochodzeniu: do okna wyboru filtru pochodzenia. */
+    interface OriginCount {
+        QuestionOrigin getOrigin();
+
+        Long getTotal();
+    }
+
+    @Query("""
+            SELECT c.origin AS origin, COUNT(c) AS total
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
+            GROUP BY c.origin
+            """)
+    List<OriginCount> countTestQuestionsByOrigin();
+
+    /** Jak {@link #countTestQuestionsBySource()}, ale tylko pytania z wybranych pochodzeń (katalog Testów). */
+    @Query("""
+            SELECT c.source.id AS groupId, COUNT(c) AS total
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
+            AND c.origin IN :origins
+            GROUP BY c.source.id
+            """)
+    List<GroupCount> countTestQuestionsBySourceInOrigins(@Param("origins") Collection<QuestionOrigin> origins);
+
+    /** Jak {@link #countReadableTestQuestionsBySource}, ale tylko pytania z wybranych pochodzeń (katalog Testów). */
+    @Query("""
+            SELECT c.source.id AS groupId, COUNT(c) AS total
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
+            AND c.origin IN :origins
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            GROUP BY c.source.id
+            """)
+    List<GroupCount> countReadableTestQuestionsBySourceInOrigins(
+            @Param("userId") Long userId,
+            @Param("origins") Collection<QuestionOrigin> origins
     );
 }

@@ -88,6 +88,8 @@ public record AccountExportResponse(
             Integer maxReviewsPerDay,
             Double desiredRetention,
             LocalDate examDate,
-            boolean shuffleOptions
+            boolean shuffleOptions,
+            /** Filtr pochodzenia pytań w Testach: kody oddzielone przecinkami albo null (wszystkie). */
+            String testOrigins
     ) {}
 }

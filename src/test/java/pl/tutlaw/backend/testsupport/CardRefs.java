@@ -3,6 +3,7 @@ package pl.tutlaw.backend.testsupport;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.card.QuestionOrigin;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -22,6 +23,11 @@ public final class CardRefs {
 
     public static CardRepository.CardRef of(
             long id, Integer chapterOrder, CorrectOption correctOption, Long linkedTestCardId) {
+        return of(id, chapterOrder, correctOption, linkedTestCardId, QuestionOrigin.AUTHORED);
+    }
+
+    public static CardRepository.CardRef of(
+            long id, Integer chapterOrder, CorrectOption correctOption, Long linkedTestCardId, QuestionOrigin origin) {
         return new CardRepository.CardRef() {
             @Override
             public Long getId() {
@@ -42,13 +48,18 @@ public final class CardRefs {
             public Long getLinkedTestCardId() {
                 return linkedTestCardId;
             }
+
+            @Override
+            public QuestionOrigin getOrigin() {
+                return origin;
+            }
         };
     }
 
     /** Odchudzony widok karty: numer, kolejność rozdziału (null bez rozdziału) i poprawna opcja (null dla fiszki). */
     public static CardRepository.CardRef of(Card card) {
         Integer chapterOrder = card.getChapter() == null ? null : card.getChapter().getOrderIndex();
-        return of(card.getId(), chapterOrder, card.getCorrectOption(), card.getLinkedTestCardId());
+        return of(card.getId(), chapterOrder, card.getCorrectOption(), card.getLinkedTestCardId(), card.getOrigin());
     }
 
     public static List<CardRepository.CardRef> of(List<Card> cards) {

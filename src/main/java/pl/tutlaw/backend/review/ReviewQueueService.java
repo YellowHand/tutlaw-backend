@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CardScopes;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.flashcard.FlashcardUnlockService;
 import pl.tutlaw.backend.review.dto.BacklogResponse;
 import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
@@ -12,6 +13,7 @@ import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 import pl.tutlaw.backend.review.fsrs.FsrsEngine;
 import pl.tutlaw.backend.settings.EffectiveSettings;
 import pl.tutlaw.backend.settings.LearningSettingsService;
+import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -20,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +49,8 @@ public class ReviewQueueService {
     private final LeechPolicy leechPolicy;
     /** Które pytania mają odblokowaną fiszkę (pewny błąd albo ręczne dodanie do fiszek). */
     private final FlashcardUnlockService unlockService;
+    /** Filtr pochodzenia pytań w Testach (dotyczy tylko pytań testowych, nie fiszek). */
+    private final OriginFilterService originFilter;
 
     @Autowired
     public ReviewQueueService(
@@ -57,9 +62,10 @@ public class ReviewQueueService {
             Clock clock,
             LearningSettingsService settingsService,
             LeechPolicy leechPolicy,
-            FlashcardUnlockService unlockService) {
+            FlashcardUnlockService unlockService,
+            OriginFilterService originFilter) {
         this(cardRepository, stateRepository, reviewLogRepository, currentUserResolver, fsrsEngine, clock,
-                new Random(), settingsService, leechPolicy, unlockService);
+                new Random(), settingsService, leechPolicy, unlockService, originFilter);
     }
 
     /** Konstruktor z własnym generatorem losowym (testy mogą ustalić kolejność mieszania). */
@@ -73,7 +79,8 @@ public class ReviewQueueService {
             Random random,
             LearningSettingsService settingsService,
             LeechPolicy leechPolicy,
-            FlashcardUnlockService unlockService) {
+            FlashcardUnlockService unlockService,
+            OriginFilterService originFilter) {
         this.cardRepository = cardRepository;
         this.stateRepository = stateRepository;
         this.reviewLogRepository = reviewLogRepository;
@@ -84,6 +91,7 @@ public class ReviewQueueService {
         this.settingsService = settingsService;
         this.leechPolicy = leechPolicy;
         this.unlockService = unlockService;
+        this.originFilter = originFilter;
     }
 
     /**
@@ -117,8 +125,8 @@ public class ReviewQueueService {
             Long categoryId, Long subjectId, Long sourceId, Integer extraNewCards, Integer extraDueReviews,
             Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<CardRepository.CardRef> eligibleCards =
-                testCards(getReadableCards(categoryId, subjectId, sourceId, user.getId()));
+        List<CardRepository.CardRef> eligibleCards = testCards(
+                getReadableCards(categoryId, subjectId, sourceId, user.getId()), originFilter.activeFor(user.getId()));
         List<Long> queue = buildQueue(
                 eligibleCards, loadScheduleByCardId(user.getId()), user.getId(), extraNewCards, extraDueReviews,
                 ReviewMode.TEST);
@@ -157,13 +165,21 @@ public class ReviewQueueService {
     /** Ile kart danego trybu (fiszek albo pytań testowych) ma już minięty termin powtórki (bez nowych kart). */
     public long countDueNow(ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
+        // Filtr pochodzenia dotyczy tylko pytań testowych; dla fiszek podajemy komplet (lista nie może być pusta).
+        Set<QuestionOrigin> testOrigins = mode == ReviewMode.TEST
+                ? originFilter.activeFor(user.getId()) : EnumSet.allOf(QuestionOrigin.class);
         return stateRepository.countDue(
-                user.getId(), LocalDateTime.now(clock), mode == ReviewMode.FLASHCARD, mode == ReviewMode.TEST);
+                user.getId(), LocalDateTime.now(clock), mode == ReviewMode.FLASHCARD, mode == ReviewMode.TEST,
+                testOrigins);
     }
 
-    /** Pytania testowe (z poprawną odpowiedzią) spośród podanych kart. */
-    private static List<CardRepository.CardRef> testCards(List<CardRepository.CardRef> cards) {
-        return cards.stream().filter(CardScopes::isTest).toList();
+    /** Pytania testowe (z poprawną odpowiedzią) spośród podanych kart, z wybranych pochodzeń. */
+    private static List<CardRepository.CardRef> testCards(
+            List<CardRepository.CardRef> cards, Set<QuestionOrigin> origins) {
+        return cards.stream()
+                .filter(CardScopes::isTest)
+                .filter(ref -> CardScopes.matchesOrigins(ref, origins))
+                .toList();
     }
 
     /**
@@ -181,7 +197,8 @@ public class ReviewQueueService {
 
     /** Karty trybu: pytania testowe dla Testów, odblokowane fiszki dla Fiszek. */
     private List<CardRepository.CardRef> forMode(ReviewMode mode, List<CardRepository.CardRef> cards, Long userId) {
-        return mode == ReviewMode.TEST ? testCards(cards) : flashcards(cards, userId);
+        return mode == ReviewMode.TEST
+                ? testCards(cards, originFilter.activeFor(userId)) : flashcards(cards, userId);
     }
 
     /** Zakres od najwęższego: źródło, przedmiot, kategoria (rodzaj), a bez żadnego cały materiał użytkownika. */

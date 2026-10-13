@@ -12,6 +12,7 @@ import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.category.Category;
 import pl.tutlaw.backend.category.CategoryRepository;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
@@ -22,6 +23,7 @@ import pl.tutlaw.backend.exam.dto.ExamStartResponse;
 import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
+import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.source.Source;
 import pl.tutlaw.backend.source.SourceRepository;
 import pl.tutlaw.backend.subject.Subject;
@@ -34,6 +36,7 @@ import pl.tutlaw.backend.user.User;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -63,6 +66,7 @@ class ExamServiceTest {
     @Mock private SubjectRepository subjectRepository;
     @Mock private SourceRepository sourceRepository;
     @Mock private CurrentUserResolver currentUserResolver;
+    @Mock private OriginFilterService originFilter;
     private final Authentication authentication = mock(Authentication.class);
 
     private ExamService service;
@@ -70,10 +74,12 @@ class ExamServiceTest {
     @BeforeEach
     void setUp() {
         service = new ExamService(cardRepository, stateRepository, attemptRepository, categoryRepository,
-                subjectRepository, sourceRepository, currentUserResolver, clock);
+                subjectRepository, sourceRepository, currentUserResolver, clock, originFilter);
         User user = new User();
         user.setId(5L);
         when(currentUserResolver.resolve(authentication)).thenReturn(user);
+        // Domyślnie wszystkie pochodzenia (filtr nie zawęża niczego); testy filtra ustawiają własny zbiór.
+        lenient().when(originFilter.activeFor(5L)).thenReturn(EnumSet.allOf(QuestionOrigin.class));
     }
 
     // ---------------------------------------------------------------- dane
@@ -191,6 +197,67 @@ class ExamServiceTest {
         assertThat(response.questions()).extracting(TestQueueItemResponse::cardId)
                 .containsExactlyInAnyOrder(1L, 3L, 5L, 6L);
         assertThat(response.requestedCount()).isEqualTo(50);
+    }
+
+    private static Card withOrigin(Card card, QuestionOrigin origin) {
+        card.setOrigin(origin);
+        card.setExamYear(origin == QuestionOrigin.AUTHORED ? null : 2022);
+        return card;
+    }
+
+    @Test
+    void start_drawsOnlyFromTheSelectedOrigins() {
+        List<Card> pool = List.of(
+                withOrigin(test(1), QuestionOrigin.AUTHORED),
+                withOrigin(test(2), QuestionOrigin.NOTARY),
+                withOrigin(test(3), QuestionOrigin.BAILIFF),
+                withOrigin(test(4), QuestionOrigin.NOTARY),
+                withOrigin(test(5), QuestionOrigin.JUDGE_PROSECUTOR));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(pool));
+        givenLoadable(pool);
+        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
+        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY, QuestionOrigin.BAILIFF));
+
+        ExamStartResponse response = service.start(startRequest(50), authentication);
+
+        assertThat(response.questions()).extracting(TestQueueItemResponse::cardId)
+                .containsExactlyInAnyOrder(2L, 3L, 4L);
+    }
+
+    @Test
+    void start_whenTheFilterExcludesEverythingInScopeTheErrorPointsAtTheFilter() {
+        List<Card> pool = List.of(withOrigin(test(1), QuestionOrigin.AUTHORED), withOrigin(test(2), QuestionOrigin.AUTHORED));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(pool));
+        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
+        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.BAILIFF));
+
+        assertThatThrownBy(() -> service.start(startRequest(10), authentication))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("filtr pochodzenia");
+    }
+
+    @Test
+    void start_withNoQuestionsInScopeAtAllKeepsTheOriginalMessage() {
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(List.of());
+        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
+        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.BAILIFF));
+
+        assertThatThrownBy(() -> service.start(startRequest(10), authentication))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nie ma teraz pytań testowych")
+                .hasMessageNotContaining("filtr");
+    }
+
+    @Test
+    void submit_gradesEveryShownQuestionEvenIfItsOriginIsNowFilteredOut() {
+        Card shown = withOrigin(test(1), QuestionOrigin.AUTHORED);
+        readable(shown);
+        lenient().when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.BAILIFF));
+
+        ExamResultResponse result = service.submit(submitRequest(60, answer(1, CorrectOption.A)), authentication);
+
+        assertThat(result.questions()).hasSize(1);
+        assertThat(result.questions().get(0).correct()).isTrue();
     }
 
     @Test
