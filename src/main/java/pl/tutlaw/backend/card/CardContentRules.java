@@ -96,6 +96,27 @@ final class CardContentRules {
         return null;
     }
 
+    static final int MIN_EXAM_YEAR = 1990;
+    static final int MAX_EXAM_YEAR = 2100;
+
+    /**
+     * Pochodzenie i rok egzaminu muszą do siebie pasować (taka sama reguła jak ograniczenie w bazie): pytanie autorskie
+     * nie ma roku, pytanie z aplikacji musi go mieć. Zwraca opis błędu albo null.
+     */
+    static String originProblem(QuestionOrigin origin, Integer examYear) {
+        QuestionOrigin effective = origin == null ? QuestionOrigin.AUTHORED : origin;
+        if (!effective.requiresYear()) {
+            return examYear == null ? null : "Pytanie autorskie nie ma roku egzaminu.";
+        }
+        if (examYear == null) {
+            return "Dla pytania z aplikacji podaj rok egzaminu (examYear).";
+        }
+        if (examYear < MIN_EXAM_YEAR || examYear > MAX_EXAM_YEAR) {
+            return "Rok egzaminu musi być z zakresu " + MIN_EXAM_YEAR + "–" + MAX_EXAM_YEAR + ".";
+        }
+        return null;
+    }
+
     /** Pytanie testowe to takie, które ma poprawną odpowiedź (i, po walidacji, komplet opcji). */
     static boolean isTest(CorrectOption correctOption) {
         return correctOption != null;
@@ -109,7 +130,22 @@ final class CardContentRules {
      */
     static String duplicateKey(
             String front, String back, String optionA, String optionB, String optionC, CorrectOption correctOption) {
+        return duplicateKey(front, back, optionA, optionB, optionC, correctOption, QuestionOrigin.AUTHORED, null);
+    }
+
+    /**
+     * Jak {@link #duplicateKey(String, String, String, String, String, CorrectOption)}, ale do klucza wchodzi też
+     * pochodzenie i rok. To samo pytanie z innego roku albo z innej aplikacji jest więc osobnym pytaniem
+     * (w kolejnych latach pytania się powtarzają, czasem z inną kolejnością odpowiedzi), a duplikatem jest dopiero
+     * pytanie identyczne także pod względem pochodzenia i roku.
+     */
+    static String duplicateKey(
+            String front, String back, String optionA, String optionB, String optionC, CorrectOption correctOption,
+            QuestionOrigin origin, Integer examYear) {
         StringBuilder key = new StringBuilder(normalize(front));
+        if (origin != null && origin != QuestionOrigin.AUTHORED) {
+            key.append(KEY_SEPARATOR).append("O").append(origin.name()).append(KEY_SEPARATOR).append(examYear);
+        }
         if (isTest(correctOption)) {
             key.append(KEY_SEPARATOR).append("T")
                     .append(KEY_SEPARATOR).append(normalize(optionA))

@@ -18,7 +18,9 @@ public class ReviewQueueMapper {
                 card.getLegalBasis(),
                 card.getValidAsOf(),
                 lapses,
-                leech
+                leech,
+                card.getOrigin(),
+                card.getExamYear()
         );
     }
 
@@ -29,7 +31,9 @@ public class ReviewQueueMapper {
                 card.getOptionA(),
                 card.getOptionB(),
                 card.getOptionC(),
-                card.getSource() != null ? card.getSource().getName() : null
+                card.getSource() != null ? card.getSource().getName() : null,
+                card.getOrigin(),
+                card.getExamYear()
         );
     }
 }

@@ -16,8 +16,12 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     List<Card> findBySourceId(Long sourceId);
 
-    /** Czy do tego pytania testowego jest powiązana choć jedna fiszka. */
-    boolean existsByLinkedTestCardId(Long linkedTestCardId);
+    /** Czy do tego pytania testowego jest powiązana choć jedna widoczna (nieukryta) fiszka. */
+    boolean existsByLinkedTestCardIdAndHiddenFalse(Long linkedTestCardId);
+
+    /** Numery kart powiązanych z pytaniem (jego fiszek: automatycznej albo napisanej ręcznie). */
+    @Query("SELECT c.id FROM Card c WHERE c.linkedTestCardId = :questionId")
+    List<Long> findIdsByLinkedTestCardId(@Param("questionId") Long questionId);
 
     /** Strona kart rozdziału (lista dla administratora). Sortowanie podaje wywołujący w {@code pageable}. */
     Page<Card> findByChapterId(Long chapterId, Pageable pageable);
@@ -47,6 +51,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
                    c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.id = :subjectId
+            AND c.hidden = false
             AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
                 OR (c.chapter IS NOT NULL AND c.chapter.id IN (
@@ -65,6 +70,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
                    c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.id = :sourceId
+            AND c.hidden = false
             AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
                 OR (c.chapter IS NOT NULL AND c.chapter.id IN (
@@ -87,7 +93,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
                    c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
-            WHERE (
+            WHERE c.hidden = false
+            AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
                 OR (c.chapter IS NOT NULL AND c.chapter.id IN (
                     SELECT p.chapter.id FROM ChapterProgress p
@@ -127,12 +134,17 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             SELECT c.chapter.id AS groupId, COUNT(c) AS total
             FROM Card c
             WHERE c.source.id = :sourceId AND c.chapter IS NOT NULL
+            AND c.hidden = false
             AND ((c.correctOption IS NULL AND :withFlashcards = true
-                  AND (c.linkedTestCardId IS NULL OR EXISTS (
+                  AND (c.linkedTestCardId IS NULL
+                       OR EXISTS (
                         SELECT r.id FROM ReviewLog r
                         WHERE r.user.id = :userId AND r.card.id = c.linkedTestCardId
                         AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
-                        AND r.wasCorrect = false AND r.wasGuessed = false)))
+                        AND r.wasCorrect = false AND r.wasGuessed = false)
+                       OR EXISTS (
+                        SELECT a.id FROM FlashcardAddition a
+                        WHERE a.userId = :userId AND a.questionId = c.linkedTestCardId)))
                  OR (c.correctOption IS NOT NULL AND :withTests = true))
             GROUP BY c.chapter.id
             """)
@@ -148,12 +160,17 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             SELECT c.source.id AS groupId, COUNT(c) AS total
             FROM Card c
             WHERE c.source.subject.id = :subjectId
+            AND c.hidden = false
             AND ((c.correctOption IS NULL AND :withFlashcards = true
-                  AND (c.linkedTestCardId IS NULL OR EXISTS (
+                  AND (c.linkedTestCardId IS NULL
+                       OR EXISTS (
                         SELECT r.id FROM ReviewLog r
                         WHERE r.user.id = :userId AND r.card.id = c.linkedTestCardId
                         AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
-                        AND r.wasCorrect = false AND r.wasGuessed = false)))
+                        AND r.wasCorrect = false AND r.wasGuessed = false)
+                       OR EXISTS (
+                        SELECT a.id FROM FlashcardAddition a
+                        WHERE a.userId = :userId AND a.questionId = c.linkedTestCardId)))
                  OR (c.correctOption IS NOT NULL AND :withTests = true))
             GROUP BY c.source.id
             """)
@@ -168,7 +185,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     @Query("""
             SELECT c.source.id AS groupId, COUNT(c) AS total
             FROM Card c
-            WHERE c.correctOption IS NOT NULL
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
             GROUP BY c.source.id
             """)
     List<GroupCount> countTestQuestionsBySource();
@@ -177,7 +194,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     @Query("""
             SELECT c.source.id AS groupId, COUNT(c) AS total
             FROM Card c
-            WHERE c.correctOption IS NOT NULL
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
             AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
                 OR (c.chapter IS NOT NULL AND c.chapter.id IN (
@@ -198,6 +215,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             SELECT c FROM Card c JOIN FETCH c.source
             WHERE c.id IN :ids
             AND c.correctOption IS NOT NULL
+            AND c.hidden = false
             AND NOT EXISTS (
                 SELECT s.card.id FROM UserCardState s
                 WHERE s.user.id = :userId AND s.card.id = c.id AND s.suspended = true
@@ -237,6 +255,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
                    c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.category.id = :categoryId
+            AND c.hidden = false
             AND (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
                 OR (c.chapter IS NOT NULL AND c.chapter.id IN (

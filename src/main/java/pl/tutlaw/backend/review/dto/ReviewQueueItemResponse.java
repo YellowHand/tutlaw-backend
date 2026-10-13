@@ -1,5 +1,7 @@
 package pl.tutlaw.backend.review.dto;
 
+import pl.tutlaw.backend.card.QuestionOrigin;
+
 import java.time.LocalDate;
 
 /**
@@ -16,6 +18,8 @@ public record ReviewQueueItemResponse(
         String legalBasis,
         LocalDate validAsOf,
         int lapses,
-        boolean leech
+        boolean leech,
+        QuestionOrigin origin,
+        Integer examYear
 ) {
 }

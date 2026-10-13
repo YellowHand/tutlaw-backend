@@ -1,6 +1,7 @@
 package pl.tutlaw.backend.review.dto;
 
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.flashcard.FlashcardStatus;
 
 import java.time.LocalDate;
 
@@ -9,8 +10,10 @@ import java.time.LocalDate;
  *
  * @param lapses ile razy użytkownik pomylił się w tym pytaniu (łącznie z tą odpowiedzią)
  * @param leech  czy pytanie jest już „trudne" (liczba błędów osiągnęła próg), czyli warto zaproponować zawieszenie
- * @param flashcardUnlocked prawda tylko wtedy, gdy ta odpowiedź właśnie odblokowała powiązaną z pytaniem fiszkę
- *                          (pierwszy pewny błąd w pytaniu, do którego jest fiszka)
+ * @param flashcardUnlocked prawda tylko wtedy, gdy ta odpowiedź właśnie dodała fiszkę pytania do Fiszek
+ *                          (pierwszy pewny błąd w tym pytaniu)
+ * @param flashcard         stan fiszki tego pytania dla użytkownika po tej odpowiedzi: czy można ją dodać
+ *                          („Dodaj do fiszek"), czy już jest w Fiszkach (dodana ręcznie albo przez błąd) albo nie ma jej
  */
 public record TestAnswerResultResponse(
         boolean correct,
@@ -20,6 +23,7 @@ public record TestAnswerResultResponse(
         LocalDate validAsOf,
         int lapses,
         boolean leech,
-        boolean flashcardUnlocked
+        boolean flashcardUnlocked,
+        FlashcardStatus flashcard
 ) {
 }

@@ -105,7 +105,8 @@ class StatisticsCatalogModeTest {
                         throw new UnsupportedOperationException(m);
                     }),
                     new CurrentUserResolver(FakeRepos.users(users)),
-                    new FsrsEngine(FsrsWeights.defaults(), 0.9), MutableClock.at("2026-10-12T08:00:00Z"));
+                    new FsrsEngine(FsrsWeights.defaults(), 0.9), MutableClock.at("2026-10-12T08:00:00Z"),
+                    null);
         }
 
         String distinct() {

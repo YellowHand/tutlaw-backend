@@ -14,6 +14,7 @@ public record AccountExportResponse(
         List<ReviewItem> reviewLogs,
         List<ReportItem> cardReports,
         List<ExamEntry> examAttempts,
+        List<FlashcardAdditionItem> flashcardAdditions,
         LearningSettings learningSettings
 ) {
 
@@ -73,6 +74,9 @@ public record AccountExportResponse(
             int durationSeconds,
             boolean timedOut
     ) {}
+
+    /** Pytania, które użytkownik sam dodał do fiszek przyciskiem „Dodaj do fiszek". */
+    public record FlashcardAdditionItem(Long questionId, String question, LocalDateTime addedAt) {}
 
     /**
      * Zapisane ustawienia nauki; pola {@code null} oznaczają wartość domyślną.

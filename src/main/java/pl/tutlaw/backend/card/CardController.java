@@ -9,6 +9,7 @@ import pl.tutlaw.backend.card.dto.BulkCardImportRequest;
 import pl.tutlaw.backend.card.dto.BulkImportResult;
 import pl.tutlaw.backend.card.dto.CardRequest;
 import pl.tutlaw.backend.card.dto.CardResponse;
+import pl.tutlaw.backend.card.dto.HiddenRequest;
 import pl.tutlaw.backend.common.PageResponse;
 
 @RestController
@@ -41,6 +42,13 @@ public class CardController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CardResponse> create(@Valid @RequestBody CardRequest request) {
         return ResponseEntity.ok(cardService.create(request));
+    }
+
+    /** Ukrycie karty (pytania albo fiszki) wszystkim użytkownikom i jej przywrócenie. Tylko administrator. */
+    @PutMapping("/api/cards/{id}/hidden")
+    @PreAuthorize("hasRole('ADMIN')")
+    public CardResponse setHidden(@PathVariable Long id, @Valid @RequestBody HiddenRequest request) {
+        return cardService.setHidden(id, request.hidden());
     }
 
     @PostMapping("/api/cards/bulk")

@@ -193,4 +193,80 @@ class CardContentRulesTest {
 
         assertThat(withoutBack).isEqualTo(withBack);
     }
+
+    // ---------------------------------------------------------------- pochodzenie i rok
+
+    @Test
+    void originProblem_authoredQuestionHasNoYear() {
+        assertThat(CardContentRules.originProblem(QuestionOrigin.AUTHORED, null)).isNull();
+        assertThat(CardContentRules.originProblem(null, null)).isNull();   // brak pochodzenia = autorskie
+        assertThat(CardContentRules.originProblem(QuestionOrigin.AUTHORED, 2021)).contains("autorskie");
+        assertThat(CardContentRules.originProblem(null, 2021)).contains("autorskie");
+    }
+
+    @Test
+    void originProblem_everyApplicationNeedsAYear() {
+        for (QuestionOrigin origin : QuestionOrigin.values()) {
+            if (origin == QuestionOrigin.AUTHORED) continue;
+            assertThat(CardContentRules.originProblem(origin, null)).as(origin.name()).contains("rok");
+            assertThat(CardContentRules.originProblem(origin, 2021)).as(origin.name()).isNull();
+        }
+    }
+
+    @Test
+    void originProblem_yearMustBeInTheSameRangeAsTheDatabaseCheck() {
+        assertThat(CardContentRules.originProblem(QuestionOrigin.NOTARY, 1990)).isNull();
+        assertThat(CardContentRules.originProblem(QuestionOrigin.NOTARY, 2100)).isNull();
+        assertThat(CardContentRules.originProblem(QuestionOrigin.NOTARY, 1989)).isNotNull();
+        assertThat(CardContentRules.originProblem(QuestionOrigin.NOTARY, 2101)).isNotNull();
+    }
+
+    @Test
+    void questionIsOnlyAnApplicationQuestion_whenOriginIsNotAuthored() {
+        assertThat(QuestionOrigin.AUTHORED.requiresYear()).isFalse();
+        assertThat(QuestionOrigin.BAILIFF.requiresYear()).isTrue();
+    }
+
+    @Test
+    void duplicateKey_theSameQuestionInAnotherYearOrApplicationIsNotADuplicate() {
+        String y2019 = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A,
+                QuestionOrigin.NOTARY, 2019);
+        String y2022 = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A,
+                QuestionOrigin.NOTARY, 2022);
+        String otherApp = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A,
+                QuestionOrigin.BAILIFF, 2019);
+        String authored = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A,
+                QuestionOrigin.AUTHORED, null);
+
+        assertThat(y2019).isNotEqualTo(y2022).isNotEqualTo(otherApp).isNotEqualTo(authored);
+    }
+
+    @Test
+    void duplicateKey_theSameQuestionFromTheSameApplicationAndYearIsADuplicate() {
+        String a = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A,
+                QuestionOrigin.NOTARY, 2019);
+        String b = CardContentRules.duplicateKey("  termin? ", null, "7 dni", "14 dni", "30 dni.", CorrectOption.A,
+                QuestionOrigin.NOTARY, 2019);
+
+        assertThat(a).isEqualTo(b);
+    }
+
+    @Test
+    void duplicateKey_reorderedOptionsAreAnotherQuestion_evenInTheSameYear() {
+        String a = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A,
+                QuestionOrigin.NOTARY, 2019);
+        String reordered = CardContentRules.duplicateKey("Termin?", null, "14 dni", "7 dni", "30 dni", CorrectOption.B,
+                QuestionOrigin.NOTARY, 2019);
+
+        assertThat(a).isNotEqualTo(reordered);
+    }
+
+    @Test
+    void duplicateKey_withoutOriginMatchesTheLegacyKeyForAuthoredQuestions() {
+        String legacy = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A);
+        String authored = CardContentRules.duplicateKey("Termin?", null, "7 dni", "14 dni", "30 dni", CorrectOption.A,
+                QuestionOrigin.AUTHORED, null);
+
+        assertThat(authored).isEqualTo(legacy);
+    }
 }

@@ -139,7 +139,8 @@ public class ExamService {
             questions.add(new ExamResultResponse.QuestionResult(
                     card.getId(), card.getFront(), card.getOptionA(), card.getOptionB(), card.getOptionC(),
                     answer.selectedOption(), card.getCorrectOption(), isCorrect,
-                    card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(), sourceName));
+                    card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(), sourceName,
+                    card.getOrigin(), card.getExamYear()));
         }
         if (questions.isEmpty()) {
             throw new IllegalArgumentException("Żadne z przesłanych pytań nie jest już dostępne, więc nie ma czego oceniać.");

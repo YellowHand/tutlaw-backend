@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
+import pl.tutlaw.backend.flashcard.FlashcardUnlockService;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.UserCardStateRepository;
@@ -28,6 +30,8 @@ class StatisticsOverviewModeTest {
     private static final class Fixture {
         final List<Card> cards = new ArrayList<>();
         final List<Long> confidentMistakes = new ArrayList<>();
+        /** Pytania dodane do fiszek ręcznie przez użytkownika. */
+        final List<Long> manualAdditions = new ArrayList<>();
         /** Flagi (withFlashcards, withTests) przekazane do zapytań o stany i powtórki. */
         final List<String> flagsSeen = new ArrayList<>();
         /** Które zapytanie o aktywność poszło: "all" albo nazwa trybu. */
@@ -74,10 +78,17 @@ class StatisticsOverviewModeTest {
                         throw new UnsupportedOperationException("ReviewLogRepository." + method);
                 }
             });
+            FlashcardAdditionRepository additions = FakeRepos.proxy(FlashcardAdditionRepository.class, (method, args) -> {
+                if (method.equals("findQuestionIdsByUserId")) {
+                    return new ArrayList<>(manualAdditions);
+                }
+                throw new UnsupportedOperationException("FlashcardAdditionRepository." + method);
+            });
             List<User> users = new ArrayList<>(List.of(user));
             service = new StatisticsService(
                     cardRepository, null, null, states, logs, new CurrentUserResolver(FakeRepos.users(users)),
-                    new FsrsEngine(FsrsWeights.defaults(), 0.9), MutableClock.at("2026-10-12T08:00:00Z"));
+                    new FsrsEngine(FsrsWeights.defaults(), 0.9), MutableClock.at("2026-10-12T08:00:00Z"),
+                    new FlashcardUnlockService(logs, additions));
         }
 
         Card card(long id, boolean test, Long linkedTestCardId) {
@@ -123,6 +134,14 @@ class StatisticsOverviewModeTest {
     void flashcardMode_includesTheLinkedFlashcardAfterAConfidentMistake() {
         Fixture f = new Fixture().withMaterial();
         f.confidentMistakes.add(1L);
+
+        assertThat(f.service.getOverview(null, ReviewMode.FLASHCARD, f.jan).totalCards()).isEqualTo(2);
+    }
+
+    @Test
+    void flashcardMode_includesTheLinkedFlashcardAfterTheUserAddsItManually() {
+        Fixture f = new Fixture().withMaterial();
+        f.manualAdditions.add(1L);
 
         assertThat(f.service.getOverview(null, ReviewMode.FLASHCARD, f.jan).totalCards()).isEqualTo(2);
     }

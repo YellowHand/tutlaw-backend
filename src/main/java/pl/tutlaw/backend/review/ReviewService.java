@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
+import pl.tutlaw.backend.flashcard.FlashcardService;
+import pl.tutlaw.backend.flashcard.FlashcardStatus;
 import pl.tutlaw.backend.review.dto.SubmitReviewRequest;
 import pl.tutlaw.backend.review.dto.SubmitTestAnswerRequest;
 import pl.tutlaw.backend.review.dto.TestAnswerResultResponse;
@@ -30,6 +32,7 @@ public class ReviewService {
     private final ReviewLogRepository reviewLogRepository;
     private final CardRepository cardRepository;
     private final CurrentUserResolver currentUserResolver;
+    private final FlashcardService flashcardService;
     private final FsrsEngine fsrsEngine;
     private final LearningSettingsService settingsService;
     private final IntervalFuzzer intervalFuzzer;
@@ -69,24 +72,28 @@ public class ReviewService {
         boolean correct = card.getCorrectOption() == request.selectedOption();
         boolean guessed = Boolean.TRUE.equals(request.guessed());
 
-        // Pewny błąd (zły wybór bez „Nie jestem pewien") odblokowuje powiązaną fiszkę w Fiszkach. Informujemy o tym
-        // tylko raz: gdy to pierwszy taki błąd w tym pytaniu i jest do niego jakaś fiszka.
-        boolean unlocksFlashcard = !correct && !guessed
-                && reviewLogRepository.countConfidentMistakes(user.getId(), card.getId()) == 0
-                && cardRepository.existsByLinkedTestCardId(card.getId());
+        // Pewny błąd (zły wybór bez „Nie jestem pewien") sam dodaje fiszkę pytania do Fiszek. Informujemy o tym
+        // tylko raz: gdy to pierwszy taki błąd w tym pytaniu i fiszka istnieje (jest widoczna).
+        boolean confidentMistake = !correct && !guessed;
+        long earlierConfidentMistakes = reviewLogRepository.countConfidentMistakes(user.getId(), card.getId());
+        FlashcardStatus flashcard = flashcardService.statusOf(
+                user.getId(), card.getId(), confidentMistake || earlierConfidentMistakes > 0);
+        boolean unlocksFlashcard = confidentMistake && earlierConfidentMistakes == 0
+                && flashcard == FlashcardStatus.ADDED_BY_MISTAKE;
 
         UserCardState state = applyReview(user, card, ReviewPolicy.testRating(correct, guessed),
                 request.timeSpentSeconds(), ReviewMode.TEST, correct, guessed, !correct);
 
         return new TestAnswerResultResponse(
                 correct, card.getCorrectOption(), card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(),
-                state.getLapses(), leechPolicy.isLeech(state.getLapses()), unlocksFlashcard);
+                state.getLapses(), leechPolicy.isLeech(state.getLapses()), unlocksFlashcard, flashcard);
     }
 
     /**
      * Karta musi istnieć i być dostępna dla użytkownika (pula płaska albo przeczytany rozdział podręcznika).
      * Bez tego wystarczyło znać numer karty, żeby "odpowiadać" na pytania z nieodblokowanych rozdziałów.
-     * Dla karty niedostępnej odpowiadamy tak samo jak dla nieistniejącej.
+     * Dla karty niedostępnej odpowiadamy tak samo jak dla nieistniejącej. Ukrycie karty NIE blokuje odpowiedzi:
+     * kto ma ją już otwartą w sesji, kończy ją normalnie (nowe sesje jej nie zawierają).
      */
     private Card findReadableCard(Long cardId, User user) {
         Card card = cardRepository.findById(cardId)

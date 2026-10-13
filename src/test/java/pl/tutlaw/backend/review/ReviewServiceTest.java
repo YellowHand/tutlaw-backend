@@ -11,6 +11,8 @@ import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
+import pl.tutlaw.backend.flashcard.FlashcardService;
+import pl.tutlaw.backend.flashcard.FlashcardStatus;
 import pl.tutlaw.backend.review.dto.SubmitReviewRequest;
 import pl.tutlaw.backend.review.dto.SubmitTestAnswerRequest;
 import pl.tutlaw.backend.review.dto.TestAnswerResultResponse;
@@ -46,6 +48,7 @@ class ReviewServiceTest {
     @Mock private ReviewLogRepository reviewLogRepository;
     @Mock private CardRepository cardRepository;
     @Mock private CurrentUserResolver currentUserResolver;
+    @Mock private FlashcardService flashcardService;
     @Mock private LearningSettingsService settingsService;
     private final Authentication authentication = mock(Authentication.class);
 
@@ -56,7 +59,7 @@ class ReviewServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReviewService(stateRepository, reviewLogRepository, cardRepository, currentUserResolver,
-                new FsrsEngine(FsrsWeights.defaults(), 0.9), settingsService,
+                flashcardService, new FsrsEngine(FsrsWeights.defaults(), 0.9), settingsService,
                 new IntervalFuzzer(new Random(3)), new LeechPolicy(8), clock);
         user = new User();
         user.setId(5L);
@@ -346,70 +349,123 @@ class ReviewServiceTest {
     }
 
     @Test
-    void firstConfidentMistake_onAQuestionWithALinkedFlashcard_announcesTheUnlock() {
+    void firstConfidentMistake_addsTheFlashcardAutomatically_andAnnouncesIt() {
         settings(0.9, null);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.empty());
         when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
-        when(cardRepository.existsByLinkedTestCardId(11L)).thenReturn(true);
+        when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.ADDED_BY_MISTAKE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
                 new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
 
         assertThat(result.correct()).isFalse();
         assertThat(result.flashcardUnlocked()).isTrue();
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.ADDED_BY_MISTAKE);
     }
 
     @Test
-    void secondConfidentMistake_doesNotAnnounceTheUnlockAgain() {
+    void secondConfidentMistake_doesNotAnnounceTheUnlockAgain_butTheFlashcardStaysAdded() {
         settings(0.9, null);
         UserCardState state = matureState(10, 5);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
         when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(1L);
+        when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.ADDED_BY_MISTAKE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
                 new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
 
         assertThat(result.flashcardUnlocked()).isFalse();
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.ADDED_BY_MISTAKE);
     }
 
     @Test
-    void mistakeMarkedAsUnsure_doesNotUnlockTheFlashcard_andSkipsTheLookups() {
+    void mistakeMarkedAsUnsure_doesNotAddTheFlashcard_butOffersTheButton() {
         settings(0.9, null);
         UserCardState state = matureState(10, 5);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
+        when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.AVAILABLE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
                 new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, true), authentication);
 
         assertThat(result.correct()).isFalse();
         assertThat(result.flashcardUnlocked()).isFalse();
-        verify(reviewLogRepository, never()).countConfidentMistakes(any(), any());
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.AVAILABLE);
     }
 
     @Test
-    void correctAnswer_neverUnlocksAFlashcard() {
+    void mistakeMarkedAsUnsure_afterAnEarlierConfidentMistake_keepsTheFlashcardAdded() {
         settings(0.9, null);
         UserCardState state = matureState(10, 5);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(2L);
+        when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.ADDED_BY_MISTAKE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, true), authentication);
 
         assertThat(result.flashcardUnlocked()).isFalse();
-        verify(cardRepository, never()).existsByLinkedTestCardId(any());
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.ADDED_BY_MISTAKE);
     }
 
     @Test
-    void confidentMistake_onAQuestionWithoutALinkedFlashcard_unlocksNothing() {
+    void correctAnswer_neverAddsAFlashcardByItself_butOffersTheButton() {
         settings(0.9, null);
         UserCardState state = matureState(10, 5);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
         when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
-        when(cardRepository.existsByLinkedTestCardId(11L)).thenReturn(false);
+        when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.AVAILABLE);
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+
+        assertThat(result.correct()).isTrue();
+        assertThat(result.flashcardUnlocked()).isFalse();
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.AVAILABLE);
+    }
+
+    @Test
+    void correctUnsureAnswer_offersTheSameButton() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
+        when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.AVAILABLE);
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, true), authentication);
+
+        assertThat(result.correct()).isTrue();
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.AVAILABLE);
+    }
+
+    @Test
+    void alreadyAddedManually_isReportedSoTheUiCanOfferTheUndo() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
+        when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.ADDED_MANUALLY);
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.ADDED_MANUALLY);
+    }
+
+    @Test
+    void confidentMistake_onAQuestionWithoutAVisibleFlashcard_unlocksNothing() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
+        when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.UNAVAILABLE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
                 new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
 
         assertThat(result.flashcardUnlocked()).isFalse();
+        assertThat(result.flashcard()).isEqualTo(FlashcardStatus.UNAVAILABLE);
     }
 }

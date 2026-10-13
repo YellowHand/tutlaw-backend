@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import pl.tutlaw.backend.card.CardType;
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.card.QuestionOrigin;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -26,6 +27,10 @@ public record CardRequest(
         String legalBasis,
         LocalDate validAsOf,
         /** Tylko fiszka: pytanie testowe, po błędzie w którym fiszka pojawia się w Fiszkach. */
-        Long linkedTestCardId
+        Long linkedTestCardId,
+        /** Pochodzenie karty; puste oznacza pytanie autorskie. */
+        QuestionOrigin origin,
+        /** Rok egzaminu: wymagany dla pytań z aplikacji, pusty dla autorskich. */
+        Integer examYear
 ) {
 }

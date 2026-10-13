@@ -9,6 +9,7 @@ import pl.tutlaw.backend.card.CardScopes;
 import pl.tutlaw.backend.chapter.Chapter;
 import pl.tutlaw.backend.chapter.ChapterRepository;
 import pl.tutlaw.backend.common.GroupCount;
+import pl.tutlaw.backend.flashcard.FlashcardUnlockService;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.UserCardState;
@@ -28,7 +29,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,6 +57,8 @@ public class StatisticsService {
     private final CurrentUserResolver currentUserResolver;
     private final FsrsEngine fsrsEngine;
     private final Clock clock;
+    /** Które pytania mają odblokowaną fiszkę (pewny błąd albo ręczne dodanie do fiszek). */
+    private final FlashcardUnlockService unlockService;
 
     /**
      * Przegląd nauki. „Wszystkie karty" to karty, które użytkownik może teraz ćwiczyć
@@ -98,7 +100,7 @@ public class StatisticsService {
     private long countReadable(Long userId, Long subjectId, boolean withFlashcards, boolean withTests) {
         List<CardRepository.CardRef> readable = CardScopes.readableRefs(cardRepository, null, subjectId, null, userId);
         Set<Long> unlocked = withFlashcards && CardScopes.anyLinked(readable)
-                ? new HashSet<>(reviewLogRepository.findConfidentMistakeCardIds(userId))
+                ? unlockService.unlockedQuestionIds(userId)
                 : Set.of();
         return readable.stream()
                 .filter(ref -> CardScopes.isTest(ref) ? withTests : withFlashcards && CardScopes.isUnlocked(ref, unlocked))

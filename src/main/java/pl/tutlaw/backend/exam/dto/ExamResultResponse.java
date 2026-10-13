@@ -1,6 +1,7 @@
 package pl.tutlaw.backend.exam.dto;
 
 import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.card.QuestionOrigin;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -39,7 +40,9 @@ public record ExamResultResponse(
             String explanation,
             String legalBasis,
             LocalDate validAsOf,
-            String sourceName
+            String sourceName,
+            QuestionOrigin origin,
+            Integer examYear
     ) {
     }
 }

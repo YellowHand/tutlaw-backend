@@ -12,6 +12,7 @@ import pl.tutlaw.backend.report.CardReportRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.UserSettingsRepository;
+import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
 import pl.tutlaw.backend.user.dto.AccountExportResponse;
 
 import java.time.Clock;
@@ -33,6 +34,7 @@ public class AccountService {
     private final CardReportRepository cardReportRepository;
     private final UserSettingsRepository userSettingsRepository;
     private final ExamAttemptRepository examAttemptRepository;
+    private final FlashcardAdditionRepository flashcardAdditionRepository;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -83,6 +85,12 @@ public class AccountService {
                         a.getTimeLimitMinutes(), a.getDurationSeconds(), a.isTimedOut()))
                 .toList();
 
+        List<AccountExportResponse.FlashcardAdditionItem> additions = flashcardAdditionRepository
+                .findExportRows(user.getId()).stream()
+                .map(a -> new AccountExportResponse.FlashcardAdditionItem(
+                        a.getQuestionId(), a.getQuestionFront(), a.getAddedAt()))
+                .toList();
+
         AccountExportResponse.LearningSettings settings = userSettingsRepository.findById(user.getId())
                 .map(s -> new AccountExportResponse.LearningSettings(
                         s.getNewCardsPerDay(), s.getNewTestQuestionsPerDay(), s.getMaxReviewsPerDay(),
@@ -90,7 +98,7 @@ public class AccountService {
                 .orElse(null);
 
         return new AccountExportResponse(
-                Instant.now(clock), account, progress, states, reviews, reports, exams, settings);
+                Instant.now(clock), account, progress, states, reviews, reports, exams, additions, settings);
     }
 
     /**

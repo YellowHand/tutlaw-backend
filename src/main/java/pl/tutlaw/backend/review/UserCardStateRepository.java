@@ -2,6 +2,7 @@ package pl.tutlaw.backend.review;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -25,6 +26,7 @@ public interface UserCardStateRepository
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
             AND s.suspended = false
+            AND s.card.hidden = false
             AND s.dueDate BETWEEN :start AND :end
             """)
     List<UserCardState> findDueBetween(
@@ -38,6 +40,7 @@ public interface UserCardStateRepository
             SELECT s FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.suspended = false
+            AND s.card.hidden = false
             AND s.dueDate BETWEEN :start AND :end
             """)
     List<UserCardState> findDueBetweenAnySubject(
@@ -52,6 +55,7 @@ public interface UserCardStateRepository
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
             AND s.suspended = false
+            AND s.card.hidden = false
             AND s.dueDate <= :end
             AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
                  OR (s.card.correctOption IS NOT NULL AND :withTests = true))
@@ -68,6 +72,7 @@ public interface UserCardStateRepository
             SELECT s FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.suspended = false
+            AND s.card.hidden = false
             AND s.dueDate <= :end
             AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
                  OR (s.card.correctOption IS NOT NULL AND :withTests = true))
@@ -102,6 +107,7 @@ public interface UserCardStateRepository
             SELECT COUNT(s) FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.suspended = false
+            AND s.card.hidden = false
             AND s.dueDate <= :now
             AND (
                 s.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
@@ -127,6 +133,7 @@ public interface UserCardStateRepository
     @Query("""
             SELECT COUNT(s) FROM UserCardState s
             WHERE s.user.id = :userId
+            AND s.card.hidden = false
             AND s.reps > 0
             AND s.stability > :stabilityAbove
             AND (
@@ -151,6 +158,7 @@ public interface UserCardStateRepository
             SELECT COUNT(s) FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
+            AND s.card.hidden = false
             AND s.reps > 0
             AND s.stability > :stabilityAbove
             AND (
@@ -178,6 +186,7 @@ public interface UserCardStateRepository
             WHERE s.user.id = :userId
             AND s.card.source.id = :sourceId
             AND s.card.chapter IS NOT NULL
+            AND s.card.hidden = false
             AND s.reps > 0
             AND s.stability > :stabilityAbove
             AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
@@ -198,6 +207,7 @@ public interface UserCardStateRepository
             FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
+            AND s.card.hidden = false
             AND s.reps > 0
             AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
                  OR (s.card.correctOption IS NOT NULL AND :withTests = true))
@@ -215,7 +225,7 @@ public interface UserCardStateRepository
             SELECT s.card.id AS cardId, s.stability AS stability, s.lapses AS lapses, s.lastReviewAt AS lastReviewAt
             FROM UserCardState s
             WHERE s.user.id = :userId AND s.reps > 0 AND s.lastReviewAt IS NOT NULL
-            AND s.suspended = false
+            AND s.suspended = false AND s.card.hidden = false
             """)
     List<StartedCardSummary> findStartedSummaries(@Param("userId") Long userId);
 
@@ -225,7 +235,7 @@ public interface UserCardStateRepository
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
             AND s.reps > 0 AND s.lastReviewAt IS NOT NULL
-            AND s.suspended = false
+            AND s.suspended = false AND s.card.hidden = false
             """)
     List<StartedCardSummary> findStartedSummariesInSubject(
             @Param("userId") Long userId, @Param("subjectId") Long subjectId);
@@ -235,7 +245,7 @@ public interface UserCardStateRepository
             SELECT s.card.id AS cardId, s.card.front AS front, s.card.source.name AS sourceName,
                    s.lapses AS lapses, s.suspendedAt AS suspendedAt
             FROM UserCardState s
-            WHERE s.user.id = :userId AND s.suspended = true
+            WHERE s.user.id = :userId AND s.suspended = true AND s.card.hidden = false
             ORDER BY s.suspendedAt DESC, s.card.id
             """)
     List<DifficultRow> findSuspendedRows(@Param("userId") Long userId, Pageable pageable);
@@ -254,6 +264,7 @@ public interface UserCardStateRepository
             FROM UserCardState s
             WHERE s.user.id = :userId
             AND s.suspended = false
+            AND s.card.hidden = false
             AND s.lapses >= :threshold
             AND (
                 s.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
@@ -266,6 +277,14 @@ public interface UserCardStateRepository
             """)
     List<DifficultRow> findLeechRows(
             @Param("userId") Long userId, @Param("threshold") int threshold, Pageable pageable);
+
+    /**
+     * Kasuje stan nauki podanych kart użytkownika (np. fiszki, którą wycofał z Fiszek). Zwraca liczbę usuniętych
+     * stanów. Historia odpowiedzi (review_logs) zostaje.
+     */
+    @Modifying
+    @Query("DELETE FROM UserCardState s WHERE s.user.id = :userId AND s.card.id IN :cardIds")
+    int deleteByUserIdAndCardIds(@Param("userId") Long userId, @Param("cardIds") java.util.Collection<Long> cardIds);
 
     /** Wszystkie stany kart użytkownika wraz z treścią pytania, do eksportu jego danych. */
     @Query("""

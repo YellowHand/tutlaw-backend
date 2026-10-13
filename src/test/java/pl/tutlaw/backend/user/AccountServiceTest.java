@@ -6,6 +6,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import pl.tutlaw.backend.common.exception.UnauthorizedException;
 import pl.tutlaw.backend.exam.ExamAttempt;
 import pl.tutlaw.backend.exam.ExamAttemptRepository;
+import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
 import pl.tutlaw.backend.progress.ChapterProgressRepository;
 import pl.tutlaw.backend.report.CardReportReason;
 import pl.tutlaw.backend.report.CardReportRepository;
@@ -157,6 +158,15 @@ class AccountServiceTest {
                     reports,
                     settings,
                     exams,
+                    FakeRepos.proxy(FlashcardAdditionRepository.class, (method, args) -> {
+                        assertThat(method).isEqualTo("findExportRows");
+                        assertThat(args[0]).isEqualTo(1L);
+                        return List.of(new FlashcardAdditionRepository.ExportedAddition() {
+                            public Long getQuestionId() { return 42L; }
+                            public String getQuestionFront() { return "Co to jest dolus?"; }
+                            public LocalDateTime getAddedAt() { return T.minusHours(2); }
+                        });
+                    }),
                     new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw")));
         }
     }
@@ -188,6 +198,12 @@ class AccountServiceTest {
         assertThat(state.lapses()).isEqualTo(0);
         assertThat(state.difficulty()).isEqualTo(0.0);
         assertThat(state.suspended()).isTrue();
+
+        assertThat(export.flashcardAdditions()).hasSize(1);
+        AccountExportResponse.FlashcardAdditionItem addition = export.flashcardAdditions().get(0);
+        assertThat(addition.questionId()).isEqualTo(42L);
+        assertThat(addition.question()).isEqualTo("Co to jest dolus?");
+        assertThat(addition.addedAt()).isEqualTo(T.minusHours(2));
 
         assertThat(export.reviewLogs()).hasSize(1);
         AccountExportResponse.ReviewItem review = export.reviewLogs().get(0);

@@ -6,6 +6,8 @@ import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
 import pl.tutlaw.backend.chapter.Chapter;
+import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
+import pl.tutlaw.backend.flashcard.FlashcardUnlockService;
 import pl.tutlaw.backend.review.dto.BacklogResponse;
 import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
@@ -46,6 +48,8 @@ class ReviewQueueServiceTest {
         /** Pytania testowe, które użytkownik pomylił bez „Nie jestem pewien" (odblokowują powiązane fiszki). */
         final List<Long> confidentMistakes = new ArrayList<>();
         int confidentMistakeLookups = 0;
+        /** Pytania, które użytkownik sam dodał do fiszek przyciskiem „Dodaj do fiszek". */
+        final List<Long> manualAdditions = new ArrayList<>();
         long introducedToday = 0;
         long dueReviewsDoneToday = 0;
         /** Ustawienia zapisane przez użytkownika (null = same domyślne z konfiguracji). */
@@ -95,6 +99,13 @@ class ReviewQueueServiceTest {
                 }
             });
 
+            FlashcardAdditionRepository additions = FakeRepos.proxy(FlashcardAdditionRepository.class, (method, args) -> {
+                if (method.equals("findQuestionIdsByUserId")) {
+                    return new ArrayList<>(manualAdditions);
+                }
+                throw new UnsupportedOperationException("FlashcardAdditionRepository." + method);
+            });
+
             MutableClock clock = new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw"));
             UserSettingsRepository settingsRepository = FakeRepos.proxy(UserSettingsRepository.class, (method, args) -> {
                 if (method.equals("findById")) {
@@ -111,7 +122,7 @@ class ReviewQueueServiceTest {
             service = new ReviewQueueService(
                     cardRepository, states, logs, resolver,
                     new FsrsEngine(FsrsWeights.defaults(), 0.9), clock,
-                    new Random(7), settings, new LeechPolicy(8));
+                    new Random(7), settings, new LeechPolicy(8), new FlashcardUnlockService(logs, additions));
         }
 
         Card card(long id, boolean test, int chapterOrder) {
@@ -598,6 +609,50 @@ class ReviewQueueServiceTest {
 
         assertThat(f.flashQueue()).containsExactly(2L, 3L);
         assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(2);
+    }
+
+    @Test
+    void linkedFlashcardAppearsAsANewCardAfterTheUserAddsItManually() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+        f.card(3, false, 2);
+        f.manualAdditions.add(1L);
+
+        assertThat(f.flashQueue()).containsExactly(2L, 3L);
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(2);
+    }
+
+    @Test
+    void aManualAdditionAndAConfidentMistakeOnTheSameQuestionShowTheFlashcardOnlyOnce() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+        f.confidentMistakes.add(1L);
+        f.manualAdditions.add(1L);
+
+        assertThat(f.flashQueue()).containsExactly(2L);
+    }
+
+    @Test
+    void aManualAdditionOfADifferentQuestionDoesNotUnlockTheFlashcard() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.card(5, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+        f.manualAdditions.add(5L);
+
+        assertThat(f.flashQueue()).isEmpty();
+    }
+
+    @Test
+    void aManuallyAddedFlashcardNeverAppearsInTheTestQueue() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+        f.manualAdditions.add(1L);
+
+        assertThat(f.testQueue()).containsExactly(1L);
     }
 
     @Test

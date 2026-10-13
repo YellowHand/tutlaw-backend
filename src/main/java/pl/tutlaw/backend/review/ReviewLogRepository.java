@@ -198,6 +198,7 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             FROM ReviewLog r
             WHERE r.user.id = :userId
             AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND r.card.hidden = false
             AND (
                 r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
                 OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (

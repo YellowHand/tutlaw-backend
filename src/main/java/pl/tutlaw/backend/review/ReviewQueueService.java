@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CardScopes;
+import pl.tutlaw.backend.flashcard.FlashcardUnlockService;
 import pl.tutlaw.backend.review.dto.BacklogResponse;
 import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
@@ -20,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -44,6 +44,8 @@ public class ReviewQueueService {
      */
     private final LearningSettingsService settingsService;
     private final LeechPolicy leechPolicy;
+    /** Które pytania mają odblokowaną fiszkę (pewny błąd albo ręczne dodanie do fiszek). */
+    private final FlashcardUnlockService unlockService;
 
     @Autowired
     public ReviewQueueService(
@@ -54,9 +56,10 @@ public class ReviewQueueService {
             FsrsEngine fsrsEngine,
             Clock clock,
             LearningSettingsService settingsService,
-            LeechPolicy leechPolicy) {
+            LeechPolicy leechPolicy,
+            FlashcardUnlockService unlockService) {
         this(cardRepository, stateRepository, reviewLogRepository, currentUserResolver, fsrsEngine, clock,
-                new Random(), settingsService, leechPolicy);
+                new Random(), settingsService, leechPolicy, unlockService);
     }
 
     /** Konstruktor z własnym generatorem losowym (testy mogą ustalić kolejność mieszania). */
@@ -69,7 +72,8 @@ public class ReviewQueueService {
             Clock clock,
             Random random,
             LearningSettingsService settingsService,
-            LeechPolicy leechPolicy) {
+            LeechPolicy leechPolicy,
+            FlashcardUnlockService unlockService) {
         this.cardRepository = cardRepository;
         this.stateRepository = stateRepository;
         this.reviewLogRepository = reviewLogRepository;
@@ -79,11 +83,12 @@ public class ReviewQueueService {
         this.random = random;
         this.settingsService = settingsService;
         this.leechPolicy = leechPolicy;
+        this.unlockService = unlockService;
     }
 
     /**
      * Kolejka fiszek: tylko karty bez opcji A/B/C (pytania testowe żyją w Testach) i tylko odblokowane
-     * (fiszka powiązana z pytaniem testowym pojawia się po pewnym błędzie w tym pytaniu). Gdy {@code categoryId}, {@code subjectId} i {@code sourceId} są puste, kolejka obejmuje
+     * (fiszka powiązana z pytaniem testowym pojawia się po pewnym błędzie w tym pytaniu albo po ręcznym dodaniu). Gdy {@code categoryId}, {@code subjectId} i {@code sourceId} są puste, kolejka obejmuje
      * cały dostępny materiał użytkownika (globalne „Powtórki na dziś").
      * Zaległe od tych, które najpewniej już zapomniałeś (najniższa szansa przypomnienia), w liczbie do dziennego
      * limitu, potem nowe w kolejności rozdziałów. {@code extraDueReviews} dokłada kolejną porcję zaległych ponad limit.
@@ -163,14 +168,14 @@ public class ReviewQueueService {
 
     /**
      * Fiszki spośród podanych kart: bez pytań testowych i bez fiszek powiązanych z pytaniem, którego użytkownik
-     * jeszcze nie pomylił. Odblokowania sprawdzamy w historii odpowiedzi tylko wtedy, gdy jakaś fiszka jest powiązana.
+     * jeszcze nie pomylił (pewnie) ani nie dodał do fiszek. Odblokowania sprawdzamy w historii odpowiedzi tylko wtedy, gdy jakaś fiszka jest powiązana.
      */
     private List<CardRepository.CardRef> flashcards(List<CardRepository.CardRef> cards, Long userId) {
         List<CardRepository.CardRef> plain = cards.stream().filter(CardScopes::isFlashcard).toList();
         if (!CardScopes.anyLinked(plain)) {
             return plain;
         }
-        Set<Long> unlocked = new HashSet<>(reviewLogRepository.findConfidentMistakeCardIds(userId));
+        Set<Long> unlocked = unlockService.unlockedQuestionIds(userId);
         return plain.stream().filter(ref -> CardScopes.isUnlocked(ref, unlocked)).toList();
     }
 
