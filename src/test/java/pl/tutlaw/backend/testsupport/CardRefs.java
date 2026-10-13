@@ -17,6 +17,11 @@ public final class CardRefs {
     }
 
     public static CardRepository.CardRef of(long id, Integer chapterOrder, CorrectOption correctOption) {
+        return of(id, chapterOrder, correctOption, null);
+    }
+
+    public static CardRepository.CardRef of(
+            long id, Integer chapterOrder, CorrectOption correctOption, Long linkedTestCardId) {
         return new CardRepository.CardRef() {
             @Override
             public Long getId() {
@@ -32,13 +37,18 @@ public final class CardRefs {
             public CorrectOption getCorrectOption() {
                 return correctOption;
             }
+
+            @Override
+            public Long getLinkedTestCardId() {
+                return linkedTestCardId;
+            }
         };
     }
 
     /** Odchudzony widok karty: numer, kolejność rozdziału (null bez rozdziału) i poprawna opcja (null dla fiszki). */
     public static CardRepository.CardRef of(Card card) {
         Integer chapterOrder = card.getChapter() == null ? null : card.getChapter().getOrderIndex();
-        return of(card.getId(), chapterOrder, card.getCorrectOption());
+        return of(card.getId(), chapterOrder, card.getCorrectOption(), card.getLinkedTestCardId());
     }
 
     public static List<CardRepository.CardRef> of(List<Card> cards) {

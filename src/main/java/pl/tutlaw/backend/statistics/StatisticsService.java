@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
+import pl.tutlaw.backend.card.CardScopes;
 import pl.tutlaw.backend.chapter.Chapter;
 import pl.tutlaw.backend.chapter.ChapterRepository;
 import pl.tutlaw.backend.common.GroupCount;
@@ -27,8 +28,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -59,39 +62,62 @@ public class StatisticsService {
      * Przegląd nauki. „Wszystkie karty" to karty, które użytkownik może teraz ćwiczyć
      * (pule płaskie i przeczytane rozdziały podręczników), a nie cała biblioteka, inaczej pasek postępu
      * nigdy by się nie domykał przy rozdziałach, których jeszcze nie odblokował.
+     * {@code mode}: FLASHCARD to tylko fiszki (bez pytań testowych i bez zablokowanych fiszek powiązanych z pytaniem),
+     * TEST to tylko pytania testowe, a brak trybu (null) to cały materiał, czyli jedno i drugie.
      */
-    public OverviewResponse getOverview(Long subjectId, Authentication authentication) {
+    public OverviewResponse getOverview(Long subjectId, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         Long userId = user.getId();
+        boolean withFlashcards = mode != ReviewMode.TEST;
+        boolean withTests = mode != ReviewMode.FLASHCARD;
 
-        long totalCards;
+        long totalCards = countReadable(userId, subjectId, withFlashcards, withTests);
         long startedCards;
         long matureCards;
         if (subjectId != null) {
-            totalCards = cardRepository.countReadableForUserAndSubject(subjectId, userId);
-            startedCards = stateRepository.countStartedReadableInSubject(userId, subjectId, ANY_STABILITY);
-            matureCards = stateRepository.countStartedReadableInSubject(userId, subjectId, MATURE_STABILITY_THRESHOLD);
+            startedCards = stateRepository.countStartedReadableInSubject(
+                    userId, subjectId, ANY_STABILITY, withFlashcards, withTests);
+            matureCards = stateRepository.countStartedReadableInSubject(
+                    userId, subjectId, MATURE_STABILITY_THRESHOLD, withFlashcards, withTests);
         } else {
-            totalCards = cardRepository.countReadableForUser(userId);
-            startedCards = stateRepository.countStartedReadable(userId, ANY_STABILITY);
-            matureCards = stateRepository.countStartedReadable(userId, MATURE_STABILITY_THRESHOLD);
+            startedCards = stateRepository.countStartedReadable(userId, ANY_STABILITY, withFlashcards, withTests);
+            matureCards = stateRepository.countStartedReadable(
+                    userId, MATURE_STABILITY_THRESHOLD, withFlashcards, withTests);
         }
 
-        Double retentionRate = calculateRetentionRate(userId, subjectId);
-        List<DailyForecastItem> forecast = calculateForecast(userId, subjectId);
+        Double retentionRate = calculateRetentionRate(userId, subjectId, withFlashcards, withTests);
+        List<DailyForecastItem> forecast = calculateForecast(userId, subjectId, withFlashcards, withTests);
 
         return new OverviewResponse((int) totalCards, (int) startedCards, (int) matureCards, retentionRate, forecast);
     }
 
-    public List<ChapterMasteryResponse> getMasteryBySource(Long sourceId, Authentication authentication) {
+    /**
+     * Ile kart wybranego rodzaju użytkownik może teraz ćwiczyć. Liczone z odchudzonych widoków kart, tak samo jak
+     * kolejki, więc zasada „fiszka powiązana z pytaniem jest ukryta do pierwszego pewnego błędu" jest w jednym miejscu.
+     */
+    private long countReadable(Long userId, Long subjectId, boolean withFlashcards, boolean withTests) {
+        List<CardRepository.CardRef> readable = CardScopes.readableRefs(cardRepository, null, subjectId, null, userId);
+        Set<Long> unlocked = withFlashcards && CardScopes.anyLinked(readable)
+                ? new HashSet<>(reviewLogRepository.findConfidentMistakeCardIds(userId))
+                : Set.of();
+        return readable.stream()
+                .filter(ref -> CardScopes.isTest(ref) ? withTests : withFlashcards && CardScopes.isUnlocked(ref, unlocked))
+                .count();
+    }
+
+    /** Opanowanie rozdziałów źródła. {@code mode}: FLASHCARD, TEST albo null (fiszki i testy razem). */
+    public List<ChapterMasteryResponse> getMasteryBySource(Long sourceId, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
+        boolean withFlashcards = mode != ReviewMode.TEST;
+        boolean withTests = mode != ReviewMode.FLASHCARD;
 
         List<Chapter> chapters = chapterRepository.findBySourceIdOrderByOrderIndexAsc(sourceId);
-        Map<Long, Long> totalByChapter = toMap(cardRepository.countByChapterForSource(sourceId));
-        Map<Long, Long> startedByChapter = toMap(
-                stateRepository.countStartedByChapter(user.getId(), sourceId, ANY_STABILITY));
-        Map<Long, Long> matureByChapter = toMap(
-                stateRepository.countStartedByChapter(user.getId(), sourceId, MATURE_STABILITY_THRESHOLD));
+        Map<Long, Long> totalByChapter = toMap(
+                cardRepository.countByChapterForSource(sourceId, user.getId(), withFlashcards, withTests));
+        Map<Long, Long> startedByChapter = toMap(stateRepository.countStartedByChapter(
+                user.getId(), sourceId, ANY_STABILITY, withFlashcards, withTests));
+        Map<Long, Long> matureByChapter = toMap(stateRepository.countStartedByChapter(
+                user.getId(), sourceId, MATURE_STABILITY_THRESHOLD, withFlashcards, withTests));
 
         return chapters.stream().map(chapter -> {
             int total = totalByChapter.getOrDefault(chapter.getId(), 0L).intValue();
@@ -143,15 +169,21 @@ public class StatisticsService {
         return result;
     }
 
-    /** Liczba odpowiedzi na każdy z ostatnich {@code days} dni (łącznie z dzisiejszym). */
-    public List<ActivityHeatmapItem> getActivity(int days, Authentication authentication) {
+    /**
+     * Liczba odpowiedzi na każdy z ostatnich {@code days} dni (łącznie z dzisiejszym).
+     * {@code mode} null = fiszki i testy razem, inaczej tylko wskazany tryb.
+     */
+    public List<ActivityHeatmapItem> getActivity(int days, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         int safeDays = Math.max(1, Math.min(days, MAX_ACTIVITY_DAYS));
 
         LocalDate today = LocalDate.now(clock);
         LocalDateTime since = today.minusDays(safeDays - 1L).atStartOfDay();
 
-        return StatisticsMath.perDay(today, safeDays, reviewLogRepository.findReviewTimesSince(user.getId(), since));
+        List<LocalDateTime> times = mode == null
+                ? reviewLogRepository.findReviewTimesSince(user.getId(), since)
+                : reviewLogRepository.findReviewTimesSinceByMode(user.getId(), mode, since);
+        return StatisticsMath.perDay(today, safeDays, times);
     }
 
     /**
@@ -185,14 +217,18 @@ public class StatisticsService {
      * Postęp w źródłach przedmiotu. Tu mianownikiem jest cała zawartość źródła (także nieprzeczytane
      * rozdziały podręcznika), bo pytanie brzmi „ile z całej książki już umiem".
      */
-    public List<SourceProgressResponse> getSourceProgress(Long subjectId, Authentication authentication) {
+    public List<SourceProgressResponse> getSourceProgress(Long subjectId, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
+        boolean withFlashcards = mode != ReviewMode.TEST;
+        boolean withTests = mode != ReviewMode.FLASHCARD;
 
         List<Source> sources = sourceRepository.findBySubjectId(subjectId).stream()
                 .sorted(Comparator.comparing(Source::getId))
                 .toList();
-        Map<Long, Long> totalBySource = toMap(cardRepository.countBySourceForSubject(subjectId));
-        Map<Long, Long> startedBySource = toMap(stateRepository.countStartedBySource(user.getId(), subjectId));
+        Map<Long, Long> totalBySource = toMap(
+                cardRepository.countBySourceForSubject(subjectId, user.getId(), withFlashcards, withTests));
+        Map<Long, Long> startedBySource = toMap(
+                stateRepository.countStartedBySource(user.getId(), subjectId, withFlashcards, withTests));
 
         return sources.stream().map(source -> {
             int total = totalBySource.getOrDefault(source.getId(), 0L).intValue();
@@ -208,29 +244,34 @@ public class StatisticsService {
      * bo te nie mówią nic o tym, czy materiał się utrwala (wcześniej zawyżały wynik).
      * Brak takich powtórek to {@code null} („brak danych"), a nie 0%.
      */
-    private Double calculateRetentionRate(Long userId, Long subjectId) {
+    private Double calculateRetentionRate(Long userId, Long subjectId, boolean withFlashcards, boolean withTests) {
         LocalDateTime since = LocalDateTime.now(clock).minusDays(RETENTION_WINDOW_DAYS);
 
         long all;
         long successful;
         if (subjectId != null) {
-            all = reviewLogRepository.countRecallsInSubject(userId, subjectId, since, RETENTION_MIN_ELAPSED_DAYS, 1);
-            successful = reviewLogRepository.countRecallsInSubject(userId, subjectId, since, RETENTION_MIN_ELAPSED_DAYS, 2);
+            all = reviewLogRepository.countRecallsInSubject(
+                    userId, subjectId, since, RETENTION_MIN_ELAPSED_DAYS, 1, withFlashcards, withTests);
+            successful = reviewLogRepository.countRecallsInSubject(
+                    userId, subjectId, since, RETENTION_MIN_ELAPSED_DAYS, 2, withFlashcards, withTests);
         } else {
-            all = reviewLogRepository.countRecalls(userId, since, RETENTION_MIN_ELAPSED_DAYS, 1);
-            successful = reviewLogRepository.countRecalls(userId, since, RETENTION_MIN_ELAPSED_DAYS, 2);
+            all = reviewLogRepository.countRecalls(
+                    userId, since, RETENTION_MIN_ELAPSED_DAYS, 1, withFlashcards, withTests);
+            successful = reviewLogRepository.countRecalls(
+                    userId, since, RETENTION_MIN_ELAPSED_DAYS, 2, withFlashcards, withTests);
         }
 
         return StatisticsMath.percentage(successful, all);
     }
 
-    private List<DailyForecastItem> calculateForecast(Long userId, Long subjectId) {
+    private List<DailyForecastItem> calculateForecast(
+            Long userId, Long subjectId, boolean withFlashcards, boolean withTests) {
         LocalDate today = LocalDate.now(clock);
         // Bez dolnej granicy: karty z minionym terminem (także z wcześniejszych dni) liczą się do „dziś".
         LocalDateTime end = today.plusDays(7).atStartOfDay();
         List<UserCardState> dueStates = subjectId != null
-                ? stateRepository.findDueUntil(userId, subjectId, end)
-                : stateRepository.findDueUntilAnySubject(userId, end);
+                ? stateRepository.findDueUntil(userId, subjectId, end, withFlashcards, withTests)
+                : stateRepository.findDueUntilAnySubject(userId, end, withFlashcards, withTests);
 
         Map<LocalDate, Long> countsByDate = dueStates.stream()
                 .collect(Collectors.groupingBy(

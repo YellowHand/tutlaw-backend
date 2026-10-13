@@ -72,6 +72,11 @@ class ReviewServiceTest {
         when(cardRepository.countReadableById(11L, 5L)).thenReturn(1L);
     }
 
+    /** Fixture domyślnie jest pytaniem testowym; fiszka to karta bez poprawnej opcji. */
+    private void asFlashcard() {
+        card.setCorrectOption(null);
+    }
+
     private void settings(double retention, Long daysToExam) {
         double effective = SchedulingRules.effectiveRetention(retention, daysToExam);
         when(settingsService.effectiveFor(5L)).thenReturn(new EffectiveSettings(
@@ -102,6 +107,7 @@ class ReviewServiceTest {
 
     @Test
     void firstFlashcardReview_createsStateAndLog() {
+        asFlashcard();
         settings(0.9, null);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.empty());
 
@@ -123,6 +129,7 @@ class ReviewServiceTest {
 
     @Test
     void firstFlashcardReview_againCountsAsLapse() {
+        asFlashcard();
         settings(0.9, null);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.empty());
 
@@ -139,6 +146,7 @@ class ReviewServiceTest {
 
     @Test
     void higherRetention_bringsTheCardBackSooner() {
+        asFlashcard();
         settings(0.97, null);
         UserCardState careful = matureState(60, 20);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(careful));
@@ -156,6 +164,7 @@ class ReviewServiceTest {
 
     @Test
     void examInAWeek_capsTheIntervalSoTheCardReturnsBeforeTheExam() {
+        asFlashcard();
         settings(0.9, 7L);
         UserCardState state = matureState(120, 20); // bez egzaminu odstęp byłby rzędu miesięcy
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
@@ -168,6 +177,7 @@ class ReviewServiceTest {
 
     @Test
     void noExam_leavesLongIntervalsAlone() {
+        asFlashcard();
         settings(0.9, null);
         UserCardState state = matureState(120, 20);
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
@@ -181,6 +191,7 @@ class ReviewServiceTest {
 
     @Test
     void duplicateSubmitWithinASecond_isIgnored() {
+        asFlashcard();
         UserCardState state = matureState(10, 0);
         state.setLastReviewAt(NOW.minusNanos(400_000_000));
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
@@ -319,5 +330,86 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> service.submitReview(new SubmitReviewRequest(11L, 3, null), authentication))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(stateRepository, never()).save(any());
+    }
+
+    // ---------------------------------------------------------------- Fiszki i Testy osobno, odblokowanie fiszek
+
+    @Test
+    void flashcardRatingOfATestQuestion_isRejected_becauseTestQuestionsLiveOnlyInTests() {
+        // card z fixture ma poprawną opcję B, czyli jest pytaniem testowym
+        assertThatThrownBy(() -> service.submitReview(new SubmitReviewRequest(11L, 3, 5.0), authentication))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tylko w Testach");
+
+        verify(stateRepository, never()).save(any());
+        verify(reviewLogRepository, never()).save(any());
+    }
+
+    @Test
+    void firstConfidentMistake_onAQuestionWithALinkedFlashcard_announcesTheUnlock() {
+        settings(0.9, null);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.empty());
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
+        when(cardRepository.existsByLinkedTestCardId(11L)).thenReturn(true);
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+
+        assertThat(result.correct()).isFalse();
+        assertThat(result.flashcardUnlocked()).isTrue();
+    }
+
+    @Test
+    void secondConfidentMistake_doesNotAnnounceTheUnlockAgain() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(1L);
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+
+        assertThat(result.flashcardUnlocked()).isFalse();
+    }
+
+    @Test
+    void mistakeMarkedAsUnsure_doesNotUnlockTheFlashcard_andSkipsTheLookups() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, true), authentication);
+
+        assertThat(result.correct()).isFalse();
+        assertThat(result.flashcardUnlocked()).isFalse();
+        verify(reviewLogRepository, never()).countConfidentMistakes(any(), any());
+    }
+
+    @Test
+    void correctAnswer_neverUnlocksAFlashcard() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+
+        assertThat(result.flashcardUnlocked()).isFalse();
+        verify(cardRepository, never()).existsByLinkedTestCardId(any());
+    }
+
+    @Test
+    void confidentMistake_onAQuestionWithoutALinkedFlashcard_unlocksNothing() {
+        settings(0.9, null);
+        UserCardState state = matureState(10, 5);
+        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        when(reviewLogRepository.countConfidentMistakes(5L, 11L)).thenReturn(0L);
+        when(cardRepository.existsByLinkedTestCardId(11L)).thenReturn(false);
+
+        TestAnswerResultResponse result = service.submitTestAnswer(
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+
+        assertThat(result.flashcardUnlocked()).isFalse();
     }
 }

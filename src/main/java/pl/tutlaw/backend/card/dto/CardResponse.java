@@ -11,6 +11,6 @@ public record CardResponse(
         String front, String back, Integer pageNumber, boolean verbatimQuote,
         List<String> tagNames,
         String optionA, String optionB, String optionC, CorrectOption correctOption, String explanation,
-        String legalBasis, LocalDate validAsOf
+        String legalBasis, LocalDate validAsOf, Long linkedTestCardId
 ) {
 }

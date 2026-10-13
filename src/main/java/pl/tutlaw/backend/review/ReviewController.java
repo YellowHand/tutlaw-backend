@@ -48,9 +48,10 @@ public class ReviewController {
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) Long sourceId,
+            @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode,
             Authentication authentication) {
         return new NewCardsAvailableResponse(
-                queueService.countAvailableNewCards(categoryId, subjectId, sourceId, authentication));
+                queueService.countAvailableNewCards(categoryId, subjectId, sourceId, mode, authentication));
     }
 
     /** Zaległości w wybranym zakresie i trybie (FLASHCARD albo TEST): ile czeka i ile nie zmieści się dziś w sesji. */
@@ -82,9 +83,11 @@ public class ReviewController {
         return mistakesService.count(authentication);
     }
 
+    /** Ile kart czeka na powtórkę w trybie FLASHCARD (domyślnie: fiszki) albo TEST (pytania testowe). */
     @GetMapping("/due-count")
-    public DueCountResponse getDueCount(Authentication authentication) {
-        return new DueCountResponse(queueService.countDueNow(authentication));
+    public DueCountResponse getDueCount(
+            @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode, Authentication authentication) {
+        return new DueCountResponse(queueService.countDueNow(mode, authentication));
     }
 
     @PostMapping

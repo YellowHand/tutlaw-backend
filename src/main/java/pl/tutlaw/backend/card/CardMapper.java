@@ -14,7 +14,7 @@ public class CardMapper {
                 card.getTags().stream().map(Tag::getName).toList(),
                 card.getOptionA(), card.getOptionB(), card.getOptionC(),
                 card.getCorrectOption(), card.getExplanation(),
-                card.getLegalBasis(), card.getValidAsOf()
+                card.getLegalBasis(), card.getValidAsOf(), card.getLinkedTestCardId()
         );
     }
 }

@@ -130,7 +130,14 @@ public class CardService {
                 source.getSourceType() == SourceType.TEXTBOOK,
                 chapter != null,
                 request.front(), request.back(), request.pageNumber(),
-                request.optionA(), request.optionB(), request.optionC(), request.correctOption());
+                request.optionA(), request.optionB(), request.optionC(), request.correctOption(),
+                request.linkedTestCardId());
+        if (request.linkedTestCardId() != null) {
+            Card target = context.card(request.linkedTestCardId());
+            if (target.getCorrectOption() == null) {
+                problems.add("Fiszkę można powiązać tylko z pytaniem testowym (kartą z poprawną odpowiedzią A/B/C).");
+            }
+        }
         String legalBasisProblem = CardContentRules.legalBasisProblem(request.legalBasis());
         if (legalBasisProblem != null) {
             problems.add(legalBasisProblem);
@@ -144,7 +151,7 @@ public class CardService {
         card.setChapter(chapter);
         card.setType(request.type());
         card.setFront(request.front().strip());
-        card.setBack(request.back().strip());
+        card.setBack(CardContentRules.blankToNull(request.back()));
         card.setPageNumber(request.pageNumber());
         card.setVerbatimQuote(request.verbatimQuote());
         card.setOptionA(CardContentRules.blankToNull(request.optionA()));
@@ -154,6 +161,7 @@ public class CardService {
         card.setExplanation(CardContentRules.blankToNull(request.explanation()));
         card.setLegalBasis(CardContentRules.blankToNull(request.legalBasis()));
         card.setValidAsOf(request.validAsOf());
+        card.setLinkedTestCardId(request.linkedTestCardId());
         card.setTags(context.tags(request.tagIds()));
         return card;
     }
@@ -171,6 +179,7 @@ public class CardService {
     private final class ImportContext {
         private final Map<Long, Source> sources = new HashMap<>();
         private final Map<Long, Chapter> chapters = new HashMap<>();
+        private final Map<Long, Card> cards = new HashMap<>();
         private final Map<Long, Set<String>> keysBySource = new HashMap<>();
         private Map<Long, Tag> allTags;
 
@@ -189,6 +198,16 @@ public class CardService {
             Chapter loaded = chapterRepository.findById(id)
                     .orElseThrow(() -> new ResourceNotFoundException("Nie znaleziono rozdziału o id " + id));
             chapters.put(id, loaded);
+            return loaded;
+        }
+
+        /** Karta, z którą powiązana jest fiszka (musi istnieć). */
+        Card card(Long id) {
+            Card cached = cards.get(id);
+            if (cached != null) return cached;
+            Card loaded = cardRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Nie znaleziono pytania testowego o id " + id));
+            cards.put(id, loaded);
             return loaded;
         }
 

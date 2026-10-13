@@ -13,7 +13,8 @@ public record CardRequest(
         @NotNull Long sourceId,
         @NotNull CardType type,
         @NotBlank String front,
-        @NotBlank String back,
+        /** Wymagane dla fiszki (karty bez opcji). Dla pytania testowego może być puste. */
+        String back,
         Integer pageNumber,
         boolean verbatimQuote,
         List<Long> tagIds,
@@ -23,6 +24,8 @@ public record CardRequest(
         CorrectOption correctOption,
         String explanation,
         String legalBasis,
-        LocalDate validAsOf
+        LocalDate validAsOf,
+        /** Tylko fiszka: pytanie testowe, po błędzie w którym fiszka pojawia się w Fiszkach. */
+        Long linkedTestCardId
 ) {
 }

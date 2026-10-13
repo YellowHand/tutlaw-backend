@@ -40,7 +40,8 @@ public class Card {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String front;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    /** Odpowiedź na odwrocie fiszki. Wymagana tylko dla fiszki; pytanie testowe ma ją w correctOption (tu zwykle null). */
+    @Column(columnDefinition = "TEXT")
     private String back;
 
     @Column(name = "page_number")
@@ -64,6 +65,14 @@ public class Card {
 
     @Column(columnDefinition = "TEXT")
     private String explanation;
+
+    /**
+     * Tylko fiszka (karta bez opcji): numer pytania testowego, z którym jest powiązana. Taka fiszka pokazuje się
+     * w Fiszkach dopiero po błędzie w tym pytaniu (zob. {@link CardScopes#isUnlocked}). Zwykły numer zamiast
+     * relacji, bo służy do filtrowania w pamięci i nie ma po co ładować drugiej karty.
+     */
+    @Column(name = "linked_test_card_id")
+    private Long linkedTestCardId;
 
     /** Podstawa prawna, np. "art. 415 k.c." Opcjonalna; pokazywana uczącemu się przy odpowiedzi. */
     @Column(name = "legal_basis", columnDefinition = "TEXT")

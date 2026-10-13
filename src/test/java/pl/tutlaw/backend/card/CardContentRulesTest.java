@@ -140,4 +140,57 @@ class CardContentRulesTest {
         // Spacje na brzegach nie liczą się do limitu, tak jak przy zapisie (strip).
         assertThat(CardContentRules.legalBasisProblem("  " + "a".repeat(500) + "  ")).isNull();
     }
+
+    // ---------------------------------------------------------------- back opcjonalne dla pytań testowych, powiązane fiszki
+
+    @Test
+    void testQuestionWithoutBack_isValid_becauseTheCorrectOptionIsTheAnswer() {
+        List<String> problems = CardContentRules.validate(
+                false, false, "Pytanie?", null, null, "jedna", "dwie", "trzy", CorrectOption.A);
+
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    void flashcardWithoutBack_isStillRejected() {
+        List<String> problems = CardContentRules.validate(
+                false, false, "Pytanie?", "  ", null, null, null, null, null);
+
+        assertThat(problems).hasSize(1);
+        assertThat(problems.get(0)).contains("back");
+    }
+
+    @Test
+    void incompleteTestQuestionWithoutBack_reportsOnlyTheTestProblems() {
+        List<String> problems = CardContentRules.validate(
+                false, false, "Pytanie?", null, null, "jedna", null, null, null);
+
+        assertThat(problems).noneMatch(p -> p.contains("back"));
+        assertThat(problems).isNotEmpty();
+    }
+
+    @Test
+    void flashcardLinkedToATestQuestion_isValid() {
+        List<String> problems = CardContentRules.validate(
+                false, false, "Czym jest posiadanie?", "Władztwo nad rzeczą", null, null, null, null, null, 42L);
+
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    void aTestQuestionCannotItselfBeLinked() {
+        List<String> problems = CardContentRules.validate(
+                false, false, "Pytanie?", null, null, "jedna", "dwie", "trzy", CorrectOption.A, 42L);
+
+        assertThat(problems).hasSize(1);
+        assertThat(problems.get(0)).contains("Powiązanie");
+    }
+
+    @Test
+    void duplicateKeyOfATestQuestionIgnoresBack_evenWhenItIsNull() {
+        String withBack = CardContentRules.duplicateKey("P", "O", "a", "b", "c", CorrectOption.A);
+        String withoutBack = CardContentRules.duplicateKey("P", null, "a", "b", "c", CorrectOption.A);
+
+        assertThat(withoutBack).isEqualTo(withBack);
+    }
 }

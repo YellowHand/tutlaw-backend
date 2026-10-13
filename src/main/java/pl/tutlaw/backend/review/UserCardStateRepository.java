@@ -53,11 +53,15 @@ public interface UserCardStateRepository
             AND s.card.source.subject.id = :subjectId
             AND s.suspended = false
             AND s.dueDate <= :end
+            AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
             """)
     List<UserCardState> findDueUntil(
             @Param("userId") Long userId,
             @Param("subjectId") Long subjectId,
-            @Param("end") LocalDateTime end
+            @Param("end") LocalDateTime end,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
     );
 
     @Query("""
@@ -65,10 +69,14 @@ public interface UserCardStateRepository
             WHERE s.user.id = :userId
             AND s.suspended = false
             AND s.dueDate <= :end
+            AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
             """)
     List<UserCardState> findDueUntilAnySubject(
             @Param("userId") Long userId,
-            @Param("end") LocalDateTime end
+            @Param("end") LocalDateTime end,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
     );
 
     /**
@@ -88,6 +96,7 @@ public interface UserCardStateRepository
     /**
      * Liczba kart, których termin już minął, w dostępnym dla użytkownika materiale.
      * Ten sam filtr dostępności co w kolejce, więc liczba zgadza się z tym, co dostanie w sesji.
+     * {@code withFlashcards} i {@code withTests} wybierają rodzaj kart: fiszki (bez opcji) i/albo pytania testowe.
      */
     @Query("""
             SELECT COUNT(s) FROM UserCardState s
@@ -101,8 +110,15 @@ public interface UserCardStateRepository
                     WHERE p.user.id = :userId AND p.read = true
                 ))
             )
+            AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
             """)
-    long countDue(@Param("userId") Long userId, @Param("now") LocalDateTime now);
+    long countDue(
+            @Param("userId") Long userId,
+            @Param("now") LocalDateTime now,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
+    );
 
     /**
      * Ile kart rozpoczętych (co najmniej jedna powtórka) jest w materiale dostępnym dla użytkownika
@@ -120,8 +136,15 @@ public interface UserCardStateRepository
                     WHERE p.user.id = :userId AND p.read = true
                 ))
             )
+            AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
             """)
-    long countStartedReadable(@Param("userId") Long userId, @Param("stabilityAbove") double stabilityAbove);
+    long countStartedReadable(
+            @Param("userId") Long userId,
+            @Param("stabilityAbove") double stabilityAbove,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
+    );
 
     /** To samo, ograniczone do jednego przedmiotu. */
     @Query("""
@@ -137,11 +160,15 @@ public interface UserCardStateRepository
                     WHERE p.user.id = :userId AND p.read = true
                 ))
             )
+            AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
             """)
     long countStartedReadableInSubject(
             @Param("userId") Long userId,
             @Param("subjectId") Long subjectId,
-            @Param("stabilityAbove") double stabilityAbove
+            @Param("stabilityAbove") double stabilityAbove,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
     );
 
     /** Rozpoczęte karty w rozdziałach źródła ze stabilnością powyżej progu (groupId = id rozdziału). */
@@ -153,12 +180,16 @@ public interface UserCardStateRepository
             AND s.card.chapter IS NOT NULL
             AND s.reps > 0
             AND s.stability > :stabilityAbove
+            AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
             GROUP BY s.card.chapter.id
             """)
     List<GroupCount> countStartedByChapter(
             @Param("userId") Long userId,
             @Param("sourceId") Long sourceId,
-            @Param("stabilityAbove") double stabilityAbove
+            @Param("stabilityAbove") double stabilityAbove,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
     );
 
     /** Rozpoczęte karty w każdym źródle przedmiotu (groupId = id źródła). */
@@ -168,9 +199,16 @@ public interface UserCardStateRepository
             WHERE s.user.id = :userId
             AND s.card.source.subject.id = :subjectId
             AND s.reps > 0
+            AND ((s.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (s.card.correctOption IS NOT NULL AND :withTests = true))
             GROUP BY s.card.source.id
             """)
-    List<GroupCount> countStartedBySource(@Param("userId") Long userId, @Param("subjectId") Long subjectId);
+    List<GroupCount> countStartedBySource(
+            @Param("userId") Long userId,
+            @Param("subjectId") Long subjectId,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
+    );
 
     /** Skrót stanu rozpoczętych kart, wystarczający do wyliczenia najsłabszych bez ładowania encji. */
     @Query("""

@@ -15,10 +15,7 @@ final class CardContentRules {
     private CardContentRules() {
     }
 
-    /**
-     * @param textbookSource czy karta należy do źródła typu podręcznik (wtedy musi mieć rozdział)
-     * @return lista błędów po polsku; pusta, gdy karta jest poprawna
-     */
+    /** Jak {@link #validate(boolean, boolean, String, String, Integer, String, String, String, CorrectOption, Long)} bez powiązania. */
     static List<String> validate(
             boolean textbookSource,
             boolean hasChapter,
@@ -30,12 +27,35 @@ final class CardContentRules {
             String optionC,
             CorrectOption correctOption
     ) {
+        return validate(textbookSource, hasChapter, front, back, pageNumber,
+                optionA, optionB, optionC, correctOption, null);
+    }
+
+    /**
+     * @param textbookSource czy karta należy do źródła typu podręcznik (wtedy musi mieć rozdział)
+     * @param linkedTestCardId pytanie testowe, z którym fiszka jest powiązana (null, gdy karta nie jest powiązana)
+     * @return lista błędów po polsku; pusta, gdy karta jest poprawna
+     */
+    static List<String> validate(
+            boolean textbookSource,
+            boolean hasChapter,
+            String front,
+            String back,
+            Integer pageNumber,
+            String optionA,
+            String optionB,
+            String optionC,
+            CorrectOption correctOption,
+            Long linkedTestCardId
+    ) {
         List<String> problems = new ArrayList<>();
+        boolean anyTestField = !isBlank(optionA) || !isBlank(optionB) || !isBlank(optionC) || correctOption != null;
 
         if (isBlank(front)) {
             problems.add("Treść pytania (front) nie może być pusta.");
         }
-        if (isBlank(back)) {
+        // Pytanie testowe ma poprawną odpowiedź w correctOption, więc back jest wymagane tylko dla fiszki.
+        if (!anyTestField && isBlank(back)) {
             problems.add("Odpowiedź (back) nie może być pusta.");
         }
         if (pageNumber != null && pageNumber < 0) {
@@ -45,7 +65,6 @@ final class CardContentRules {
             problems.add("Karta z podręcznika musi należeć do rozdziału, inaczej nigdy nie trafi do nauki.");
         }
 
-        boolean anyTestField = !isBlank(optionA) || !isBlank(optionB) || !isBlank(optionC) || correctOption != null;
         if (anyTestField) {
             if (isBlank(optionA) || isBlank(optionB) || isBlank(optionC)) {
                 problems.add("Pytanie testowe wymaga trzech odpowiedzi: A, B i C.");
@@ -56,6 +75,9 @@ final class CardContentRules {
             }
             if (correctOption == null) {
                 problems.add("Pytanie testowe wymaga wskazania poprawnej odpowiedzi (A, B lub C).");
+            }
+            if (linkedTestCardId != null) {
+                problems.add("Powiązanie z pytaniem testowym ma tylko fiszka, a nie samo pytanie testowe.");
             }
         }
 

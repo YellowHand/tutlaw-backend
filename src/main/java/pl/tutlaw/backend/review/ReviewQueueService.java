@@ -20,9 +20,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 @Service
 public class ReviewQueueService {
@@ -80,7 +82,8 @@ public class ReviewQueueService {
     }
 
     /**
-     * Kolejka fiszek. Gdy {@code categoryId}, {@code subjectId} i {@code sourceId} są puste, kolejka obejmuje
+     * Kolejka fiszek: tylko karty bez opcji A/B/C (pytania testowe żyją w Testach) i tylko odblokowane
+     * (fiszka powiązana z pytaniem testowym pojawia się po pewnym błędzie w tym pytaniu). Gdy {@code categoryId}, {@code subjectId} i {@code sourceId} są puste, kolejka obejmuje
      * cały dostępny materiał użytkownika (globalne „Powtórki na dziś").
      * Zaległe od tych, które najpewniej już zapomniałeś (najniższa szansa przypomnienia), w liczbie do dziennego
      * limitu, potem nowe w kolejności rozdziałów. {@code extraDueReviews} dokłada kolejną porcję zaległych ponad limit.
@@ -89,7 +92,8 @@ public class ReviewQueueService {
             Long categoryId, Long subjectId, Long sourceId, Integer extraNewCards, Integer extraDueReviews,
             Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<CardRepository.CardRef> eligibleCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
+        List<CardRepository.CardRef> eligibleCards = flashcards(
+                getReadableCards(categoryId, subjectId, sourceId, user.getId()), user.getId());
         Map<Long, UserCardStateRepository.CardDue> scheduleByCardId = loadScheduleByCardId(user.getId());
         List<Long> queue = buildQueue(
                 eligibleCards, scheduleByCardId, user.getId(), extraNewCards, extraDueReviews, ReviewMode.FLASHCARD);
@@ -124,7 +128,7 @@ public class ReviewQueueService {
             Long categoryId, Long subjectId, Long sourceId, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         List<CardRepository.CardRef> readable = getReadableCards(categoryId, subjectId, sourceId, user.getId());
-        List<CardRepository.CardRef> eligible = mode == ReviewMode.TEST ? testCards(readable) : readable;
+        List<CardRepository.CardRef> eligible = forMode(mode, readable, user.getId());
 
         LocalDateTime now = LocalDateTime.now(clock);
         long dueNow = splitByDue(eligible, loadScheduleByCardId(user.getId()), now).due().size();
@@ -134,23 +138,45 @@ public class ReviewQueueService {
         return new BacklogResponse(dueNow, QueueRules.deferred(dueNow, remaining), maxReviewsPerDay, doneToday);
     }
 
-    public int countAvailableNewCards(Long categoryId, Long subjectId, Long sourceId, Authentication authentication) {
+    /** Ile nowych (jeszcze nietkniętych) kart danego trybu czeka w zakresie: fiszek albo pytań testowych. */
+    public int countAvailableNewCards(
+            Long categoryId, Long subjectId, Long sourceId, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<CardRepository.CardRef> readableCards = getReadableCards(categoryId, subjectId, sourceId, user.getId());
+        List<CardRepository.CardRef> readableCards = forMode(
+                mode, getReadableCards(categoryId, subjectId, sourceId, user.getId()), user.getId());
         Map<Long, UserCardStateRepository.CardDue> scheduleByCardId = loadScheduleByCardId(user.getId());
 
         return (int) readableCards.stream().filter(c -> !scheduleByCardId.containsKey(c.getId())).count();
     }
 
-    /** Ile kart ma już minięty termin powtórki (bez nowych kart). */
-    public long countDueNow(Authentication authentication) {
+    /** Ile kart danego trybu (fiszek albo pytań testowych) ma już minięty termin powtórki (bez nowych kart). */
+    public long countDueNow(ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        return stateRepository.countDue(user.getId(), LocalDateTime.now(clock));
+        return stateRepository.countDue(
+                user.getId(), LocalDateTime.now(clock), mode == ReviewMode.FLASHCARD, mode == ReviewMode.TEST);
     }
 
     /** Pytania testowe (z poprawną odpowiedzią) spośród podanych kart. */
     private static List<CardRepository.CardRef> testCards(List<CardRepository.CardRef> cards) {
         return cards.stream().filter(CardScopes::isTest).toList();
+    }
+
+    /**
+     * Fiszki spośród podanych kart: bez pytań testowych i bez fiszek powiązanych z pytaniem, którego użytkownik
+     * jeszcze nie pomylił. Odblokowania sprawdzamy w historii odpowiedzi tylko wtedy, gdy jakaś fiszka jest powiązana.
+     */
+    private List<CardRepository.CardRef> flashcards(List<CardRepository.CardRef> cards, Long userId) {
+        List<CardRepository.CardRef> plain = cards.stream().filter(CardScopes::isFlashcard).toList();
+        if (!CardScopes.anyLinked(plain)) {
+            return plain;
+        }
+        Set<Long> unlocked = new HashSet<>(reviewLogRepository.findConfidentMistakeCardIds(userId));
+        return plain.stream().filter(ref -> CardScopes.isUnlocked(ref, unlocked)).toList();
+    }
+
+    /** Karty trybu: pytania testowe dla Testów, odblokowane fiszki dla Fiszek. */
+    private List<CardRepository.CardRef> forMode(ReviewMode mode, List<CardRepository.CardRef> cards, Long userId) {
+        return mode == ReviewMode.TEST ? testCards(cards) : flashcards(cards, userId);
     }
 
     /** Zakres od najwęższego: źródło, przedmiot, kategoria (rodzaj), a bez żadnego cały materiał użytkownika. */

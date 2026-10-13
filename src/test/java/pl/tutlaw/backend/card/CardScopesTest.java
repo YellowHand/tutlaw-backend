@@ -87,4 +87,35 @@ class CardScopesTest {
         assertThat(CardScopes.loadInOrder(spy.repository, List.of())).isEmpty();
         assertThat(spy.calls).isEmpty();
     }
+
+    @Test
+    void testQuestionsAndFlashcardsAreDisjoint() {
+        CardRepository.CardRef test = CardRefs.of(1, null, CorrectOption.A);
+        CardRepository.CardRef flashcard = CardRefs.of(2, null, null);
+
+        assertThat(CardScopes.isTest(test)).isTrue();
+        assertThat(CardScopes.isFlashcard(test)).isFalse();
+        assertThat(CardScopes.isTest(flashcard)).isFalse();
+        assertThat(CardScopes.isFlashcard(flashcard)).isTrue();
+    }
+
+    @Test
+    void anUnlinkedFlashcardIsAlwaysUnlocked_aLinkedOneOnlyAfterTheMistake() {
+        CardRepository.CardRef plain = CardRefs.of(2, null, null);
+        CardRepository.CardRef linked = CardRefs.of(3, null, null, 1L);
+
+        assertThat(CardScopes.isUnlocked(plain, java.util.Set.of())).isTrue();
+        assertThat(CardScopes.isUnlocked(linked, java.util.Set.of())).isFalse();
+        assertThat(CardScopes.isUnlocked(linked, java.util.Set.of(9L))).isFalse();
+        assertThat(CardScopes.isUnlocked(linked, java.util.Set.of(1L))).isTrue();
+    }
+
+    @Test
+    void anyLinkedSpotsLinkedFlashcards() {
+        List<CardRepository.CardRef> none = List.of(CardRefs.of(1, null, null), CardRefs.of(2, null, CorrectOption.B));
+        List<CardRepository.CardRef> some = List.of(CardRefs.of(1, null, null), CardRefs.of(3, null, null, 2L));
+
+        assertThat(CardScopes.anyLinked(none)).isFalse();
+        assertThat(CardScopes.anyLinked(some)).isTrue();
+    }
 }

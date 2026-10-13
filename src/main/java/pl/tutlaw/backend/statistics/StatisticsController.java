@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.statistics.dto.*;
 
 import java.util.List;
@@ -17,9 +18,13 @@ public class StatisticsController {
 
     private final StatisticsService statisticsService;
 
+    /** Przegląd nauki. {@code mode}: FLASHCARD (tylko fiszki), TEST (tylko pytania testowe), bez trybu: cały materiał. */
     @GetMapping("/overview")
-    public OverviewResponse getOverview(@RequestParam(required = false) Long subjectId, Authentication authentication) {
-        return statisticsService.getOverview(subjectId, authentication);
+    public OverviewResponse getOverview(
+            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) ReviewMode mode,
+            Authentication authentication) {
+        return statisticsService.getOverview(subjectId, mode, authentication);
     }
 
     @GetMapping("/weak-cards")
@@ -33,13 +38,18 @@ public class StatisticsController {
 
     @GetMapping("/chapters")
     public List<ChapterMasteryResponse> getChapterMastery(
-            @RequestParam Long sourceId, Authentication authentication) {
-        return statisticsService.getMasteryBySource(sourceId, authentication);
+            @RequestParam Long sourceId,
+            @RequestParam(required = false) ReviewMode mode,
+            Authentication authentication) {
+        return statisticsService.getMasteryBySource(sourceId, mode, authentication);
     }
 
     @GetMapping("/sources")
-    public List<SourceProgressResponse> getSourceProgress(@RequestParam Long subjectId, Authentication authentication) {
-        return statisticsService.getSourceProgress(subjectId, authentication);
+    public List<SourceProgressResponse> getSourceProgress(
+            @RequestParam Long subjectId,
+            @RequestParam(required = false) ReviewMode mode,
+            Authentication authentication) {
+        return statisticsService.getSourceProgress(subjectId, mode, authentication);
     }
 
 
@@ -51,8 +61,9 @@ public class StatisticsController {
     @GetMapping("/activity")
     public List<ActivityHeatmapItem> getActivity(
             @RequestParam(defaultValue = "30") int days,
+            @RequestParam(required = false) ReviewMode mode,
             Authentication authentication
     ) {
-        return statisticsService.getActivity(days, authentication);
+        return statisticsService.getActivity(days, mode, authentication);
     }
 }

@@ -43,6 +43,9 @@ class ReviewQueueServiceTest {
         final List<UserCardStateRepository.CardDue> schedule = new ArrayList<>();
         /** Numery kart, o których pełne treści poproszono bazę (powinny to być tylko karty z sesji). */
         final List<Long> loadedCardIds = new ArrayList<>();
+        /** Pytania testowe, które użytkownik pomylił bez „Nie jestem pewien" (odblokowują powiązane fiszki). */
+        final List<Long> confidentMistakes = new ArrayList<>();
+        int confidentMistakeLookups = 0;
         long introducedToday = 0;
         long dueReviewsDoneToday = 0;
         /** Ustawienia zapisane przez użytkownika (null = same domyślne z konfiguracji). */
@@ -84,6 +87,9 @@ class ReviewQueueServiceTest {
                         return introducedToday;
                     case "countDueReviewsBetween":
                         return dueReviewsDoneToday;
+                    case "findConfidentMistakeCardIds":
+                        confidentMistakeLookups++;
+                        return new ArrayList<>(confidentMistakes);
                     default:
                         throw new UnsupportedOperationException("ReviewLogRepository." + method);
                 }
@@ -123,6 +129,13 @@ class ReviewQueueServiceTest {
             chapter.setOrderIndex(chapterOrder);
             card.setChapter(chapter);
             cards.add(card);
+            return card;
+        }
+
+        /** Fiszka (bez opcji) powiązana z pytaniem testowym {@code testCardId}: ukryta do pierwszego pewnego błędu. */
+        Card linkedFlashcard(long id, long testCardId, int chapterOrder) {
+            Card card = card(id, false, chapterOrder);
+            card.setLinkedTestCardId(testCardId);
             return card;
         }
 
@@ -270,7 +283,8 @@ class ReviewQueueServiceTest {
         assertThat(queue).hasSize(2);
         assertThat(queue.containsAll(List.of(3L, 1L))).isTrue();
         assertThat(f.service.getBacklog(null, null, null, ReviewMode.TEST, f.jan).dueNow()).isEqualTo(3L);
-        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(4L);
+        // Fiszki i Testy są osobno: w zaległościach fiszek jest tylko zwykła fiszka 50, bez pytań testowych.
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(1L);
     }
 
     @Test
@@ -280,7 +294,7 @@ class ReviewQueueServiceTest {
         f.card(8, false, 1);
         f.card(9, false, 1);
 
-        assertThat(f.service.countAvailableNewCards(null, null, null, f.jan)).isEqualTo(2);
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(2);
     }
 
     // ------------------------------------------------------------------ limity z ustawień użytkownika
@@ -332,6 +346,9 @@ class ReviewQueueServiceTest {
         f.card(10, true, 1);
         f.card(20, true, 2);
         f.card(30, true, 3);
+        f.card(11, false, 1);
+        f.card(12, false, 2);
+        f.card(13, false, 3);
         f.stored = stored(1, 2, null);             // fiszki: 1 nowa, testy: 2 nowe
 
         assertThat(f.testQueue()).hasSize(2);
@@ -359,7 +376,7 @@ class ReviewQueueServiceTest {
         f.card(5, false, 1);                    // nowa, bez stanu
 
         assertThat(f.flashQueue()).containsExactly(3L, 1L, 2L, 5L);
-        assertThat(f.service.countAvailableNewCards(null, null, null, f.jan)).isEqualTo(1);
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(1);
     }
 
     @Test
@@ -371,7 +388,8 @@ class ReviewQueueServiceTest {
 
         assertThat(f.testQueue()).containsExactlyInAnyOrder(3L, 1L, 2L);
         assertThat(f.service.getBacklog(null, null, null, ReviewMode.TEST, f.jan).dueNow()).isEqualTo(3L);
-        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(3L);
+        // To same pytania testowe, więc w Fiszkach nie ma nic do powtórki.
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(0L);
     }
 
     @Test
@@ -446,7 +464,8 @@ class ReviewQueueServiceTest {
 
         f.service.getBacklog(null, null, null, ReviewMode.TEST, f.jan);
         f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan);
-        f.service.countAvailableNewCards(null, null, null, f.jan);
+        f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan);
+        f.service.countAvailableNewCards(null, null, null, ReviewMode.TEST, f.jan);
 
         assertThat(f.loadedCardIds).isEmpty();
     }
@@ -471,5 +490,113 @@ class ReviewQueueServiceTest {
                 .stream().map(ReviewQueueItemResponse::cardId).toList();
 
         assertThat(queue).containsExactly(7L, 2L, 1L);
+    }
+
+    // ---------------------------------------------------------------- Fiszki i Testy osobno
+
+    @Test
+    void flashcardQueueNeverContainsTestQuestions_andTheTestQueueNeverContainsFlashcards() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.card(2, false, 1);
+        f.card(3, true, 2);
+        f.card(4, false, 2);
+
+        assertThat(f.flashQueue()).containsExactly(2L, 4L);
+        assertThat(f.testQueue()).containsExactlyInAnyOrder(1L, 3L);
+    }
+
+    @Test
+    void newCardCountsFollowTheMode() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.card(2, false, 1);
+        f.card(3, false, 2);
+
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(2);
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.TEST, f.jan)).isEqualTo(1);
+    }
+
+    @Test
+    void dueBacklogOfEachModeCountsOnlyItsOwnCards() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.card(2, false, 1);
+        f.scheduled(1, 5, 10, 5);
+        f.scheduled(2, 5, 10, 5);
+
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(1L);
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.TEST, f.jan).dueNow()).isEqualTo(1L);
+    }
+
+    // ---------------------------------------------------------------- fiszki powiązane z pytaniami
+
+    @Test
+    void linkedFlashcardIsHiddenUntilTheUserConfidentlyMissesItsQuestion() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);                     // pytanie testowe
+        f.linkedFlashcard(2, 1, 1);             // jego fiszka
+        f.card(3, false, 1);                    // zwykła fiszka
+
+        assertThat(f.flashQueue()).containsExactly(3L);
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(1);
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(0L);
+    }
+
+    @Test
+    void linkedFlashcardAppearsAsANewCardAfterAConfidentMistake() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+        f.card(3, false, 2);
+        f.confidentMistakes.add(1L);
+
+        assertThat(f.flashQueue()).containsExactly(2L, 3L);
+        assertThat(f.service.countAvailableNewCards(null, null, null, ReviewMode.FLASHCARD, f.jan)).isEqualTo(2);
+    }
+
+    @Test
+    void aMistakeInADifferentQuestionDoesNotUnlockTheFlashcard() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.card(5, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+        f.confidentMistakes.add(5L);
+
+        assertThat(f.flashQueue()).isEmpty();
+    }
+
+    @Test
+    void anUnlockedFlashcardKeepsItsOwnScheduleAndComesBackWhenDue() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+        f.confidentMistakes.add(1L);
+        f.scheduled(2, 3, 6, 2);
+
+        assertThat(f.flashQueue()).containsExactly(2L);
+        assertThat(f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan).dueNow()).isEqualTo(1L);
+    }
+
+    @Test
+    void unlockedLookupIsSkippedWhenNoFlashcardIsLinked() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.card(2, false, 1);
+
+        f.flashQueue();
+        f.service.getBacklog(null, null, null, ReviewMode.FLASHCARD, f.jan);
+
+        assertThat(f.confidentMistakeLookups).isZero();
+    }
+
+    @Test
+    void theTestQueueIgnoresLinksAndUnlocks() {
+        Fixture f = new Fixture(100);
+        f.card(1, true, 1);
+        f.linkedFlashcard(2, 1, 1);
+
+        assertThat(f.testQueue()).containsExactly(1L);
+        assertThat(f.confidentMistakeLookups).isZero();
     }
 }

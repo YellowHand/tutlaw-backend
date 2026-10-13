@@ -136,12 +136,16 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             AND r.reviewedAt >= :since
             AND r.elapsedDays >= :minElapsedDays
             AND r.rating >= :minRating
+            AND ((r.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (r.card.correctOption IS NOT NULL AND :withTests = true))
             """)
     long countRecalls(
             @Param("userId") Long userId,
             @Param("since") LocalDateTime since,
             @Param("minElapsedDays") double minElapsedDays,
-            @Param("minRating") int minRating
+            @Param("minRating") int minRating,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
     );
 
     @Query("""
@@ -151,14 +155,39 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             AND r.reviewedAt >= :since
             AND r.elapsedDays >= :minElapsedDays
             AND r.rating >= :minRating
+            AND ((r.card.correctOption IS NULL AND :withFlashcards = true)
+                 OR (r.card.correctOption IS NOT NULL AND :withTests = true))
             """)
     long countRecallsInSubject(
             @Param("userId") Long userId,
             @Param("subjectId") Long subjectId,
             @Param("since") LocalDateTime since,
             @Param("minElapsedDays") double minElapsedDays,
-            @Param("minRating") int minRating
+            @Param("minRating") int minRating,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
     );
+
+    /**
+     * Pytania testowe, które użytkownik pomylił, choć NIE zaznaczył „Nie jestem pewien" (pewny błąd).
+     * Błąd takiego pytania odblokowuje powiązaną z nim fiszkę (zob. CardScopes#isUnlocked). Same numery, bez duplikatów.
+     */
+    @Query("""
+            SELECT DISTINCT r.card.id FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND r.wasCorrect = false AND r.wasGuessed = false
+            """)
+    List<Long> findConfidentMistakeCardIds(@Param("userId") Long userId);
+
+    /** Ile razy użytkownik pomylił to pytanie testowe bez zaznaczenia „Nie jestem pewien". */
+    @Query("""
+            SELECT COUNT(r) FROM ReviewLog r
+            WHERE r.user.id = :userId AND r.card.id = :cardId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND r.wasCorrect = false AND r.wasGuessed = false
+            """)
+    long countConfidentMistakes(@Param("userId") Long userId, @Param("cardId") Long cardId);
 
     /**
      * Ile różnych pytań użytkownik rozwiązał co najmniej raz w teście, w każdym źródle (groupId = id źródła).

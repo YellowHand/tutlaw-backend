@@ -16,6 +16,9 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     List<Card> findBySourceId(Long sourceId);
 
+    /** Czy do tego pytania testowego jest powiązana choć jedna fiszka. */
+    boolean existsByLinkedTestCardId(Long linkedTestCardId);
+
     /** Strona kart rozdziału (lista dla administratora). Sortowanie podaje wywołujący w {@code pageable}. */
     Page<Card> findByChapterId(Long chapterId, Pageable pageable);
 
@@ -34,10 +37,14 @@ public interface CardRepository extends JpaRepository<Card, Long> {
         Integer getChapterOrder();
 
         CorrectOption getCorrectOption();
+
+        /** Tylko fiszka powiązana z pytaniem testowym: numer tego pytania (inaczej null). */
+        Long getLinkedTestCardId();
     }
 
     @Query("""
-            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
+                   c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.id = :subjectId
             AND (
@@ -54,7 +61,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     );
 
     @Query("""
-            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
+                   c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.id = :sourceId
             AND (
@@ -76,7 +84,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      * Używane przez globalną kolejkę powtórek.
      */
     @Query("""
-            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
+                   c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
             WHERE (
                 c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
@@ -109,50 +118,51 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             """)
     long countReadableById(@Param("cardId") Long cardId, @Param("userId") Long userId);
 
-    /** Ile kart użytkownik może teraz ćwiczyć (we wszystkich przedmiotach). */
-    @Query("""
-            SELECT COUNT(c) FROM Card c
-            WHERE (
-                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
-                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
-                    SELECT p.chapter.id FROM ChapterProgress p
-                    WHERE p.user.id = :userId AND p.read = true
-                ))
-            )
-            """)
-    long countReadableForUser(@Param("userId") Long userId);
-
-    /** Ile kart użytkownik może teraz ćwiczyć w jednym przedmiocie. */
-    @Query("""
-            SELECT COUNT(c) FROM Card c
-            WHERE c.source.subject.id = :subjectId
-            AND (
-                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
-                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
-                    SELECT p.chapter.id FROM ChapterProgress p
-                    WHERE p.user.id = :userId AND p.read = true
-                ))
-            )
-            """)
-    long countReadableForUserAndSubject(@Param("subjectId") Long subjectId, @Param("userId") Long userId);
-
-    /** Liczba kart w każdym rozdziale źródła (groupId = id rozdziału). */
+    /**
+     * Liczba kart w każdym rozdziale źródła (groupId = id rozdziału). Fiszki (withFlashcards) i pytania testowe
+     * (withTests) wybiera się osobno. Fiszka powiązana z pytaniem testowym liczy się dopiero po pierwszym pewnym
+     * błędzie w tym pytaniu (ta sama zasada co w CardScopes#isUnlocked), żeby mianownik nie zawierał ukrytych kart.
+     */
     @Query("""
             SELECT c.chapter.id AS groupId, COUNT(c) AS total
             FROM Card c
             WHERE c.source.id = :sourceId AND c.chapter IS NOT NULL
+            AND ((c.correctOption IS NULL AND :withFlashcards = true
+                  AND (c.linkedTestCardId IS NULL OR EXISTS (
+                        SELECT r.id FROM ReviewLog r
+                        WHERE r.user.id = :userId AND r.card.id = c.linkedTestCardId
+                        AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+                        AND r.wasCorrect = false AND r.wasGuessed = false)))
+                 OR (c.correctOption IS NOT NULL AND :withTests = true))
             GROUP BY c.chapter.id
             """)
-    List<GroupCount> countByChapterForSource(@Param("sourceId") Long sourceId);
+    List<GroupCount> countByChapterForSource(
+            @Param("sourceId") Long sourceId,
+            @Param("userId") Long userId,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
+    );
 
-    /** Liczba kart w każdym źródle przedmiotu (groupId = id źródła). */
+    /** Liczba kart w każdym źródle przedmiotu (groupId = id źródła); zasady wyboru jak w {@link #countByChapterForSource}. */
     @Query("""
             SELECT c.source.id AS groupId, COUNT(c) AS total
             FROM Card c
             WHERE c.source.subject.id = :subjectId
+            AND ((c.correctOption IS NULL AND :withFlashcards = true
+                  AND (c.linkedTestCardId IS NULL OR EXISTS (
+                        SELECT r.id FROM ReviewLog r
+                        WHERE r.user.id = :userId AND r.card.id = c.linkedTestCardId
+                        AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+                        AND r.wasCorrect = false AND r.wasGuessed = false)))
+                 OR (c.correctOption IS NOT NULL AND :withTests = true))
             GROUP BY c.source.id
             """)
-    List<GroupCount> countBySourceForSubject(@Param("subjectId") Long subjectId);
+    List<GroupCount> countBySourceForSubject(
+            @Param("subjectId") Long subjectId,
+            @Param("userId") Long userId,
+            @Param("withFlashcards") boolean withFlashcards,
+            @Param("withTests") boolean withTests
+    );
 
     /** Wszystkie pytania testowe (karty z poprawną odpowiedzią) w każdym źródle (groupId = id źródła). */
     @Query("""
@@ -223,7 +233,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     /** Dostępne karty użytkownika w jednej kategorii (rodzaju), do testu lub nauki z całego działu. */
     @Query("""
-            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption
+            SELECT c.id AS id, ch.orderIndex AS chapterOrder, c.correctOption AS correctOption,
+                   c.linkedTestCardId AS linkedTestCardId
             FROM Card c LEFT JOIN c.chapter ch
             WHERE c.source.subject.category.id = :categoryId
             AND (

@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Wspólne kroki kolejek, planu do egzaminu i losowania egzaminu: zakres kart (źródło, przedmiot, kategoria albo
@@ -33,9 +34,29 @@ public final class CardScopes {
         return cardRepository.findReadableRefsForUser(userId);
     }
 
-    /** Czy karta ma format testowy (3 odpowiedzi, jedna poprawna). */
+    /** Czy karta ma format testowy (3 odpowiedzi, jedna poprawna). Takie karty żyją tylko w Testach. */
     public static boolean isTest(CardRepository.CardRef ref) {
         return ref.getCorrectOption() != null;
+    }
+
+    /** Czy to fiszka (karta bez opcji). Takie karty żyją tylko w Fiszkach. */
+    public static boolean isFlashcard(CardRepository.CardRef ref) {
+        return ref.getCorrectOption() == null;
+    }
+
+    /**
+     * Czy fiszka jest dla użytkownika odblokowana. Zwykła fiszka zawsze; fiszka powiązana z pytaniem testowym
+     * dopiero wtedy, gdy użytkownik pomylił to pytanie bez zaznaczenia „Nie jestem pewien"
+     * ({@code unlockedTestIds} to numery takich pytań).
+     */
+    public static boolean isUnlocked(CardRepository.CardRef ref, Set<Long> unlockedTestIds) {
+        Long linked = ref.getLinkedTestCardId();
+        return linked == null || unlockedTestIds.contains(linked);
+    }
+
+    /** Czy któraś z kart jest fiszką powiązaną z pytaniem, czyli czy w ogóle trzeba sprawdzać odblokowania. */
+    public static boolean anyLinked(List<CardRepository.CardRef> refs) {
+        return refs.stream().anyMatch(ref -> ref.getLinkedTestCardId() != null);
     }
 
     /**

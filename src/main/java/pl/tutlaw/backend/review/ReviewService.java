@@ -42,6 +42,11 @@ public class ReviewService {
         User user = currentUserResolver.resolve(authentication);
         Card card = findReadableCard(request.cardId(), user);
 
+        // Fiszki i Testy to osobne światy: pytanie testowe ocenia się tylko w teście (zob. submitTestAnswer).
+        if (card.getCorrectOption() != null) {
+            throw new IllegalArgumentException("To pytanie jest dostępne tylko w Testach");
+        }
+
         Rating rating = Rating.values()[request.rating() - 1];
         applyReview(user, card, rating, request.timeSpentSeconds(),
                 ReviewMode.FLASHCARD, null, false, rating == Rating.AGAIN);
@@ -64,12 +69,18 @@ public class ReviewService {
         boolean correct = card.getCorrectOption() == request.selectedOption();
         boolean guessed = Boolean.TRUE.equals(request.guessed());
 
+        // Pewny błąd (zły wybór bez „Nie jestem pewien") odblokowuje powiązaną fiszkę w Fiszkach. Informujemy o tym
+        // tylko raz: gdy to pierwszy taki błąd w tym pytaniu i jest do niego jakaś fiszka.
+        boolean unlocksFlashcard = !correct && !guessed
+                && reviewLogRepository.countConfidentMistakes(user.getId(), card.getId()) == 0
+                && cardRepository.existsByLinkedTestCardId(card.getId());
+
         UserCardState state = applyReview(user, card, ReviewPolicy.testRating(correct, guessed),
                 request.timeSpentSeconds(), ReviewMode.TEST, correct, guessed, !correct);
 
         return new TestAnswerResultResponse(
                 correct, card.getCorrectOption(), card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(),
-                state.getLapses(), leechPolicy.isLeech(state.getLapses()));
+                state.getLapses(), leechPolicy.isLeech(state.getLapses()), unlocksFlashcard);
     }
 
     /**
