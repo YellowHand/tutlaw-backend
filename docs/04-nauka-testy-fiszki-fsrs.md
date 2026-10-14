@@ -332,7 +332,7 @@ nadal są w nauce (od największej liczby błędów).
 
 ## Dodatkowe sesje: „Powtórz moje błędy” i „Przerób błędy”
 
-Obie sesje to zwykłe sesje testowe: odpowiedzi idą normalną drogą (z oceną pamięci i terminami), więc to dodatkowe
+Obie sesje (i „Własny test” poniżej) to zwykłe sesje testowe: odpowiedzi idą normalną drogą (z oceną pamięci i terminami), więc to dodatkowe
 ćwiczenie, a nie osobny tor nauki.
 
 - **„Powtórz moje błędy”** (`/api/review/mistakes-queue`, `/mistakes-count`): pytania, w których **ostatnia**
@@ -341,25 +341,55 @@ Obie sesje to zwykłe sesje testowe: odpowiedzi idą normalną drogą (z oceną 
 - **„Przerób błędy teraz”** (`/api/review/practice-queue?cardIds=...`): sesja z podanych pytań (np. błędnych po
   egzaminie próbnym), w podanej kolejności, maksymalnie 200. Pytania niedostępne są po cichu pomijane.
 
+## Własny test
+
+Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera dowolne **rodzaje i akty
+prawne** (zakres to ich suma, bez powtórzeń), **które pytania** mają w niej być (wszystkie, nowe, z błędną ostatnią
+odpowiedzią, zaległe), opcjonalnie **lata egzaminu** i **liczbę pytań** (1–200). Podgląd „Dostępnych: N” dla każdego
+rodzaju daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
+
+- **To nauka, nie egzamin.** Serwer tylko losuje numery pytań, a sesję otwiera się zwykłą kolejką ćwiczeń
+  (`/practice-queue`), więc odpowiedzi mają ocenę pamięci i terminy, a pomyłki trafiają do „Moich błędów”.
+  Nie ma progu zaliczenia ani raportu „zdał / nie zdał”.
+- **Pula**: pytania testowe dostępne dla użytkownika (pula płaska albo przeczytany rozdział), nieukryte,
+  **niezawieszone** i z wybranych pochodzeń (filtr pochodzenia). Zakres lat odrzuca pytania bez roku (autorskie).
+- **Dobór przy ograniczonej liczbie**: `MISTAKES` bierze najświeższe błędy (jak „Moje błędy”, tylko w wybranym zakresie
+  i bez limitu 50), `DUE` te o najniższej szansie przypomnienia (jak kolejka nauki), `ALL` i `NEW` losują. Kolejność w
+  sesji jest zawsze losowa.
+- **Limity dzienne**: własny test ich nie stosuje (użytkownik sam mówi, ile chce), ale pierwsze odpowiedzi na nowe
+  pytania liczą się potem do dziennego limitu nowych pytań, jak każde inne.
+
 ## Egzamin próbny
 
 Egzamin próbny (`/api/exams/*`) jest **odizolowany od nauki**: nie zmienia terminów powtórek (FSRS), nie dopisuje
 niczego do dziennika odpowiedzi, nie rusza dziennych limitów ani licznika błędów kart.
 
-1. **Start** (`POST /api/exams/start`): wybierasz zakres (źródło, przedmiot, kategoria albo całość) i liczbę pytań
-   (5–200). Serwer losuje pytania testowe dostępne dla Ciebie, niezawieszone i z wybranych pochodzeń. Zwraca je
-   **bez poprawnych odpowiedzi**. Niczego nie zapisuje. Jeśli jest mniej pytań, niż chciałeś, dostajesz wszystkie.
-2. **Rozwiązywanie** odbywa się po stronie frontendu (czas, limit minut, wybór odpowiedzi).
-3. **Zakończenie** (`POST /api/exams/submit`): frontend wysyła tylko wybrane odpowiedzi, ustawienia (próg, limit
-   czasu) i czas trwania. **Odpowiedzi ocenia serwer.** Zapisuje podsumowanie podejścia i zwraca pełny raport.
+**Format jest stały** (`ExamFormat`): zawsze **150 pytań** z całego dostępnego materiału, zaliczenie od
+**100 punktów** (2/3 punktów). Użytkownik nie wybiera zakresu, liczby pytań ani progu, a próg ustala wyłącznie serwer.
+Egzamin z jednego działu nie ma sensu (prawdziwy egzamin jest mieszany), więc ćwiczenie z wybranego działu to
+[własny test](#własny-test), który niczego nie zalicza.
+
+1. **Start** (`POST /api/exams/start`, bez ciała): serwer losuje 150 pytań testowych dostępnych dla Ciebie,
+   niezawieszonych i z wybranych pochodzeń. Zwraca je **bez poprawnych odpowiedzi**, razem z progiem w punktach
+   (`passPoints`). Niczego nie zapisuje. Jeśli w materiale jest mniej niż 150 pytań, egzamin ma wszystkie, a próg maleje
+   proporcjonalnie (100 z 150, w górę do całego punktu; 12 pytań to próg 8).
+2. **Rozwiązywanie** odbywa się po stronie frontendu (czas, opcjonalny limit minut, wybór odpowiedzi).
+3. **Zakończenie** (`POST /api/exams/submit`): frontend wysyła tylko wybrane odpowiedzi, limit czasu i czas trwania.
+   **Odpowiedzi ocenia serwer i on liczy próg.** Zapisuje podsumowanie podejścia i zwraca pełny raport.
 
 **Punktacja** (`ExamScoring`): 1 punkt za poprawną odpowiedź, brak punktów ujemnych, brak odpowiedzi = 0. Wynik w
-procentach jest zaokrąglany do 0,1 tylko do wyświetlania. **Zaliczenie** sprawdzane jest na liczbach całkowitych:
-`poprawne · 100 ≥ próg · liczba pytań`. Dlatego 112 z 150 (74,7%) przy progu 75% to jeszcze **nie** zaliczenie.
+procentach jest zaokrąglany do 0,1 tylko do wyświetlania. **Zaliczenie** to co najmniej `passPoints` poprawnych
+odpowiedzi (porównanie na liczbach całkowitych): 100 z 150 zalicza, 99 z 150 (66,0%) jeszcze nie.
 W raporcie pytania, które w międzyczasie zniknęły (usunięte, ukryte, niedostępne), nie są oceniane i są liczone w
-`excludedCount`.
+`excludedCount`; próg liczy się od liczby ocenionych pytań.
 
-Historia obejmuje ostatnie 50 podejść. Tabela `exam_attempts` trzyma tylko podsumowania.
+**Stałe proporcje działów.** Prawdziwy egzamin ma ustalone proporcje pytań z poszczególnych działów. Aplikacja ich
+jeszcze nie odtwarza: 150 pytań jest losowane z całej puli (więc proporcje wynikają z tego, ile pytań ma każdy dział w
+bazie). Gdy proporcje zostaną ustalone, trzeba tylko zmienić losowanie w `ExamService.start`.
+
+Historia obejmuje ostatnie 50 podejść. Tabela `exam_attempts` trzyma tylko podsumowania. Podejścia sprzed stałego
+formatu (własny zakres, liczba pytań i próg w procentach) zostają w historii bez zmian; rozpoznaje się je po
+`passPoints = null`.
 
 ## Filtr pochodzenia pytań
 

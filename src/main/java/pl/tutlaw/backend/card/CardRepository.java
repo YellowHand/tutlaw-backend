@@ -272,6 +272,58 @@ public interface CardRepository extends JpaRepository<Card, Long> {
             @Param("userId") Long userId
     );
 
+    /**
+     * Odchudzony widok pytania testowego do własnego testu: numer, pochodzenie i rok egzaminu (null dla pytań
+     * autorskich). Bez treści, bo do własnego testu losujemy na samych numerach.
+     */
+    interface TestRef {
+        Long getId();
+
+        QuestionOrigin getOrigin();
+
+        Integer getExamYear();
+    }
+
+    /** Wszystkie pytania testowe dostępne dla użytkownika (własny test bez zawężenia do działów). */
+    @Query("""
+            SELECT c.id AS id, c.origin AS origin, c.examYear AS examYear
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            """)
+    List<TestRef> findReadableTestRefsForUser(@Param("userId") Long userId);
+
+    /**
+     * Pytania testowe dostępne dla użytkownika w sumie wskazanych rodzajów (kategorii) i przedmiotów (aktów prawnych).
+     * Pytanie, które należy do obu (rodzaj i jego przedmiot zaznaczone razem), pojawia się raz. Obie listy muszą być
+     * niepuste (wywołujący wstawia numer, którego nie ma w bazie), bo pusta lista w {@code IN} bywa różnie
+     * obsługiwana.
+     */
+    @Query("""
+            SELECT c.id AS id, c.origin AS origin, c.examYear AS examYear
+            FROM Card c
+            WHERE c.correctOption IS NOT NULL AND c.hidden = false
+            AND (c.source.subject.category.id IN :categoryIds OR c.source.subject.id IN :subjectIds)
+            AND (
+                c.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
+                OR (c.chapter IS NOT NULL AND c.chapter.id IN (
+                    SELECT p.chapter.id FROM ChapterProgress p
+                    WHERE p.user.id = :userId AND p.read = true
+                ))
+            )
+            """)
+    List<TestRef> findReadableTestRefsInScope(
+            @Param("userId") Long userId,
+            @Param("categoryIds") Collection<Long> categoryIds,
+            @Param("subjectIds") Collection<Long> subjectIds
+    );
+
     /** Liczba pytań testowych (bez ukrytych) w każdym pochodzeniu: do okna wyboru filtru pochodzenia. */
     interface OriginCount {
         QuestionOrigin getOrigin();

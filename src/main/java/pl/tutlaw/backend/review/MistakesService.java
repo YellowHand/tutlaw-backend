@@ -64,6 +64,15 @@ public class MistakesService {
         return session.stream().map(ReviewQueueMapper::toTestResponse).toList();
     }
 
+    /**
+     * Numery kart z błędną ostatnią odpowiedzią (z ostatnich {@value #LOOKBACK_DAYS} dni), od najświeższej pomyłki.
+     * Bez sprawdzania dostępności, zawieszenia i filtra pochodzenia: korzysta z tego własny test, który robi to sam
+     * na swojej puli ({@link CustomTestService}).
+     */
+    List<Long> recentMistakeCardIds(Long userId) {
+        return latestMistakeCardIds(userId, LocalDateTime.now(clock).minusDays(LOOKBACK_DAYS));
+    }
+
     /** Karty z błędną ostatnią odpowiedzią, od najświeższej pomyłki, tylko te, które nadal można ćwiczyć. */
     private List<Card> eligibleMistakes(User user) {
         LocalDateTime since = LocalDateTime.now(clock).minusDays(LOOKBACK_DAYS);

@@ -69,6 +69,7 @@ public record AccountExportResponse(
             int answeredCount,
             int correctCount,
             int passThresholdPercent,
+            Integer passPoints,
             boolean passed,
             Integer timeLimitMinutes,
             int durationSeconds,

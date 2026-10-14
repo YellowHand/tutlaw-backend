@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **58 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **60 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -119,6 +119,8 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | GET | `/api/review/practice-queue` | zalogowany | Sesja testowa z podanych pytań |
 | GET | `/api/review/mistakes-queue` | zalogowany | Sesja „Powtórz moje błędy” |
 | GET | `/api/review/mistakes-count` | zalogowany | Ile jest błędów do powtórzenia |
+| GET | `/api/review/custom-test/counts` | zalogowany | Własny test: ile pytań każdego rodzaju w wybranym zakresie |
+| POST | `/api/review/custom-test` | zalogowany | Własny test: losowanie pytań z wybranego zakresu |
 | POST | `/api/review` | zalogowany | Ocena fiszki (1–4) |
 | POST | `/api/review/test-answer` | zalogowany | Odpowiedź na pytanie testowe |
 
@@ -137,7 +139,7 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
-| POST | `/api/exams/start` | zalogowany | Losowanie pytań egzaminu |
+| POST | `/api/exams/start` | zalogowany | Losowanie 150 pytań egzaminu (bez ciała żądania, stały format) |
 | POST | `/api/exams/submit` | zalogowany | Ocena egzaminu i zapis podsumowania |
 | GET | `/api/exams/history` | zalogowany | Ostatnie podejścia |
 

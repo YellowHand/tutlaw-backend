@@ -37,7 +37,7 @@ Maven nie musi być zainstalowany: projekt ma wrapper (`./mvnw`, na Windows `mvn
    ./mvnw spring-boot:run
    ```
 
-   Przy pierwszym starcie Flyway sam wykona migracje `V1`–`V19`. Backend nasłuchuje na `http://localhost:8080`.
+   Przy pierwszym starcie Flyway sam wykona migracje `V1`–`V20`. Backend nasłuchuje na `http://localhost:8080`.
 5. **Sprawdzenie:** `http://localhost:8080/actuator/health` powinno pokazać `"status":"UP"`, a pod
    `http://localhost:8080/swagger-ui.html` jest dokumentacja Swagger.
 6. **Frontend** (osobne repozytorium) łączy się z adresem z `VITE_API_BASE_URL` (lokalnie `http://localhost:8080`).

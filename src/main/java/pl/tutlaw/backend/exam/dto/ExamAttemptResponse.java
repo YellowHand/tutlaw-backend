@@ -2,7 +2,12 @@ package pl.tutlaw.backend.exam.dto;
 
 import java.time.LocalDateTime;
 
-/** Podsumowanie jednego podejścia (lista historii i nagłówek raportu). */
+/**
+ * Podsumowanie jednego podejścia (lista historii i nagłówek raportu).
+ *
+ * @param passPoints próg zaliczenia w punktach (100 z 150 przy pełnym egzaminie); {@code null} przy podejściach sprzed
+ *                   stałego formatu, które miały własny próg w procentach ({@code passThresholdPercent})
+ */
 public record ExamAttemptResponse(
         Long id,
         LocalDateTime finishedAt,
@@ -13,6 +18,7 @@ public record ExamAttemptResponse(
         /** Wynik w procentach, zaokrąglony do 0,1. */
         double scorePercent,
         int passThresholdPercent,
+        Integer passPoints,
         boolean passed,
         Integer timeLimitMinutes,
         int durationSeconds,

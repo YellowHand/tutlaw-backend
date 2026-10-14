@@ -81,7 +81,7 @@ public class AccountService {
         List<AccountExportResponse.ExamEntry> exams = examAttemptRepository.findAllForUser(user.getId()).stream()
                 .map(a -> new AccountExportResponse.ExamEntry(
                         a.getFinishedAt(), a.getScopeLabel(), a.getQuestionCount(), a.getAnsweredCount(),
-                        a.getCorrectCount(), a.getPassThresholdPercent(), a.isPassed(),
+                        a.getCorrectCount(), a.getPassThresholdPercent(), a.getPassPoints(), a.isPassed(),
                         a.getTimeLimitMinutes(), a.getDurationSeconds(), a.isTimedOut()))
                 .toList();
 

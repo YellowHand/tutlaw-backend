@@ -9,19 +9,14 @@ import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CardScopes;
 import pl.tutlaw.backend.card.QuestionOrigin;
-import pl.tutlaw.backend.category.CategoryRepository;
-import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
 import pl.tutlaw.backend.exam.dto.ExamResultResponse;
-import pl.tutlaw.backend.exam.dto.ExamStartRequest;
 import pl.tutlaw.backend.exam.dto.ExamStartResponse;
 import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
 import pl.tutlaw.backend.review.ReviewQueueMapper;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 import pl.tutlaw.backend.settings.OriginFilterService;
-import pl.tutlaw.backend.source.SourceRepository;
-import pl.tutlaw.backend.subject.SubjectRepository;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -39,25 +34,25 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Egzamin próbny: losowy zestaw pytań testowych z wybranego zakresu, ocena po stronie serwera i zapis podsumowania.
+ * Egzamin próbny w stałym formacie ({@link ExamFormat}): losowe {@value ExamFormat#QUESTION_COUNT} pytań testowych z
+ * całego dostępnego materiału, zaliczenie od {@value ExamFormat#PASS_POINTS} punktów. Zakresu, liczby pytań ani progu
+ * nie wybiera użytkownik. Ocena i próg są po stronie serwera, a podsumowanie podejścia jest zapisywane.
  * Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek (FSRS), dziennika odpowiedzi, dziennych limitów
  * ani licznika błędów kart. Po egzaminie użytkownik może przerobić swoje błędy zwykłą sesją testową.
+ * Ćwiczenie z wybranego działu to osobna funkcja bez oceny "zdał / nie zdał" (własny test).
  */
 @Service
 @RequiredArgsConstructor
 public class ExamService {
 
-    static final int MAX_QUESTIONS = 200;
     /** Ile ostatnich podejść zwraca historia. */
     static final int HISTORY_LIMIT = 50;
-    private static final int MAX_LABEL_LENGTH = 300;
+    /** Nazwa zakresu w raporcie i historii: egzamin zawsze obejmuje cały materiał. */
+    static final String SCOPE_LABEL = "Cały materiał";
 
     private final CardRepository cardRepository;
     private final UserCardStateRepository stateRepository;
     private final ExamAttemptRepository attemptRepository;
-    private final CategoryRepository categoryRepository;
-    private final SubjectRepository subjectRepository;
-    private final SourceRepository sourceRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
     private final OriginFilterService originFilter;
@@ -65,20 +60,19 @@ public class ExamService {
     private final Random random = new Random();
 
     /**
-     * Losuje pytania z zakresu: tylko w formacie testowym, z wybranych pochodzeń (filtr pochodzenia w Testach),
-     * dostępne dla użytkownika (pula płaska albo przeczytany rozdział) i niezawieszone. Gdy jest ich mniej niż
-     * chciał, dostaje wszystkie. Ocena egzaminu (submit) filtra nie stosuje: ocenia to, co zostało pokazane.
+     * Losuje {@value ExamFormat#QUESTION_COUNT} pytań z całego materiału: tylko w formacie testowym, z wybranych
+     * pochodzeń (filtr pochodzenia w Testach), dostępne dla użytkownika (pula płaska albo przeczytany rozdział)
+     * i niezawieszone. Gdy jest ich mniej niż 150, egzamin ma tyle, ile jest, a próg zaliczenia maleje proporcjonalnie
+     * (zob. {@link ExamFormat#passPointsFor}). Ocena egzaminu (submit) filtra nie stosuje: ocenia to, co zostało pokazane.
      */
     @Transactional(readOnly = true)
-    public ExamStartResponse start(ExamStartRequest request, Authentication authentication) {
+    public ExamStartResponse start(Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        String label = scopeLabel(request.categoryId(), request.subjectId(), request.sourceId());
 
         Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedCardIds(user.getId()));
         Set<QuestionOrigin> origins = originFilter.activeFor(user.getId());
         // Losujemy na samych numerach; pełne karty ładujemy dopiero dla wylosowanych (jedno zapytanie).
-        List<CardRepository.CardRef> inScope = CardScopes.readableRefs(
-                        cardRepository, request.categoryId(), request.subjectId(), request.sourceId(), user.getId())
+        List<CardRepository.CardRef> inScope = cardRepository.findReadableRefsForUser(user.getId())
                 .stream()
                 .filter(CardScopes::isTest)
                 .filter(ref -> !suspended.contains(ref.getId()))
@@ -90,16 +84,16 @@ public class ExamService {
         if (pool.isEmpty()) {
             // Gdy pytania są, ale wszystkie spoza wybranych pochodzeń, podpowiadamy filtr zamiast mylić brakiem pytań.
             throw new IllegalArgumentException(inScope.isEmpty()
-                    ? "W wybranym zakresie nie ma teraz pytań testowych, które możesz rozwiązać."
-                    : "W wybranym zakresie nie ma pytań z wybranych pochodzeń. Zmień filtr pochodzenia w Testach.");
+                    ? "Nie ma teraz pytań testowych, które możesz rozwiązać na egzaminie."
+                    : "Nie ma pytań z wybranych pochodzeń. Zmień filtr pochodzenia w Testach.");
         }
 
         Collections.shuffle(pool, random);
-        List<Long> drawn = pool.stream().limit(request.questionCount()).toList();
+        List<Long> drawn = pool.stream().limit(ExamFormat.QUESTION_COUNT).toList();
         List<TestQueueItemResponse> questions = CardScopes.loadInOrder(cardRepository, drawn).stream()
                 .map(ReviewQueueMapper::toTestResponse)
                 .toList();
-        return new ExamStartResponse(label, request.questionCount(), questions);
+        return new ExamStartResponse(SCOPE_LABEL, ExamFormat.QUESTION_COUNT, ExamFormat.passPointsFor(questions.size()), questions);
     }
 
     /** Ocenia egzamin, zapisuje podsumowanie podejścia i zwraca raport ze wszystkimi pytaniami w kolejności egzaminu. */
@@ -114,7 +108,6 @@ public class ExamService {
                 throw new IllegalArgumentException("To samo pytanie zostało przesłane więcej niż raz.");
             }
         }
-        String label = scopeLabel(request.categoryId(), request.subjectId(), request.sourceId());
 
         Map<Long, Card> cards = new HashMap<>();
         for (Card card : cardRepository.findReadableTestCardsByIds(ids, user.getId())) {
@@ -156,15 +149,18 @@ public class ExamService {
         }
 
         int total = questions.size();
+        // Próg ustala serwer (format jest stały), nie klient.
+        int passPoints = ExamFormat.passPointsFor(total);
         ExamAttempt attempt = new ExamAttempt();
         attempt.setUser(user);
         attempt.setFinishedAt(LocalDateTime.now(clock));
-        attempt.setScopeLabel(label);
+        attempt.setScopeLabel(SCOPE_LABEL);
         attempt.setQuestionCount(total);
         attempt.setAnsweredCount(answered);
         attempt.setCorrectCount(correct);
-        attempt.setPassThresholdPercent(request.passThresholdPercent());
-        attempt.setPassed(ExamScoring.passed(correct, total, request.passThresholdPercent()));
+        attempt.setPassPoints(passPoints);
+        attempt.setPassThresholdPercent(ExamScoring.thresholdPercent(passPoints, total));
+        attempt.setPassed(ExamScoring.passed(correct, total));
         attempt.setTimeLimitMinutes(request.timeLimitMinutes());
         attempt.setDurationSeconds(request.durationSeconds());
         attempt.setTimedOut(Boolean.TRUE.equals(request.timedOut()));
@@ -193,29 +189,7 @@ public class ExamService {
                 attempt.getId(), attempt.getFinishedAt(), attempt.getScopeLabel(),
                 attempt.getQuestionCount(), attempt.getAnsweredCount(), attempt.getCorrectCount(),
                 ExamScoring.scorePercent(attempt.getCorrectCount(), attempt.getQuestionCount()),
-                attempt.getPassThresholdPercent(), attempt.isPassed(),
+                attempt.getPassThresholdPercent(), attempt.getPassPoints(), attempt.isPassed(),
                 attempt.getTimeLimitMinutes(), attempt.getDurationSeconds(), attempt.isTimedOut());
-    }
-
-    /** Czytelna nazwa zakresu do raportu i historii. Nieistniejący zakres to 404. */
-    private String scopeLabel(Long categoryId, Long subjectId, Long sourceId) {
-        String label;
-        if (sourceId != null) {
-            var source = sourceRepository.findById(sourceId).orElseThrow(ExamService::scopeNotFound);
-            label = source.getSubject() != null
-                    ? source.getSubject().getName() + " → " + source.getName()
-                    : source.getName();
-        } else if (subjectId != null) {
-            label = subjectRepository.findById(subjectId).orElseThrow(ExamService::scopeNotFound).getName();
-        } else if (categoryId != null) {
-            label = categoryRepository.findById(categoryId).orElseThrow(ExamService::scopeNotFound).getName();
-        } else {
-            label = "Cały materiał";
-        }
-        return label.length() > MAX_LABEL_LENGTH ? label.substring(0, MAX_LABEL_LENGTH) : label;
-    }
-
-    private static ResourceNotFoundException scopeNotFound() {
-        return new ResourceNotFoundException("Nie znaleziono wybranego zakresu egzaminu");
     }
 }

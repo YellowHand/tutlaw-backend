@@ -47,6 +47,7 @@ ułożone alfabetycznie.
 | **Trudność (difficulty, D)** | Jak trudna jest karta dla użytkownika (1–10) | `user_card_state.difficulty` |
 | **Tryb egzaminacyjny** | Zachowanie po ustawieniu daty egzaminu: wyższa retencja w ostatnich 30 dniach, odstępy nie wykraczają poza egzamin, plan nowych pytań | `SchedulingRules`, `LearningSettingsService` |
 | **Termin (due date)** | Kiedy karta ma wrócić; od niego karta jest „zaległa” | `user_card_state.due_date` |
+| **Własny test** | Sesja nauki ułożona przez użytkownika: wybrane rodzaje i akty prawne, rodzaj pytań (wszystkie, nowe, błędy, zaległe), lata egzaminu i liczba pytań. Bez progu zaliczenia, odpowiedzi jak w zwykłym teście | `CustomTestService`, `POST /api/review/custom-test` |
 | **Źródło** | Zbiór pytań lub rozdziałów w przedmiocie: podręcznik albo pula płaska | `sources`, pakiet `source` |
 | **Zaległa karta** | Karta z minionym terminem powtórki | `ReviewQueueService.splitByDue` |
 | **Zawieszenie** | Wyłączenie karty z kolejek i liczników dla jednego użytkownika, bez utraty postępu | `user_card_state.suspended`, `SuspensionService` |

@@ -40,8 +40,16 @@ public class ExamAttempt {
     @Column(name = "correct_count", nullable = false)
     private int correctCount;
 
+    /**
+     * Próg w procentach. Od stałego formatu egzaminu to tylko zaokrąglenie progu w punktach w górę (100 z 150 to 67%);
+     * przy starszych podejściach to próg wybrany przez użytkownika.
+     */
     @Column(name = "pass_threshold_percent", nullable = false)
     private int passThresholdPercent;
+
+    /** Próg zaliczenia w punktach (100 przy pełnym egzaminie 150 pytań); null = podejście sprzed stałego formatu. */
+    @Column(name = "pass_points")
+    private Integer passPoints;
 
     @Column(nullable = false)
     private boolean passed;

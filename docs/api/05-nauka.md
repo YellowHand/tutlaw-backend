@@ -107,6 +107,60 @@ błędna. Format jak `test-queue`.
 
 `count` to liczba pytań nadal dostępnych do powtórzenia (niezawieszonych, z wybranych pochodzeń).
 
+### `GET /api/review/custom-test/counts` — własny test: ile pytań w zakresie
+
+Pierwszy krok „Własnego testu”: podgląd „Dostępnych: N” przy układaniu testu. Zakres to **suma** wskazanych rodzajów
+i aktów prawnych; bez żadnego z nich cały dostępny materiał.
+
+| Parametr | Opis |
+|----------|------|
+| `categoryIds` | Rodzaje (kategorie): `categoryIds=1&categoryIds=2` albo `categoryIds=1,2`. Opcjonalne |
+| `subjectIds` | Akty prawne (przedmioty), jak wyżej. Opcjonalne. Pytanie z rodzaju i z jego aktu liczy się raz |
+| `yearFrom`, `yearTo` | Zakres lat egzaminu (włącznie, 1900–2100), każdy opcjonalny. Z zakresem pytania bez roku (autorskie) odpadają |
+
+```json
+{ "all": 1240, "newQuestions": 800, "mistakes": 12, "due": 45 }
+```
+
+Liczby dotyczą pytań dostępnych dla użytkownika, **niezawieszonych** i z **wybranych pochodzeń** (filtr pochodzenia).
+Rodzaje nakładają się: to samo pytanie może być zaległe i błędne, więc suma nie musi dawać `all`. `mistakes` to te
+same pytania co w „Moich błędach” (ostatnia odpowiedź błędna, ostatnie 30 dni), ale w wybranym zakresie i bez limitu
+50 na sesję. Błędy: `400` (rok poza zakresem, rok „od” późniejszy niż „do”).
+
+### `POST /api/review/custom-test` — własny test: losowanie pytań
+
+Drugi krok: serwer losuje numery pytań. **Niczego nie zapisuje.** Sesję otwiera się potem przez
+`GET /api/review/practice-queue?cardIds=...`, więc odpowiedzi idą normalną drogą testu (ocena pamięci, błędy trafiają do
+„Moich błędów”).
+
+```json
+{
+  "categoryIds": [2, 3],
+  "subjectIds": [41],
+  "kind": "NEW",
+  "yearFrom": 2020,
+  "yearTo": 2024,
+  "questionCount": 30
+}
+```
+
+| Pole | Opis |
+|------|------|
+| `categoryIds`, `subjectIds` | Zakres jak wyżej (najwyżej po 200 numerów); oba puste = cały materiał |
+| `kind` | `ALL` (domyślnie), `NEW` (jeszcze nierozwiązywane), `MISTAKES` (ostatnia odpowiedź błędna), `DUE` (po terminie powtórki) |
+| `yearFrom`, `yearTo` | Opcjonalne lata egzaminu |
+| `questionCount` | Ile pytań, **1–200** (wymagane) |
+
+```json
+{ "cardIds": [812, 77, 1203], "available": 3, "requested": 30 }
+```
+
+`cardIds` jest w kolejności sesji (zawsze wymieszanej). Gdy jest mniej pytań, niż użytkownik chciał, dostaje wszystkie
+(`available` < `requested`). Przy ograniczonej liczbie `MISTAKES` bierze najświeższe błędy, a `DUE` te, które
+użytkownik najpewniej już zapomniał; `ALL` i `NEW` są losowe. Własny test **nie jest ograniczony dziennym limitem
+nowych pytań**. Błędy: `400` (brak pytań spełniających warunki, z komunikatem dopasowanym do rodzaju; zła liczba pytań;
+zły zakres lat).
+
 ## Liczniki
 
 ### `GET /api/review/due-count?mode=FLASHCARD|TEST`

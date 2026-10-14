@@ -44,7 +44,7 @@ przenoszenia danych). Bez hasła i tokenów.
   "reviewLogs": [ { "cardId": 101, "reviewedAt": "2026-10-05T19:00:00", "mode": "TEST", "rating": 3, "correct": true, "unsure": false } ],
   "cardReports": [ { "cardId": 55, "question": "Treść…", "reason": "OUTDATED", "comment": "Przepis się zmienił", "status": "NEW", "createdAt": "2026-10-02T12:00:00" } ],
   "examAttempts": [ { "finishedAt": "2026-10-01T20:00:00", "scope": "Cały materiał", "questionCount": 50, "answeredCount": 50,
-                      "correctCount": 41, "passThresholdPercent": 75, "passed": true, "timeLimitMinutes": 60,
+                      "correctCount": 41, "passThresholdPercent": 75, "passPoints": null, "passed": true, "timeLimitMinutes": 60,
                       "durationSeconds": 2710, "timedOut": false } ],
   "flashcardAdditions": [ { "questionId": 101, "question": "Treść…", "addedAt": "2026-10-03T09:00:00" } ],
   "learningSettings": { "newCardsPerDay": null, "newTestQuestionsPerDay": 30, "maxReviewsPerDay": null,

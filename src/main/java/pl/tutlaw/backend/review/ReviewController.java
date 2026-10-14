@@ -18,6 +18,7 @@ public class ReviewController {
     private final ReviewService reviewService;
     private final MistakesService mistakesService;
     private final PracticeQueueService practiceQueueService;
+    private final CustomTestService customTestService;
 
     // categoryId, subjectId i sourceId są opcjonalne (od najwęższego: źródło, przedmiot, kategoria).
     // Bez żadnego z nich kolejka obejmuje cały materiał użytkownika.
@@ -74,6 +75,30 @@ public class ReviewController {
     public List<TestQueueItemResponse> getPracticeQueue(
             @RequestParam List<Long> cardIds, Authentication authentication) {
         return practiceQueueService.queue(cardIds, authentication);
+    }
+
+    /**
+     * Własny test, krok 1: ile pytań każdego rodzaju (wszystkie, nowe, błędy, zaległe) jest w wybranym zakresie.
+     * Zakres to suma rodzajów ({@code categoryIds}) i aktów prawnych ({@code subjectIds}); bez żadnego cały materiał.
+     * Lata egzaminu ({@code yearFrom}, {@code yearTo}) są opcjonalne.
+     */
+    @GetMapping("/custom-test/counts")
+    public CustomTestCountsResponse getCustomTestCounts(
+            @RequestParam(required = false) List<Long> categoryIds,
+            @RequestParam(required = false) List<Long> subjectIds,
+            @RequestParam(required = false) Integer yearFrom,
+            @RequestParam(required = false) Integer yearTo,
+            Authentication authentication) {
+        return customTestService.counts(categoryIds, subjectIds, yearFrom, yearTo, authentication);
+    }
+
+    /**
+     * Własny test, krok 2: losuje numery pytań. Sesję otwiera się potem przez {@code /practice-queue}. Niczego nie zapisuje.
+     */
+    @PostMapping("/custom-test")
+    public CustomTestSelectionResponse drawCustomTest(
+            @Valid @RequestBody CustomTestRequest request, Authentication authentication) {
+        return customTestService.select(request, authentication);
     }
 
     /** "Powtórz moje błędy": sesja z pytań, w których ostatnia odpowiedź w teście była błędna. */

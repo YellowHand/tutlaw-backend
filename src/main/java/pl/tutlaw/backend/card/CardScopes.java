@@ -44,7 +44,12 @@ public final class CardScopes {
      * (czego baza nie dopuszcza) nie jest odrzucana, żeby filtr nigdy nie ukrył niczego przez pomyłkę.
      */
     public static boolean matchesOrigins(CardRepository.CardRef ref, Set<QuestionOrigin> origins) {
-        return ref.getOrigin() == null || origins.contains(ref.getOrigin());
+        return originAllowed(ref.getOrigin(), origins);
+    }
+
+    /** To samo dla samego pochodzenia pytania (null przechodzi, jak wyżej). */
+    public static boolean originAllowed(QuestionOrigin origin, Set<QuestionOrigin> origins) {
+        return origin == null || origins.contains(origin);
     }
 
     /** Czy to fiszka (karta bez opcji). Takie karty żyją tylko w Fiszkach. */

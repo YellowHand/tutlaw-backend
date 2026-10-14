@@ -22,31 +22,49 @@ class ExamScoringTest {
     }
 
     @Test
-    void passed_whenTheScoreEqualsTheThreshold() {
-        assertThat(ExamScoring.passed(3, 4, 75)).isTrue();
-        assertThat(ExamScoring.passed(75, 100, 75)).isTrue();
+    void passed_fullExam_needs100Points() {
+        assertThat(ExamScoring.passed(100, 150)).isTrue();
+        assertThat(ExamScoring.passed(99, 150)).isFalse();
+        assertThat(ExamScoring.passed(150, 150)).isTrue();
+        assertThat(ExamScoring.passed(0, 150)).isFalse();
     }
 
     @Test
-    void passed_usesExactArithmetic_notTheRoundedPercentage() {
-        // 112 / 150 = 74,67%: wyświetla się jako 74,7%, ale to nadal mniej niż 75%
-        assertThat(ExamScoring.passed(112, 150, 75)).isFalse();
-        assertThat(ExamScoring.passed(113, 150, 75)).isTrue();
-        // 74,99% wyświetla się jako 75,0%, ale to nadal mniej niż 75%
-        assertThat(ExamScoring.scorePercent(7_499, 10_000)).isEqualTo(75.0);
-        assertThat(ExamScoring.passed(7_499, 10_000, 75)).isFalse();
+    void passed_usesPointsNotTheRoundedPercentage() {
+        // 100 / 150 = 66,67%: wyświetla się jako 66,7%, a zaliczenie zaczyna się dokładnie od 100 punktów
+        assertThat(ExamScoring.scorePercent(100, 150)).isEqualTo(66.7);
+        assertThat(ExamScoring.scorePercent(99, 150)).isEqualTo(66.0);
+        assertThat(ExamScoring.passed(99, 150)).isFalse();
+        assertThat(ExamScoring.passed(100, 150)).isTrue();
     }
 
     @Test
-    void passed_atTheExtremeThresholds() {
-        assertThat(ExamScoring.passed(150, 150, 100)).isTrue();
-        assertThat(ExamScoring.passed(149, 150, 100)).isFalse();
-        assertThat(ExamScoring.passed(1, 200, 1)).isFalse(); // 0,5% < 1%
-        assertThat(ExamScoring.passed(2, 200, 1)).isTrue();   // 1% >= 1%
+    void passed_aShorterExamUsesTheProportionalThreshold() {
+        assertThat(ExamScoring.passed(80, 120)).isTrue();
+        assertThat(ExamScoring.passed(79, 120)).isFalse();
+        assertThat(ExamScoring.passed(2, 3)).isTrue();
+        assertThat(ExamScoring.passed(1, 3)).isFalse();
     }
 
     @Test
     void passed_isNeverTrueForAnEmptyExam() {
-        assertThat(ExamScoring.passed(0, 0, 1)).isFalse();
+        assertThat(ExamScoring.passed(0, 0)).isFalse();
+    }
+
+    @Test
+    void thresholdPercent_roundsThePointsThresholdUp() {
+        assertThat(ExamScoring.thresholdPercent(100, 150)).isEqualTo(67);
+        assertThat(ExamScoring.thresholdPercent(8, 12)).isEqualTo(67);
+        assertThat(ExamScoring.thresholdPercent(1, 1)).isEqualTo(100);
+        assertThat(ExamScoring.thresholdPercent(50, 75)).isEqualTo(67);
+    }
+
+    @Test
+    void thresholdPercent_staysWithinTheDatabaseRange() {
+        for (int total = 1; total <= ExamFormat.QUESTION_COUNT; total++) {
+            int percent = ExamScoring.thresholdPercent(ExamFormat.passPointsFor(total), total);
+            assertThat(percent).as("total=%d", total).isBetween(1, 100);
+        }
+        assertThat(ExamScoring.thresholdPercent(0, 0)).isEqualTo(100);
     }
 }

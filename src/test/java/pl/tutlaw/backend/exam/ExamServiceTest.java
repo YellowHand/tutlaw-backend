@@ -13,21 +13,15 @@ import pl.tutlaw.backend.card.Card;
 import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.card.CorrectOption;
 import pl.tutlaw.backend.card.QuestionOrigin;
-import pl.tutlaw.backend.category.Category;
-import pl.tutlaw.backend.category.CategoryRepository;
-import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
 import pl.tutlaw.backend.exam.dto.ExamResultResponse;
-import pl.tutlaw.backend.exam.dto.ExamStartRequest;
 import pl.tutlaw.backend.exam.dto.ExamStartResponse;
 import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.source.Source;
-import pl.tutlaw.backend.source.SourceRepository;
 import pl.tutlaw.backend.subject.Subject;
-import pl.tutlaw.backend.subject.SubjectRepository;
 import pl.tutlaw.backend.testsupport.CardRefs;
 import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.CurrentUserResolver;
@@ -38,7 +32,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -62,9 +55,6 @@ class ExamServiceTest {
     @Mock private CardRepository cardRepository;
     @Mock private UserCardStateRepository stateRepository;
     @Mock private ExamAttemptRepository attemptRepository;
-    @Mock private CategoryRepository categoryRepository;
-    @Mock private SubjectRepository subjectRepository;
-    @Mock private SourceRepository sourceRepository;
     @Mock private CurrentUserResolver currentUserResolver;
     @Mock private OriginFilterService originFilter;
     private final Authentication authentication = mock(Authentication.class);
@@ -73,8 +63,8 @@ class ExamServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ExamService(cardRepository, stateRepository, attemptRepository, categoryRepository,
-                subjectRepository, sourceRepository, currentUserResolver, clock, originFilter);
+        service = new ExamService(cardRepository, stateRepository, attemptRepository, currentUserResolver, clock,
+                originFilter);
         User user = new User();
         user.setId(5L);
         when(currentUserResolver.resolve(authentication)).thenReturn(user);
@@ -119,16 +109,21 @@ class ExamServiceTest {
         return cards;
     }
 
-    private static ExamStartRequest startRequest(int count) {
-        return new ExamStartRequest(null, null, null, count);
-    }
-
     private static ExamSubmitRequest.Answer answer(long cardId, CorrectOption selected) {
         return new ExamSubmitRequest.Answer(cardId, selected);
     }
 
-    private static ExamSubmitRequest submitRequest(int threshold, ExamSubmitRequest.Answer... answers) {
-        return new ExamSubmitRequest(null, null, null, 150, threshold, 3_600, false, List.of(answers));
+    private static ExamSubmitRequest submitRequest(ExamSubmitRequest.Answer... answers) {
+        return new ExamSubmitRequest(150, 3_600, false, List.of(answers));
+    }
+
+    /** Odpowiedzi do pytań 1..total, z czego pierwsze {@code correct} poprawne (A), a reszta błędna (B). */
+    private static ExamSubmitRequest.Answer[] answers(int total, int correct) {
+        ExamSubmitRequest.Answer[] answers = new ExamSubmitRequest.Answer[total];
+        for (int i = 0; i < total; i++) {
+            answers[i] = answer(i + 1L, i < correct ? CorrectOption.A : CorrectOption.B);
+        }
+        return answers;
     }
 
     private void readable(Card... cards) {
@@ -151,36 +146,51 @@ class ExamServiceTest {
     // ---------------------------------------------------------------- losowanie
 
     @Test
-    void start_drawsTheRequestedNumberOfDistinctQuestions() {
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 30)));
-        givenLoadable(tests(1, 30));
+    void start_drawsExactly150DistinctQuestions_andTellsThePassThreshold() {
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 400)));
+        givenLoadable(tests(1, 400));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
-        ExamStartResponse response = service.start(startRequest(10), authentication);
+        ExamStartResponse response = service.start(authentication);
 
-        assertThat(response.questions()).hasSize(10);
-        assertThat(response.requestedCount()).isEqualTo(10);
+        assertThat(response.questions()).hasSize(150);
+        assertThat(response.requestedCount()).isEqualTo(150);
+        assertThat(response.passPoints()).isEqualTo(100);
         assertThat(response.questions().stream().map(TestQueueItemResponse::cardId).collect(Collectors.toSet()))
-                .hasSize(10)
-                .allMatch(id -> id >= 1 && id <= 30);
+                .hasSize(150)
+                .allMatch(id -> id >= 1 && id <= 400);
         assertThat(response.scopeLabel()).isEqualTo("Cały materiał");
     }
 
     @Test
     void start_loadsFullCardsOnlyForTheDrawnQuestions_inTheDrawnOrder() {
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 300)));
-        givenLoadable(tests(1, 300));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 600)));
+        givenLoadable(tests(1, 600));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
-        ExamStartResponse response = service.start(startRequest(25), authentication);
+        ExamStartResponse response = service.start(authentication);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<Long>> captor = ArgumentCaptor.forClass(Collection.class);
         verify(cardRepository).findAllWithSourceByIdIn(captor.capture());
-        // z 300 dostępnych pytań do bazy po pełne treści idzie tylko 25 numerów, a kolejność egzaminu to kolejność losowania
-        assertThat(captor.getValue()).hasSize(25);
+        // z 600 dostępnych pytań do bazy po pełne treści idzie tylko 150 numerów, a kolejność egzaminu to kolejność losowania
+        assertThat(captor.getValue()).hasSize(150);
         assertThat(response.questions()).extracting(TestQueueItemResponse::cardId)
                 .containsExactlyElementsOf(new ArrayList<>(captor.getValue()));
+    }
+
+    @Test
+    void start_alwaysTakesTheWholeMaterial_notASingleCategorySubjectOrSource() {
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 200)));
+        givenLoadable(tests(1, 200));
+        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
+
+        service.start(authentication);
+
+        verify(cardRepository).findReadableRefsForUser(5L);
+        verify(cardRepository, never()).findReadableRefsForUserAndCategory(any(), any());
+        verify(cardRepository, never()).findReadableRefsForUserAndSubject(any(), any());
+        verify(cardRepository, never()).findReadableRefsForUserAndSource(any(), any());
     }
 
     @Test
@@ -191,12 +201,12 @@ class ExamServiceTest {
         givenLoadable(pool);
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of(2L, 4L));
 
-        // prosimy o więcej, niż jest dostępnych, więc dostajemy wszystkie możliwe
-        ExamStartResponse response = service.start(startRequest(50), authentication);
+        // w materiale jest mniej niż 150 pytań, więc egzamin ma wszystkie możliwe
+        ExamStartResponse response = service.start(authentication);
 
         assertThat(response.questions()).extracting(TestQueueItemResponse::cardId)
                 .containsExactlyInAnyOrder(1L, 3L, 5L, 6L);
-        assertThat(response.requestedCount()).isEqualTo(50);
+        assertThat(response.requestedCount()).isEqualTo(150);
     }
 
     private static Card withOrigin(Card card, QuestionOrigin origin) {
@@ -218,33 +228,33 @@ class ExamServiceTest {
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
         when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY, QuestionOrigin.BAILIFF));
 
-        ExamStartResponse response = service.start(startRequest(50), authentication);
+        ExamStartResponse response = service.start(authentication);
 
         assertThat(response.questions()).extracting(TestQueueItemResponse::cardId)
                 .containsExactlyInAnyOrder(2L, 3L, 4L);
     }
 
     @Test
-    void start_whenTheFilterExcludesEverythingInScopeTheErrorPointsAtTheFilter() {
+    void start_whenTheFilterExcludesEverythingTheErrorPointsAtTheFilter() {
         List<Card> pool = List.of(withOrigin(test(1), QuestionOrigin.AUTHORED), withOrigin(test(2), QuestionOrigin.AUTHORED));
         when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(pool));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
         when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.BAILIFF));
 
-        assertThatThrownBy(() -> service.start(startRequest(10), authentication))
+        assertThatThrownBy(() -> service.start(authentication))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("filtr pochodzenia");
     }
 
     @Test
-    void start_withNoQuestionsInScopeAtAllKeepsTheOriginalMessage() {
+    void start_withNoQuestionsAtAllKeepsTheOriginalMessage() {
         when(cardRepository.findReadableRefsForUser(5L)).thenReturn(List.of());
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
         when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.BAILIFF));
 
-        assertThatThrownBy(() -> service.start(startRequest(10), authentication))
+        assertThatThrownBy(() -> service.start(authentication))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("nie ma teraz pytań testowych")
+                .hasMessageContaining("Nie ma teraz pytań testowych")
                 .hasMessageNotContaining("filtr");
     }
 
@@ -254,22 +264,23 @@ class ExamServiceTest {
         readable(shown);
         lenient().when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.BAILIFF));
 
-        ExamResultResponse result = service.submit(submitRequest(60, answer(1, CorrectOption.A)), authentication);
+        ExamResultResponse result = service.submit(submitRequest(answer(1, CorrectOption.A)), authentication);
 
         assertThat(result.questions()).hasSize(1);
         assertThat(result.questions().get(0).correct()).isTrue();
     }
 
     @Test
-    void start_withFewerQuestionsThanRequestedReturnsAllOfThem() {
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 8)));
-        givenLoadable(tests(1, 8));
+    void start_withFewerThan150QuestionsReturnsAllOfThem_andScalesTheThreshold() {
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(tests(1, 12)));
+        givenLoadable(tests(1, 12));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
-        ExamStartResponse response = service.start(startRequest(100), authentication);
+        ExamStartResponse response = service.start(authentication);
 
-        assertThat(response.questions()).hasSize(8);
-        assertThat(response.requestedCount()).isEqualTo(100);
+        assertThat(response.questions()).hasSize(12);
+        assertThat(response.requestedCount()).isEqualTo(150);
+        assertThat(response.passPoints()).isEqualTo(8); // 100 z 150, proporcjonalnie, w górę
     }
 
     @Test
@@ -278,7 +289,7 @@ class ExamServiceTest {
         givenLoadable(tests(1, 3));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of(1L, 2L, 3L));
 
-        assertThatThrownBy(() -> service.start(startRequest(10), authentication))
+        assertThatThrownBy(() -> service.start(authentication))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -288,64 +299,9 @@ class ExamServiceTest {
         givenLoadable(tests(1, 10));
         when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
 
-        service.start(startRequest(5), authentication);
+        service.start(authentication);
 
         verify(attemptRepository, never()).save(any());
-    }
-
-    // ---------------------------------------------------------------- zakres
-
-    @Test
-    void start_usesTheNarrowestScope_andLabelsIt() {
-        Source source = source("Egzamin 2024");
-        when(sourceRepository.findById(9L)).thenReturn(Optional.of(source));
-        when(cardRepository.findReadableRefsForUserAndSource(9L, 5L)).thenReturn(CardRefs.of(tests(1, 6)));
-        givenLoadable(tests(1, 6));
-        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
-
-        // źródło wygrywa z przedmiotem i kategorią
-        ExamStartResponse response = service.start(new ExamStartRequest(1L, 2L, 9L, 5), authentication);
-
-        assertThat(response.scopeLabel()).isEqualTo("Prawo karne → Egzamin 2024");
-        verify(cardRepository, never()).findReadableRefsForUserAndSubject(any(), any());
-        verify(cardRepository, never()).findReadableRefsForUserAndCategory(any(), any());
-        verify(cardRepository, never()).findReadableRefsForUser(any());
-    }
-
-    @Test
-    void start_subjectScope() {
-        Subject subject = new Subject();
-        subject.setName("Prawo cywilne");
-        when(subjectRepository.findById(2L)).thenReturn(Optional.of(subject));
-        when(cardRepository.findReadableRefsForUserAndSubject(2L, 5L)).thenReturn(CardRefs.of(tests(1, 6)));
-        givenLoadable(tests(1, 6));
-        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
-
-        ExamStartResponse response = service.start(new ExamStartRequest(1L, 2L, null, 5), authentication);
-
-        assertThat(response.scopeLabel()).isEqualTo("Prawo cywilne");
-    }
-
-    @Test
-    void start_categoryScope() {
-        Category category = new Category();
-        category.setName("Student");
-        when(categoryRepository.findById(1L)).thenReturn(Optional.of(category));
-        when(cardRepository.findReadableRefsForUserAndCategory(1L, 5L)).thenReturn(CardRefs.of(tests(1, 6)));
-        givenLoadable(tests(1, 6));
-        when(stateRepository.findSuspendedCardIds(5L)).thenReturn(List.of());
-
-        ExamStartResponse response = service.start(new ExamStartRequest(1L, null, null, 5), authentication);
-
-        assertThat(response.scopeLabel()).isEqualTo("Student");
-    }
-
-    @Test
-    void start_unknownScopeIsNotFound() {
-        when(sourceRepository.findById(404L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.start(new ExamStartRequest(null, null, 404L, 5), authentication))
-                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     // ---------------------------------------------------------------- ocena
@@ -358,7 +314,7 @@ class ExamServiceTest {
         readable(c1, c2, c3);
 
         ExamResultResponse result = service.submit(
-                submitRequest(75, answer(1, CorrectOption.A), answer(2, CorrectOption.C), answer(3, null)), authentication);
+                submitRequest(answer(1, CorrectOption.A), answer(2, CorrectOption.C), answer(3, null)), authentication);
 
         ExamAttemptResponse attempt = result.attempt();
         assertThat(attempt.questionCount()).isEqualTo(3);
@@ -377,29 +333,59 @@ class ExamServiceTest {
     }
 
     @Test
-    void submit_decidesPassingAgainstTheChosenThreshold() {
+    void submit_decidesPassingAgainstTheServerThreshold() {
         Card c1 = test(1);
         Card c2 = test(2);
         Card c3 = test(3);
         Card c4 = test(4);
         readable(c1, c2, c3, c4);
 
-        ExamResultResponse atThreshold = service.submit(submitRequest(75,
+        // 4 pytania: próg to 100/150 z 4, w górę, czyli 3 punkty
+        ExamResultResponse atThreshold = service.submit(submitRequest(
                 answer(1, CorrectOption.A), answer(2, CorrectOption.A), answer(3, CorrectOption.A), answer(4, CorrectOption.B)),
                 authentication);
-        ExamResultResponse below = service.submit(submitRequest(75,
+        ExamResultResponse below = service.submit(submitRequest(
                 answer(1, CorrectOption.A), answer(2, CorrectOption.A), answer(3, CorrectOption.B), answer(4, CorrectOption.B)),
                 authentication);
 
         assertThat(atThreshold.attempt().passed()).isTrue();
+        assertThat(atThreshold.attempt().passPoints()).isEqualTo(3);
         assertThat(below.attempt().passed()).isFalse();
+    }
+
+    @Test
+    void submit_fullExam_passesFromExactly100Points() {
+        List<Card> all = tests(1, 150);
+        readable(all.toArray(new Card[0]));
+
+        ExamResultResponse with100 = service.submit(submitRequest(answers(150, 100)), authentication);
+        ExamResultResponse with99 = service.submit(submitRequest(answers(150, 99)), authentication);
+
+        assertThat(with100.attempt().questionCount()).isEqualTo(150);
+        assertThat(with100.attempt().correctCount()).isEqualTo(100);
+        assertThat(with100.attempt().passPoints()).isEqualTo(100);
+        assertThat(with100.attempt().passed()).isTrue();
+        assertThat(with99.attempt().correctCount()).isEqualTo(99);
+        assertThat(with99.attempt().passed()).isFalse();
+    }
+
+    @Test
+    void submit_savesThePassThresholdInPointsAndAsARoundedPercentage() {
+        readable(tests(1, 150).toArray(new Card[0]));
+
+        service.submit(submitRequest(answers(150, 120)), authentication);
+
+        ExamAttempt saved = savedAttempt();
+        assertThat(saved.getPassPoints()).isEqualTo(100);
+        assertThat(saved.getPassThresholdPercent()).isEqualTo(67); // 100/150 = 66,7%, w górę do pełnego procentu
+        assertThat(saved.isPassed()).isTrue();
     }
 
     @Test
     void submit_savesTheSummaryOfTheAttempt() {
         readable(test(1), test(2));
 
-        ExamSubmitRequest request = new ExamSubmitRequest(null, null, null, 90, 60, 4_321, true,
+        ExamSubmitRequest request = new ExamSubmitRequest(90, 4_321, true,
                 List.of(answer(1, CorrectOption.A), answer(2, null)));
         service.submit(request, authentication);
 
@@ -410,8 +396,9 @@ class ExamServiceTest {
         assertThat(saved.getQuestionCount()).isEqualTo(2);
         assertThat(saved.getAnsweredCount()).isEqualTo(1);
         assertThat(saved.getCorrectCount()).isEqualTo(1);
-        assertThat(saved.getPassThresholdPercent()).isEqualTo(60);
-        assertThat(saved.isPassed()).isFalse(); // 50% < 60%
+        assertThat(saved.getPassPoints()).isEqualTo(2); // 100/150 z 2 pytań, w górę
+        assertThat(saved.getPassThresholdPercent()).isEqualTo(100);
+        assertThat(saved.isPassed()).isFalse(); // 1 punkt z wymaganych 2
         assertThat(saved.getTimeLimitMinutes()).isEqualTo(90);
         assertThat(saved.getDurationSeconds()).isEqualTo(4_321);
         assertThat(saved.isTimedOut()).isTrue();
@@ -421,8 +408,7 @@ class ExamServiceTest {
     void submit_withoutTimeLimitStoresNull() {
         readable(test(1));
 
-        service.submit(new ExamSubmitRequest(null, null, null, null, 75, 10, null, List.of(answer(1, CorrectOption.A))),
-                authentication);
+        service.submit(new ExamSubmitRequest(null, 10, null, List.of(answer(1, CorrectOption.A))), authentication);
 
         ExamAttempt saved = savedAttempt();
         assertThat(saved.getTimeLimitMinutes()).isNull();
@@ -439,7 +425,7 @@ class ExamServiceTest {
                 card(3, CorrectOption.A, big),
                 card(4, CorrectOption.A, big));
 
-        ExamResultResponse result = service.submit(submitRequest(50,
+        ExamResultResponse result = service.submit(submitRequest(
                 answer(3, CorrectOption.A), answer(1, CorrectOption.B), answer(4, CorrectOption.A), answer(2, CorrectOption.C)),
                 authentication);
 
@@ -458,7 +444,7 @@ class ExamServiceTest {
     void submit_dropsQuestionsThatCannotBeScored_andSaysSo() {
         readable(test(1), test(3)); // pytanie 2 zostało usunięte albo jest już niedostępne
 
-        ExamResultResponse result = service.submit(submitRequest(75,
+        ExamResultResponse result = service.submit(submitRequest(
                 answer(1, CorrectOption.A), answer(2, CorrectOption.A), answer(3, CorrectOption.A)), authentication);
 
         assertThat(result.excludedCount()).isEqualTo(1);
@@ -471,7 +457,7 @@ class ExamServiceTest {
     void submit_withNothingToScoreIsABadRequest_andSavesNothing() {
         readable();
 
-        assertThatThrownBy(() -> service.submit(submitRequest(75, answer(1, CorrectOption.A)), authentication))
+        assertThatThrownBy(() -> service.submit(submitRequest(answer(1, CorrectOption.A)), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(attemptRepository, never()).save(any());
     }
@@ -479,7 +465,7 @@ class ExamServiceTest {
     @Test
     void submit_rejectsTheSameQuestionTwice_andSavesNothing() {
         assertThatThrownBy(() -> service.submit(
-                submitRequest(75, answer(1, CorrectOption.A), answer(1, CorrectOption.B)), authentication))
+                submitRequest(answer(1, CorrectOption.A), answer(1, CorrectOption.B)), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(attemptRepository, never()).save(any());
         verify(cardRepository, never()).findReadableTestCardsByIds(
@@ -490,7 +476,7 @@ class ExamServiceTest {
     void submit_doesNotTouchTheLearningState() {
         readable(test(1));
 
-        service.submit(submitRequest(75, answer(1, CorrectOption.B)), authentication);
+        service.submit(submitRequest(answer(1, CorrectOption.B)), authentication);
 
         // egzamin nie zmienia terminów powtórek ani liczników błędów: do stanów nauki w ogóle nie zagląda
         verify(stateRepository, never()).save(any());
@@ -505,7 +491,7 @@ class ExamServiceTest {
         readable(withExplanation, without);
 
         ExamResultResponse result = service.submit(
-                submitRequest(75, answer(1, CorrectOption.A), answer(2, CorrectOption.A)), authentication);
+                submitRequest(answer(1, CorrectOption.A), answer(2, CorrectOption.A)), authentication);
 
         assertThat(result.questions().get(0).explanation()).isEqualTo("Bo tak stanowi art. 1.");
         assertThat(result.questions().get(1).explanation()).isNull();
@@ -515,17 +501,32 @@ class ExamServiceTest {
 
     @Test
     void history_mapsAttemptsNewestFirst_withTheScoreInPercent() {
-        ExamAttempt newer = attempt(2L, NOW, 113, 150, 75, true);
-        ExamAttempt older = attempt(1L, NOW.minusDays(3), 112, 150, 75, false);
+        ExamAttempt newer = attempt(2L, NOW, 100, 150, 67, 100, true);
+        ExamAttempt older = attempt(1L, NOW.minusDays(3), 99, 150, 67, 100, false);
         when(attemptRepository.findRecent(eq(5L), ArgumentMatchers.<Pageable>any())).thenReturn(List.of(newer, older));
 
         List<ExamAttemptResponse> history = service.history(authentication);
 
         assertThat(history).extracting(ExamAttemptResponse::id).containsExactly(2L, 1L);
-        assertThat(history.get(0).scorePercent()).isEqualTo(75.3);
+        assertThat(history.get(0).scorePercent()).isEqualTo(66.7);
+        assertThat(history.get(0).passPoints()).isEqualTo(100);
         assertThat(history.get(0).passed()).isTrue();
-        assertThat(history.get(1).scorePercent()).isEqualTo(74.7);
+        assertThat(history.get(1).scorePercent()).isEqualTo(66.0);
         assertThat(history.get(1).passed()).isFalse();
+    }
+
+    @Test
+    void history_keepsOlderAttemptsWithTheirOwnPercentageThreshold() {
+        // podejście sprzed stałego formatu: własny próg 75%, bez progu w punktach
+        ExamAttempt old = attempt(7L, NOW.minusDays(40), 113, 150, 75, null, true);
+        when(attemptRepository.findRecent(eq(5L), ArgumentMatchers.<Pageable>any())).thenReturn(List.of(old));
+
+        ExamAttemptResponse response = service.history(authentication).get(0);
+
+        assertThat(response.passPoints()).isNull();
+        assertThat(response.passThresholdPercent()).isEqualTo(75);
+        assertThat(response.passed()).isTrue();
+        assertThat(response.scopeLabel()).isEqualTo("Cały materiał");
     }
 
     @Test
@@ -535,7 +536,8 @@ class ExamServiceTest {
         assertThat(service.history(authentication)).isEmpty();
     }
 
-    private static ExamAttempt attempt(long id, LocalDateTime finishedAt, int correct, int total, int threshold, boolean passed) {
+    private static ExamAttempt attempt(long id, LocalDateTime finishedAt, int correct, int total, int threshold,
+                                       Integer passPoints, boolean passed) {
         ExamAttempt attempt = new ExamAttempt();
         attempt.setId(id);
         attempt.setFinishedAt(finishedAt);
@@ -544,6 +546,7 @@ class ExamServiceTest {
         attempt.setAnsweredCount(total);
         attempt.setCorrectCount(correct);
         attempt.setPassThresholdPercent(threshold);
+        attempt.setPassPoints(passPoints);
         attempt.setPassed(passed);
         attempt.setTimeLimitMinutes(150);
         attempt.setDurationSeconds(7_000);

@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
 import pl.tutlaw.backend.exam.dto.ExamResultResponse;
-import pl.tutlaw.backend.exam.dto.ExamStartRequest;
 import pl.tutlaw.backend.exam.dto.ExamStartResponse;
 import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
 
@@ -24,10 +23,13 @@ public class ExamController {
 
     private final ExamService examService;
 
-    /** Losuje pytania egzaminu (bez poprawnych odpowiedzi). Niczego nie zapisuje. */
+    /**
+     * Losuje pytania egzaminu (bez poprawnych odpowiedzi). Format jest stały (150 pytań z całego materiału), więc
+     * żądanie nie ma treści. Niczego nie zapisuje.
+     */
     @PostMapping("/start")
-    public ExamStartResponse start(@Valid @RequestBody ExamStartRequest request, Authentication authentication) {
-        return examService.start(request, authentication);
+    public ExamStartResponse start(Authentication authentication) {
+        return examService.start(authentication);
     }
 
     /** Ocenia zakończony egzamin, zapisuje podsumowanie i zwraca raport. */

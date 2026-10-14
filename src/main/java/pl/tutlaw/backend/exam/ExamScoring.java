@@ -15,10 +15,22 @@ final class ExamScoring {
     }
 
     /**
-     * Zaliczone, gdy wynik jest co najmniej równy progowi. Porównanie na liczbach całkowitych, a nie na
-     * zaokrąglonym procencie: 112 z 150 to 74,7%, więc przy progu 75% to jeszcze nie jest zaliczenie.
+     * Zaliczone, gdy liczba punktów jest co najmniej równa progowi formatu egzaminu ({@link ExamFormat#passPointsFor}):
+     * 100 z 150, a przy krótszym egzaminie proporcjonalnie. Porównanie na liczbach całkowitych, nie na procentach.
      */
-    static boolean passed(int correct, int total, int thresholdPercent) {
-        return total > 0 && (long) correct * 100 >= (long) thresholdPercent * total;
+    static boolean passed(int correct, int total) {
+        return total > 0 && correct >= ExamFormat.passPointsFor(total);
+    }
+
+    /**
+     * Najmniejszy cały procent, który odpowiada progowi w punktach (dla pola {@code pass_threshold_percent}, które
+     * zostało po wcześniejszych etapach). 100 z 150 to 66,7%, więc zapisujemy 67.
+     */
+    static int thresholdPercent(int passPoints, int total) {
+        if (total <= 0) {
+            return 100;
+        }
+        long percent = ((long) passPoints * 100 + total - 1) / total;
+        return (int) Math.max(1, Math.min(100, percent));
     }
 }

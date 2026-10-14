@@ -341,7 +341,7 @@ def check_numbers() -> None:
 
     # liczba klas testowych
     tests = [p for p in (ROOT / "src" / "test").rglob("*Test*.java")]
-    m = re.search(r"\*\*(\d+) klasy testowe\*\*", read(DOCS / "01-architektura.md"))
+    m = re.search(r"\*\*(\d+) klas(?:y testowe| testowych)\*\*", read(DOCS / "01-architektura.md"))
     if m and int(m.group(1)) != len(tests):
         fail(f"docs/01 podaje {m.group(1)} klas testowych, a w src/test jest {len(tests)}")
 

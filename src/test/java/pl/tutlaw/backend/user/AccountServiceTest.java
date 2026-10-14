@@ -224,6 +224,9 @@ class AccountServiceTest {
         assertThat(exam.correctCount()).isEqualTo(113);
         assertThat(exam.passed()).isTrue();
         assertThat(exam.timeLimitMinutes()).isEqualTo(150);
+        // podejście sprzed stałego formatu egzaminu: własny próg w procentach, bez progu w punktach
+        assertThat(exam.passThresholdPercent()).isEqualTo(75);
+        assertThat(exam.passPoints()).isNull();
     }
 
     @Test

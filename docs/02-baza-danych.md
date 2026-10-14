@@ -3,7 +3,7 @@
 [← Spis treści](README.md)
 
 Baza to **PostgreSQL 16**. Schemat tworzą wyłącznie migracje **Flyway** (`src/main/resources/db/migration`, pliki
-`V1__...sql` do `V19__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
+`V1__...sql` do `V20__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
 (`ddl-auto: validate`), niczego nie tworzy i nie zmienia.
 
 > Nie edytuj starych migracji. Każda zmiana schematu to **nowy plik** `V20__...sql` itd., bo Flyway zapamiętuje
@@ -250,9 +250,15 @@ Klucz główny `user_id` (jeden wiersz na użytkownika, tworzony dopiero po pier
 ### `exam_attempts` — podejścia do egzaminu próbnego
 
 Zapisuje **tylko podsumowanie** podejścia: `id`, `user_id` (kto zdawał), `finished_at`, `scope_label` (nazwa zakresu w chwili egzaminu),
-`question_count`, `answered_count`, `correct_count`, `pass_threshold_percent`, `passed`, `time_limit_minutes`,
-`duration_seconds`, `timed_out`. Pojedynczych odpowiedzi baza nie przechowuje; szczegółowy raport użytkownik dostaje
-w odpowiedzi tuż po zakończeniu. CHECK-i pilnują zakresów (np. 1–200 pytań, próg 1–100%).
+`question_count`, `answered_count`, `correct_count`, `pass_threshold_percent`, `pass_points`, `passed`,
+`time_limit_minutes`, `duration_seconds`, `timed_out`. Pojedynczych odpowiedzi baza nie przechowuje; szczegółowy raport
+użytkownik dostaje w odpowiedzi tuż po zakończeniu. CHECK-i pilnują zakresów (np. 1–200 pytań, próg 1–100%,
+`pass_points` od 1 do liczby pytań).
+
+`pass_points` (migracja V20) to próg zaliczenia w punktach: 100 przy pełnym egzaminie 150 pytań. Zapisuje go serwer.
+Podejścia sprzed stałego formatu mają w tej kolumnie `NULL` i zachowują własny próg z `pass_threshold_percent`. Od
+stałego formatu `pass_threshold_percent` jest tylko zaokrągleniem progu w punktach w górę do pełnego procentu
+(100 z 150 to 67).
 
 ### `card_reports` — zgłoszenia błędów w pytaniach
 
@@ -337,13 +343,14 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 | V17 | 15 | `tokens_valid_from` (unieważnianie sesji po zmianie hasła) |
 | V18 | 17 | `origin`, `exam_year`, `hidden`, `auto_generated`, wyzwalacze fiszek, kaskady po kartach, `user_flashcard_additions` |
 | V19 | 18 | `test_origins` w `user_settings` (filtr pochodzenia) |
+| V20 | 28 | `pass_points` w `exam_attempts` (stały format egzaminu: próg w punktach) |
 
 Numery „Etap” wskazują, w którym etapie pracy nad projektem migracja powstała.
 
 ## Przydatne zapytania SQL (ręczna administracja)
 
 Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1–V19.
+pasują do schematu z migracji V1–V20.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się
 **wylogować i zalogować ponownie**, żeby dostać nowy token z rolą `ADMIN`.

@@ -72,6 +72,12 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 - **Test nigdy nie daje oceny „Łatwe”** (decyzja projektowa: przy trzech opcjach trafienie nie odróżnia się od łatwości).
 - **Egzamin próbny nie zapisuje pojedynczych odpowiedzi**, tylko podsumowanie; szczegółowy raport użytkownik dostaje raz,
   tuż po zakończeniu.
+- **Egzamin nie odtwarza stałych proporcji działów.** Ma zawsze 150 pytań z całej puli i zaliczenie od 100 punktów, ale
+  pytania są losowane bez podziału na działy (proporcje zależą od liczby pytań w bazie). Gdy w bazie jest mniej niż 150
+  pytań, egzamin jest krótszy, a próg maleje proporcjonalnie.
+- **Serwer nie pamięta, jakie pytania wydał w `start`.** Zaliczenie dotyczy zestawu przesłanego w `submit`, więc ktoś
+  mógłby wysłać krótszy zestaw i „zdać” go. To ćwiczenie tylko dla jego właściciela (historia jest prywatna), więc nie
+  blokujemy tego.
 - **Jedna strefa czasowa dla wszystkich** (`Europe/Warsaw` albo `APP_TIMEZONE`): „dzień” dla limitów dziennych jest taki
   sam dla każdego użytkownika. Daty w bazie nie mają strefy.
 - **Zawiesić można tylko kartę, na którą użytkownik już odpowiadał.**

@@ -25,7 +25,7 @@ flowchart LR
 | Spring Web MVC | w Spring Boot | Kontrolery REST |
 | Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
 | PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1`–`V19`), uruchamiane przy starcie |
+| Flyway | w Spring Boot | Migracje bazy (`V1`–`V20`), uruchamiane przy starcie |
 | Spring Security | w Spring Boot | Ochrona endpointów, role |
 | jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
 | Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |
@@ -60,7 +60,7 @@ komplet klas.
 | `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS), zawieszanie, błędy |
 | `review.fsrs` | Sam algorytm FSRS-6 (wzory matematyczne) |
 | `flashcard` | Fiszki powiązane z pytaniami: odblokowywanie, „Dodaj do fiszek” |
-| `exam` | Egzamin próbny: losowanie pytań, ocena, historia podejść |
+| `exam` | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie, ocena, historia podejść |
 | `report` | Zgłoszenia błędów w pytaniach |
 | `statistics` | Statystyki: przegląd, skuteczność, aktywność, rozbicie wg aplikacji i roku |
 | `settings` | Ustawienia nauki (limity dzienne, retencja, data egzaminu) i filtr pochodzenia |
@@ -195,7 +195,7 @@ jako kolejna powtórka). Szczegóły w [04](04-nauka-testy-fiszki-fsrs.md#ochron
 
 ## Testy
 
-W `src/test` jest **43 klasy testowe** (ok. 430 testów) i 3 klasy pomocnicze (`testsupport`: zegar do sterowania
+W `src/test` jest **45 klas testowych** (ok. 458 testów) i 3 klasy pomocnicze (`testsupport`: zegar do sterowania
 czasem, „fałszywe” repozytoria w pamięci, uproszczone karty). Większość to testy jednostkowe czystej logiki
 (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`…) oraz serwisów na repozytoriach w pamięci (np. `AuthFlowTest`
 przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez Dockera).
