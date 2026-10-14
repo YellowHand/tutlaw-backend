@@ -84,7 +84,7 @@ class ReviewServiceTest {
         double effective = SchedulingRules.effectiveRetention(retention, daysToExam);
         when(settingsService.effectiveFor(5L)).thenReturn(new EffectiveSettings(
                 20, 40, 200, retention, effective, null,
-                daysToExam == null ? null : LocalDate.of(2026, 10, 12).plusDays(daysToExam), daysToExam, true));
+                daysToExam == null ? null : LocalDate.of(2026, 10, 12).plusDays(daysToExam), daysToExam, true, false));
     }
 
     private UserCardState matureState(double stability, int daysSinceLastReview) {

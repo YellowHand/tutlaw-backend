@@ -14,6 +14,11 @@ public final class SchedulingRules {
      * pytanie zaczyna się liczyć jako opanowane po trzeciej poprawnej odpowiedzi, czyli zwykle po około 14 dniach.
      */
     public static final int EXAM_REVIEW_RESERVE_DAYS = 14;
+    /**
+     * Sufit automatycznego limitu nowych pytań na dzień. Powyżej tylu nowych pytań dziennie powtórki rosną szybciej,
+     * niż da się je robić, więc nauka przestaje działać. Limit własny (ręczny) nie ma tego sufitu.
+     */
+    public static final int MAX_AUTO_NEW_PER_DAY = 100;
 
     private SchedulingRules() {
     }
@@ -75,6 +80,17 @@ public final class SchedulingRules {
             return 0;
         }
         return (remaining + days - 1) / days;
+    }
+
+    /**
+     * Automatyczny dzienny limit nowych pytań testowych: nie mniej niż domyślny, a gdy plan do egzaminu wymaga więcej,
+     * tyle, ile trzeba, ale nie więcej niż {@value #MAX_AUTO_NEW_PER_DAY}.
+     *
+     * @param requiredPerDay ile nowych pytań dziennie trzeba, żeby zdążyć (0, gdy nie ma terminu albo jest rezerwa)
+     */
+    public static int autoNewQuestionsLimit(int defaultLimit, long requiredPerDay) {
+        long wanted = Math.min(Math.max(requiredPerDay, 0), MAX_AUTO_NEW_PER_DAY);
+        return (int) Math.max(defaultLimit, wanted);
     }
 
     /** Dni, w których warto jeszcze zaczynać nowe pytania: do egzaminu minus rezerwa; 0 w rezerwie. */

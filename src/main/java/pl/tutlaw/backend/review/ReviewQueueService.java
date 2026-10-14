@@ -296,7 +296,10 @@ public class ReviewQueueService {
         LocalDateTime startOfDay = now.toLocalDate().atStartOfDay();
         long introducedToday = reviewLogRepository.countFirstReviewsBetween(
                 userId, mode, startOfDay, startOfDay.plusDays(1));
-        int dailyLimit = mode == ReviewMode.TEST ? settings.newTestQuestionsPerDay() : settings.newCardsPerDay();
+        // Pytania testowe mają limit własny albo automatyczny (idzie za planem do egzaminu); fiszki zawsze stały.
+        int dailyLimit = mode == ReviewMode.TEST
+                ? settingsService.dailyNewTestQuestionLimit(userId)
+                : settings.newCardsPerDay();
         return (int) Math.max(0, dailyLimit - introducedToday);
     }
 

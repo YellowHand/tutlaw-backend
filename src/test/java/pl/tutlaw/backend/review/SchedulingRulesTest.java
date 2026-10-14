@@ -152,4 +152,25 @@ class SchedulingRulesTest {
         assertThat(SchedulingRules.planningDays(15)).isEqualTo(1);
         assertThat(SchedulingRules.suggestedPerDay(40, 15)).isEqualTo(40);
     }
+
+    @Test
+    void autoNewQuestionsLimit_neverDropsBelowTheDefault() {
+        assertThat(SchedulingRules.autoNewQuestionsLimit(40, 0)).isEqualTo(40);
+        assertThat(SchedulingRules.autoNewQuestionsLimit(40, 3)).isEqualTo(40);
+        assertThat(SchedulingRules.autoNewQuestionsLimit(40, 40)).isEqualTo(40);
+    }
+
+    @Test
+    void autoNewQuestionsLimit_followsThePlanUpToTheCap() {
+        assertThat(SchedulingRules.autoNewQuestionsLimit(40, 41)).isEqualTo(41);
+        assertThat(SchedulingRules.autoNewQuestionsLimit(40, 100)).isEqualTo(100);
+        assertThat(SchedulingRules.autoNewQuestionsLimit(40, 101)).isEqualTo(SchedulingRules.MAX_AUTO_NEW_PER_DAY);
+        assertThat(SchedulingRules.autoNewQuestionsLimit(40, 5000)).isEqualTo(SchedulingRules.MAX_AUTO_NEW_PER_DAY);
+    }
+
+    @Test
+    void autoNewQuestionsLimit_aDefaultAboveTheCapIsKept() {
+        // administrator może ustawić domyślny limit powyżej sufitu: sufit nie obcina wartości domyślnej
+        assertThat(SchedulingRules.autoNewQuestionsLimit(150, 20)).isEqualTo(150);
+    }
 }

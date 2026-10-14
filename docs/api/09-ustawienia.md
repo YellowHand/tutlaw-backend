@@ -1,4 +1,4 @@
-# API: ustawienia (`/api/me/settings`, `/api/me/exam`, `/api/me/origin-filter`, `/api/exam-terms`)
+# API: ustawienia (`/api/me/settings`, `/api/me/exam`, `/api/me/theme`, `/api/me/origin-filter`, `/api/exam-terms`)
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
@@ -18,11 +18,13 @@ domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej term
 {
   "newCardsPerDay": 20,
   "newTestQuestionsPerDay": 40,
+  "newTestQuestionsAuto": true,
   "maxReviewsPerDay": 100,
   "desiredRetention": 0.9,
   "examOrigin": "NOTARY",
   "examDate": "2027-03-15",
   "shuffleOptions": true,
+  "theme": "DARK",
   "daysToExam": 154,
   "examPassed": false,
   "effectiveRetention": 0.9,
@@ -34,6 +36,8 @@ domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej term
     "newTestQuestionsLeft": 300,
     "newFlashcardsLeft": 40,
     "planningDays": 140,
+    "requiredTestQuestionsPerDay": 3,
+    "maxTestQuestionsPerDay": 100,
     "suggestedTestQuestionsPerDay": 3,
     "suggestedFlashcardsPerDay": 1,
     "newTestQuestionsToday": 2
@@ -44,7 +48,9 @@ domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej term
 | Pole | Znaczenie |
 |------|-----------|
 | `newCardsPerDay` | Dzienny limit nowych fiszek |
-| `newTestQuestionsPerDay` | Dzienny limit nowych pytań testowych |
+| `newTestQuestionsPerDay` | Dzienny limit nowych pytań testowych, **który naprawdę obowiązuje**. Własny limit użytkownika, a bez niego (`newTestQuestionsAuto = true`) automatyczny: nie mniej niż domyślny (`defaults.newTestQuestionsPerDay`), a gdy plan do egzaminu wymaga więcej, tyle, ile trzeba, ale nie więcej niż `plan.maxTestQuestionsPerDay` (100). Bez terminu egzaminu i w ostatnich 14 dniach automatyczny limit to po prostu domyślny |
+| `newTestQuestionsAuto` | `true`, gdy użytkownik nie ustawił własnego limitu nowych pytań i obowiązuje limit automatyczny |
+| `theme` | Wygląd aplikacji: `DARK` (domyślnie) albo `LIGHT`. Zmienia się przez `PUT /api/me/theme` |
 | `maxReviewsPerDay` | Dzienny limit zaległych powtórek (osobno dla fiszek i testów) |
 | `desiredRetention` | Docelowa szansa przypomnienia wybrana przez użytkownika |
 | `examOrigin` | Aplikacja wybrana przez użytkownika (`PUT /api/me/exam`); `null`, gdy jeszcze nie wybrał |
@@ -55,14 +61,17 @@ domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej term
 | `effectiveRetention` | Retencja faktycznie użyta do liczenia terminów (w 30 dniach przed egzaminem co najmniej 0,95) |
 | `retentionBoosted` | Czy retencja jest podniesiona przez tryb egzaminacyjny |
 | `defaults` | Wartości domyślne serwera (do podpowiedzi „przywróć domyślne”) |
-| `plan` | `null`, gdy nie ma terminu egzaminu albo już minął. Inaczej: ile nowych pytań i fiszek zostało (`newTestQuestionsLeft`, `newFlashcardsLeft`), ile dni jest na planowanie nowych (`planningDays`: dni do egzaminu − 14 dni rezerwy na same powtórki, najmniej 0), cel na dziś (`suggestedTestQuestionsPerDay`, `suggestedFlashcardsPerDay`, zaokrąglone w górę, **0 w ostatnich 14 dniach**) i ile nowych pytań użytkownik zaczął dzisiaj (`newTestQuestionsToday`) |
+| `plan` | `null`, gdy nie ma terminu egzaminu albo już minął. Inaczej: ile nowych pytań i fiszek zostało (`newTestQuestionsLeft`, `newFlashcardsLeft`), ile dni jest na planowanie nowych (`planningDays`: dni do egzaminu − 14 dni rezerwy na same powtórki, najmniej 0), ile nowych pytań dziennie **trzeba**, żeby zdążyć (`requiredTestQuestionsPerDay`, bez żadnego sufitu) i sufit limitu automatycznego (`maxTestQuestionsPerDay`, 100), cel na dziś (`suggestedTestQuestionsPerDay` = trzeba, ale nie więcej niż sufit; `suggestedFlashcardsPerDay`; zaokrąglone w górę, **0 w ostatnich 14 dniach**) i ile nowych pytań użytkownik zaczął dzisiaj (`newTestQuestionsToday`) |
+
+Gdy `requiredTestQuestionsPerDay` jest większe niż `maxTestQuestionsPerDay`, wszystkich nowych pytań nie da się zacząć przed rezerwą na powtórki; frontend mówi to wprost, zamiast prosić o podniesienie limitu.
 
 Cel na dziś liczy się od stanu z **początku dnia** (pozostałe + zaczęte dzisiaj), więc nie maleje w miarę nauki w ciągu dnia. W planie nowe pytania testowe liczą się tylko z pochodzeń wybranych w filtrze.
 
 ### `PUT /api/me/settings`
 
 Zapisuje **pełny zestaw** (zastępuje poprzedni). `null` w polu liczbowym oznacza „wartość domyślna”, a `null` w
-`shuffleOptions` to „tak”. Daty egzaminu tu nie ma: wybiera się ją przez aplikację (`PUT /api/me/exam`), a termin ustawia
+`shuffleOptions` to „tak”. Wyjątek: `null` w `newTestQuestionsPerDay` to **limit automatyczny** (idzie za planem do
+egzaminu), a nie stała wartość. Daty egzaminu tu nie ma: wybiera się ją przez aplikację (`PUT /api/me/exam`), a termin ustawia
 administrator. Pole `examDate` wysłane przez starszego klienta jest ignorowane.
 
 ```json
@@ -78,7 +87,7 @@ administrator. Pole `examDate` wysłane przez starszego klienta jest ignorowane.
 | Pole | Dozwolone wartości |
 |------|--------------------|
 | `newCardsPerDay` | 0–200 |
-| `newTestQuestionsPerDay` | 0–500 |
+| `newTestQuestionsPerDay` | 0–500 albo `null` (automatyczny) |
 | `maxReviewsPerDay` | 10–1000 |
 | `desiredRetention` | od 0,70 do 0,97 (70–97%) |
 | `shuffleOptions` | prawda / fałsz |
@@ -86,7 +95,7 @@ administrator. Pole `examDate` wysłane przez starszego klienta jest ignorowane.
 **Odpowiedź `200`**: ten sam kształt co `GET`, już po zapisie. **Błędy `400`:** „Docelowa retencja musi mieścić się
 między 70% a 97%.”, a także komunikaty zakresów z walidacji pól („nie może być ujemna”, „najwyżej 200” itd.).
 
-Zapis ustawień nauki **nie zmienia** ani wybranej aplikacji, ani filtra pochodzenia (to osobne zestawy, patrz niżej).
+Zapis ustawień nauki **nie zmienia** ani wybranej aplikacji, ani wyglądu, ani filtra pochodzenia (to osobne zestawy, patrz niżej).
 
 ### `PUT /api/me/exam`
 
@@ -101,6 +110,19 @@ Ponowny wybór (inna aplikacja) znów ustawia filtr, nadpisując wcześniejszy.
 **Odpowiedź `200`**: ten sam kształt co `GET /api/me/settings`, już po zapisie. **Błędy `400`:** „Wybierz aplikację, do
 której się przygotowujesz (pytania autorskie nie mają egzaminu).” (`AUTHORED` albo brak `origin`), „Nieprawidłowy
 format żądania” (nieznany kod).
+
+### `PUT /api/me/theme`
+
+Wybór wyglądu aplikacji: ciemny albo jasny. Wygląd jest zapisany na koncie, więc po zalogowaniu na innym urządzeniu jest
+taki sam. Nowe konto ma wygląd ciemny. Frontend dodatkowo pamięta ostatni wygląd lokalnie, tylko po to, żeby strona nie
+mignęła w złym kolorze przed odpowiedzią serwera; wygląd z konta ma pierwszeństwo.
+
+```json
+{ "theme": "LIGHT" }
+```
+
+**Odpowiedź `200`**: ten sam kształt co `GET /api/me/settings`, już po zapisie. **Błędy `400`:** „Nieprawidłowy format
+żądania” (brak `theme` albo nieznana wartość; dozwolone `DARK`, `LIGHT`).
 
 ## Terminy egzaminów
 

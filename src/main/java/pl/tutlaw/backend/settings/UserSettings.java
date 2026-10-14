@@ -14,8 +14,9 @@ import pl.tutlaw.backend.card.QuestionOrigin;
 import java.time.LocalDateTime;
 
 /**
- * Ustawienia nauki jednego użytkownika. Pola liczbowe równe {@code null} oznaczają „użyj wartości domyślnej
+ * Ustawienia jednego użytkownika. Pola liczbowe równe {@code null} oznaczają „użyj wartości domyślnej
  * z konfiguracji serwera", dzięki czemu zmiana domyślnych obejmuje wszystkich, którzy niczego nie ustawiali.
+ * Wyjątkiem jest {@code newTestQuestionsPerDay}: {@code null} to limit automatyczny (idzie za planem do egzaminu).
  */
 @Entity
 @Table(name = "user_settings")
@@ -45,6 +46,11 @@ public class UserSettings {
     @Enumerated(EnumType.STRING)
     @Column(name = "exam_origin", length = 40)
     private QuestionOrigin examOrigin;
+
+    /** Wygląd aplikacji (domyślnie ciemny). Zapisany na koncie, żeby był taki sam na każdym urządzeniu. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "theme", nullable = false, length = 10)
+    private Theme theme = Theme.DARK;
 
     /** Czy w testach mieszać kolejność odpowiedzi A/B/C (domyślnie tak). */
     @Column(name = "shuffle_options", nullable = false)

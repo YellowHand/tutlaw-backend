@@ -13,7 +13,7 @@ Pełna dokumentacja po polsku jest w katalogu [`docs/`](docs/README.md):
 |----------|--------|
 | [Spis treści](docs/README.md) | Od tego zacznij |
 | [01. Architektura](docs/01-architektura.md) | Technologie, pakiety, warstwy, droga jednego żądania |
-| [02. Baza danych](docs/02-baza-danych.md) | Tabele, wyzwalacze, migracje V1–V21 |
+| [02. Baza danych](docs/02-baza-danych.md) | Tabele, wyzwalacze, migracje V1–V22 |
 | [03. Bezpieczeństwo i konta](docs/03-bezpieczenstwo-i-konta.md) | Rejestracja, logowanie, JWT, role, limity prób |
 | [04. Nauka: testy, fiszki, FSRS](docs/04-nauka-testy-fiszki-fsrs.md) | Jak działają powtórki i kolejki |
 | [API: przegląd](docs/api/README.md) | Wszystkie 58 endpointów |

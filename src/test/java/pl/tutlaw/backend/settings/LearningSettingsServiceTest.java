@@ -15,6 +15,7 @@ import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.dto.ChooseExamRequest;
+import pl.tutlaw.backend.settings.dto.ChooseThemeRequest;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
 import pl.tutlaw.backend.settings.dto.UpdateLearningSettingsRequest;
 import pl.tutlaw.backend.testsupport.CardRefs;
@@ -103,6 +104,7 @@ class LearningSettingsServiceTest {
         assertThat(e.daysToExam()).isNull();
         assertThat(e.shuffleOptions()).isTrue();
         assertThat(e.retentionBoosted()).isFalse();
+        assertThat(e.newTestQuestionsAuto()).isTrue(); // bez własnego limitu obowiązuje automatyczny
     }
 
     @Test
@@ -119,6 +121,19 @@ class LearningSettingsServiceTest {
         assertThat(e.newTestQuestionsPerDay()).isEqualTo(40);
         assertThat(e.maxReviewsPerDay()).isEqualTo(80);
         assertThat(e.shuffleOptions()).isFalse();
+        assertThat(e.newTestQuestionsAuto()).isTrue();
+    }
+
+    @Test
+    void effective_ownTestQuestionLimitIsManual() {
+        UserSettings stored = new UserSettings(5L);
+        stored.setNewTestQuestionsPerDay(25);
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+
+        EffectiveSettings e = service.effectiveFor(5L);
+
+        assertThat(e.newTestQuestionsPerDay()).isEqualTo(25);
+        assertThat(e.newTestQuestionsAuto()).isFalse();
     }
 
     // ---------------------------------------------------------------- tryb egzaminacyjny (termin z wybranej aplikacji)
@@ -460,5 +475,232 @@ class LearningSettingsServiceTest {
 
         assertThat(plan.newTestQuestionsLeft()).isEqualTo(20); // tylko NOTARY i BAILIFF
         assertThat(plan.newFlashcardsLeft()).isEqualTo(10);    // fiszki bez filtra
+    }
+
+    // ---------------------------------------------------------------- wygląd (ciemny / jasny)
+
+    @Test
+    void get_withoutStoredSettings_themeIsDark() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.empty());
+
+        assertThat(service.get(authentication).theme()).isEqualTo(Theme.DARK);
+    }
+
+    @Test
+    void chooseTheme_createsSettingsWhenThereAreNone_andReturnsTheChoice() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.empty());
+
+        LearningSettingsResponse response = service.chooseTheme(new ChooseThemeRequest(Theme.LIGHT), authentication);
+
+        ArgumentCaptor<UserSettings> captor = ArgumentCaptor.forClass(UserSettings.class);
+        verify(repository).save(captor.capture());
+        UserSettings saved = captor.getValue();
+        assertThat(saved.getUserId()).isEqualTo(5L);
+        assertThat(saved.getTheme()).isEqualTo(Theme.LIGHT);
+        assertThat(saved.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 12, 0));
+        assertThat(response.theme()).isEqualTo(Theme.LIGHT);
+    }
+
+    @Test
+    void chooseTheme_keepsEveryOtherSetting() {
+        UserSettings existing = new UserSettings(5L);
+        existing.setNewTestQuestionsPerDay(77);
+        existing.setNewCardsPerDay(9);
+        existing.setExamOrigin(QuestionOrigin.NOTARY);
+        existing.setTestOrigins("NOTARY,AUTHORED");
+        existing.setShuffleOptions(false);
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
+        when(examTerms.findById(QuestionOrigin.NOTARY)).thenReturn(Optional.empty());
+
+        LearningSettingsResponse response = service.chooseTheme(new ChooseThemeRequest(Theme.LIGHT), authentication);
+
+        assertThat(existing.getTheme()).isEqualTo(Theme.LIGHT);
+        assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
+        assertThat(existing.getNewCardsPerDay()).isEqualTo(9);
+        assertThat(existing.getExamOrigin()).isEqualTo(QuestionOrigin.NOTARY);
+        assertThat(existing.getTestOrigins()).isEqualTo("NOTARY,AUTHORED");
+        assertThat(existing.isShuffleOptions()).isFalse();
+        assertThat(response.newTestQuestionsPerDay()).isEqualTo(77);
+    }
+
+    @Test
+    void chooseTheme_canGoBackToDark() {
+        UserSettings existing = new UserSettings(5L);
+        existing.setTheme(Theme.LIGHT);
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
+
+        assertThat(service.chooseTheme(new ChooseThemeRequest(Theme.DARK), authentication).theme()).isEqualTo(Theme.DARK);
+    }
+
+    @Test
+    void chooseTheme_rejectsAMissingTheme() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+
+        assertThatThrownBy(() -> service.chooseTheme(new ChooseThemeRequest(null), authentication))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void update_doesNotChangeTheTheme() {
+        UserSettings existing = new UserSettings(5L);
+        existing.setTheme(Theme.LIGHT);
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
+
+        LearningSettingsResponse response = service.update(request(null, null, null, null, null), authentication);
+
+        assertThat(existing.getTheme()).isEqualTo(Theme.LIGHT);
+        assertThat(response.theme()).isEqualTo(Theme.LIGHT);
+    }
+
+    // ---------------------------------------------------------------- limit nowych pytań: automatyczny albo własny
+
+    /** {@code count} nowych pytań testowych (żadnego nie ruszono) i egzamin za {@code daysToExam} dni; zwraca zapisane ustawienia. */
+    private UserSettings untouchedQuestionsAndExamIn(long daysToExam, int count) {
+        UserSettings stored = withExam(TODAY.plusDays(daysToExam));
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        List<Card> readable = new java.util.ArrayList<>();
+        for (long id = 1; id <= count; id++) readable.add(card(id, true));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
+        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        startedToday(0);
+        return stored;
+    }
+
+    @Test
+    void get_autoLimit_followsThePlanWhenItNeedsMoreThanTheDefault() {
+        untouchedQuestionsAndExamIn(44, 1500); // 30 dni planowania => 50 dziennie
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+
+        LearningSettingsResponse response = service.get(authentication);
+
+        assertThat(response.newTestQuestionsAuto()).isTrue();
+        assertThat(response.newTestQuestionsPerDay()).isEqualTo(50);
+        assertThat(response.plan().requiredTestQuestionsPerDay()).isEqualTo(50);
+        assertThat(response.plan().suggestedTestQuestionsPerDay()).isEqualTo(50);
+        assertThat(response.plan().maxTestQuestionsPerDay()).isEqualTo(100);
+    }
+
+    @Test
+    void get_autoLimit_neverDropsBelowTheDefault() {
+        untouchedQuestionsAndExamIn(44, 90); // trzeba 3 dziennie, ale limit nie schodzi poniżej domyślnych 40
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+
+        LearningSettingsResponse response = service.get(authentication);
+
+        assertThat(response.newTestQuestionsPerDay()).isEqualTo(40);
+        assertThat(response.plan().requiredTestQuestionsPerDay()).isEqualTo(3);
+    }
+
+    @Test
+    void get_autoLimit_hasACap_andThePlanAdmitsItCannotKeepUp() {
+        untouchedQuestionsAndExamIn(44, 6000); // trzeba 200 dziennie, sufit 100
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+
+        LearningSettingsResponse response = service.get(authentication);
+
+        assertThat(response.newTestQuestionsPerDay()).isEqualTo(100);
+        assertThat(response.plan().requiredTestQuestionsPerDay()).isEqualTo(200);
+        assertThat(response.plan().suggestedTestQuestionsPerDay()).isEqualTo(100);
+        assertThat(response.plan().maxTestQuestionsPerDay()).isEqualTo(100);
+    }
+
+    @Test
+    void get_autoLimit_withoutAnExamDateIsTheDefault() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.empty());
+
+        LearningSettingsResponse response = service.get(authentication);
+
+        assertThat(response.newTestQuestionsAuto()).isTrue();
+        assertThat(response.newTestQuestionsPerDay()).isEqualTo(40);
+        assertThat(response.plan()).isNull();
+    }
+
+    @Test
+    void get_ownLimit_isKeptEvenWhenThePlanNeedsMore() {
+        UserSettings stored = untouchedQuestionsAndExamIn(44, 1500);
+        stored.setNewTestQuestionsPerDay(25);
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+
+        LearningSettingsResponse response = service.get(authentication);
+
+        assertThat(response.newTestQuestionsAuto()).isFalse();
+        assertThat(response.newTestQuestionsPerDay()).isEqualTo(25);
+        assertThat(response.plan().requiredTestQuestionsPerDay()).isEqualTo(50); // plan nadal mówi, ile trzeba
+    }
+
+    @Test
+    void dailyLimit_ownLimitIsUsedAsIs_withoutLoadingAnyCards() {
+        UserSettings stored = withExam(TODAY.plusDays(44));
+        stored.setNewTestQuestionsPerDay(12);
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+
+        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(12);
+        verify(cardRepository, never()).findReadableRefsForUser(any());
+    }
+
+    @Test
+    void dailyLimit_withoutAnExam_isTheDefault_withoutLoadingAnyCards() {
+        when(repository.findById(5L)).thenReturn(Optional.empty());
+
+        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(40);
+        verify(cardRepository, never()).findReadableRefsForUser(any());
+    }
+
+    @Test
+    void dailyLimit_inTheReviewReserve_isTheDefault_withoutLoadingAnyCards() {
+        UserSettings stored = withExam(TODAY.plusDays(10));
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+
+        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(40);
+        verify(cardRepository, never()).findReadableRefsForUser(any());
+    }
+
+    @Test
+    void dailyLimit_auto_followsThePlan() {
+        untouchedQuestionsAndExamIn(44, 1500);
+
+        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(50);
+    }
+
+    @Test
+    void dailyLimit_auto_isStableDuringTheDay() {
+        // Dziś zaczęto 20 z 300 pytań: zostało 280, ale limit nadal wynika ze stanu z początku dnia (300 / 30 dni)
+        UserSettings stored = withExam(TODAY.plusDays(44));
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        List<Card> readable = new java.util.ArrayList<>();
+        for (long id = 1; id <= 6000; id++) readable.add(card(id, true));
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
+        List<UserCardStateRepository.CardDue> schedule = new java.util.ArrayList<>();
+        for (long id = 1; id <= 20; id++) schedule.add(started(id));
+        when(stateRepository.findCardDueByUserId(5L)).thenReturn(schedule);
+        startedToday(20);
+
+        // (5980 zostało + 20 zaczętych dziś) / 30 = 200 => sufit 100, tak samo jak rano
+        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(100);
+    }
+
+    @Test
+    void dailyLimit_auto_countsOnlyQuestionsFromTheSelectedOrigins() {
+        UserSettings stored = withExam(TODAY.plusDays(44));
+        stored.setTestOrigins("NOTARY");
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        List<Card> readable = new java.util.ArrayList<>();
+        for (long id = 1; id <= 3000; id++) {
+            Card card = card(id, true);
+            card.setOrigin(id <= 1800 ? QuestionOrigin.NOTARY : QuestionOrigin.BAILIFF);
+            readable.add(card);
+        }
+        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
+        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        startedToday(0);
+
+        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(60); // 1800 / 30
     }
 }

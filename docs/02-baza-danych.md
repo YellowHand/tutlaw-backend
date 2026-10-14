@@ -3,7 +3,7 @@
 [← Spis treści](README.md)
 
 Baza to **PostgreSQL 16**. Schemat tworzą wyłącznie migracje **Flyway** (`src/main/resources/db/migration`, pliki
-`V1__...sql` do `V21__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
+`V1__...sql` do `V22__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
 (`ddl-auto: validate`), niczego nie tworzy i nie zmienia.
 
 > Nie edytuj starych migracji. Każda zmiana schematu to **nowy plik** `V22__...sql` itd., bo Flyway zapamiętuje
@@ -236,15 +236,17 @@ Z tej tabeli liczą się statystyki, dzienne limity, „pewne błędy” (odblok
 ### `user_settings` — ustawienia nauki
 
 Klucz główny `user_id` (jeden wiersz na użytkownika, tworzony dopiero po pierwszym zapisie ustawień).
-**NULL w polu liczbowym oznacza „użyj wartości domyślnej z konfiguracji serwera”.**
+**NULL w polu liczbowym oznacza „użyj wartości domyślnej z konfiguracji serwera”.** Wyjątek: NULL w `new_test_questions_per_day`
+to limit automatyczny, a nie stała wartość domyślna.
 
 | Kolumna | Zakres (CHECK) | Znaczenie |
 |---------|----------------|-----------|
 | `new_cards_per_day` | 0–200 | Dzienny limit nowych fiszek |
-| `new_test_questions_per_day` | 0–500 | Dzienny limit nowych pytań testowych |
+| `new_test_questions_per_day` | 0–500 | Dzienny limit nowych pytań testowych. **NULL = limit automatyczny** (idzie za planem do egzaminu, nie mniej niż domyślny i nie więcej niż 100; patrz 04) |
 | `max_reviews_per_day` | 10–1000 | Dzienny limit zaległych powtórek |
 | `desired_retention` | 0,70–0,97 | Docelowa szansa przypomnienia |
 | `exam_origin` | kod aplikacji albo NULL | Aplikacja, do której użytkownik się przygotowuje (CHECK `chk_user_settings_exam_origin`: tylko aplikacje, bez pytań autorskich). Data egzaminu i tryb egzaminacyjny biorą się z `exam_terms`. Własnej daty użytkownika nie ma (kolumna `exam_date` zniknęła w V21) |
+| `theme` | `DARK` albo `LIGHT`, domyślnie `DARK` (NOT NULL, CHECK `chk_user_settings_theme`) | Wygląd aplikacji. Zapisany na koncie, więc taki sam na każdym urządzeniu (V22) |
 | `shuffle_options` | boolean, domyślnie true | Mieszanie kolejności odpowiedzi A/B/C w pytaniach (korzysta z tego frontend) |
 | `test_origins` | lista kodów po przecinku albo NULL | Filtr pochodzenia pytań w Testach. NULL = wszystkie |
 | `updated_at` | timestamp | |
@@ -360,13 +362,14 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 | V19 | 18 | `test_origins` w `user_settings` (filtr pochodzenia) |
 | V20 | 28 | `pass_points` w `exam_attempts` (stały format egzaminu: próg w punktach) |
 | V21 | 29 | `exam_terms` (terminy egzaminów ustawia administrator), `exam_origin` w `user_settings`; usunięta `user_settings.exam_date` (własna data użytkownika znika razem z zapisanymi wartościami) |
+| V22 | 30 | `theme` w `user_settings` (wygląd aplikacji: ciemny / jasny, domyślnie ciemny) |
 
 Numery „Etap” wskazują, w którym etapie pracy nad projektem migracja powstała.
 
 ## Przydatne zapytania SQL (ręczna administracja)
 
 Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1–V21.
+pasują do schematu z migracji V1–V22.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się
 **wylogować i zalogować ponownie**, żeby dostać nowy token z rolą `ADMIN`.

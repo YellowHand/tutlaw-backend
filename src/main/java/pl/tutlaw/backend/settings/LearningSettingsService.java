@@ -12,6 +12,7 @@ import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.SchedulingRules;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.dto.ChooseExamRequest;
+import pl.tutlaw.backend.settings.dto.ChooseThemeRequest;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
 import pl.tutlaw.backend.settings.dto.UpdateLearningSettingsRequest;
 import pl.tutlaw.backend.user.CurrentUserResolver;
@@ -28,7 +29,7 @@ import java.util.Set;
 
 /**
  * Ustawienia nauki użytkownika: odczyt (z wartościami domyślnymi), zapis, wybór aplikacji, do której się przygotowuje,
- * i plan nowych pytań do egzaminu. Data egzaminu nie jest ustawieniem użytkownika: bierze się z terminu wybranej
+ * wybór wyglądu aplikacji (ciemny/jasny), dzienny limit nowych pytań i plan nowych pytań do egzaminu. Data egzaminu nie jest ustawieniem użytkownika: bierze się z terminu wybranej
  * aplikacji ({@link ExamTerm}), który ustawia administrator.
  */
 @Service
@@ -90,6 +91,41 @@ public class LearningSettingsService {
         return describe(user.getId(), settings, LocalDate.now(clock));
     }
 
+    /** Wybór wyglądu aplikacji. Zapisany na koncie, więc taki sam na każdym urządzeniu. */
+    @Transactional
+    public LearningSettingsResponse chooseTheme(ChooseThemeRequest request, Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        if (request.theme() == null) {
+            throw new IllegalArgumentException("Wybierz wygląd: ciemny albo jasny.");
+        }
+
+        UserSettings settings = repository.findById(user.getId()).orElseGet(() -> new UserSettings(user.getId()));
+        settings.setTheme(request.theme());
+        settings.setUpdatedAt(LocalDateTime.now(clock));
+        repository.save(settings);
+
+        return describe(user.getId(), settings, LocalDate.now(clock));
+    }
+
+    /**
+     * Ile nowych pytań testowych dziennie dodać do kolejki. Własny limit użytkownika obowiązuje wprost. Bez własnego
+     * limitu jest automatyczny: nie mniej niż domyślny, a gdy plan do egzaminu wymaga więcej, tyle, ile trzeba, ale
+     * nie więcej niż {@value SchedulingRules#MAX_AUTO_NEW_PER_DAY}. Bez terminu egzaminu (albo w rezerwie na powtórki)
+     * automatyczny limit to po prostu domyślny. Liczenie planu czyta karty użytkownika, więc robimy je tylko wtedy,
+     * gdy jest potrzebne.
+     */
+    @Transactional(readOnly = true)
+    public int dailyNewTestQuestionLimit(Long userId) {
+        UserSettings stored = repository.findById(userId).orElse(null);
+        EffectiveSettings e = resolve(stored, examDateOf(stored), LocalDate.now(clock));
+        if (!e.newTestQuestionsAuto() || e.daysToExam() == null || SchedulingRules.planningDays(e.daysToExam()) == 0) {
+            return e.newTestQuestionsPerDay();
+        }
+        NewCounts counts = countNew(userId, OriginFilterService.parse(stored == null ? null : stored.getTestOrigins()));
+        long required = SchedulingRules.suggestedPerDay(counts.newTests() + counts.startedToday(), e.daysToExam());
+        return SchedulingRules.autoNewQuestionsLimit(e.newTestQuestionsPerDay(), required);
+    }
+
     @Transactional
     public LearningSettingsResponse update(UpdateLearningSettingsRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
@@ -112,8 +148,8 @@ public class LearningSettingsService {
     EffectiveSettings resolve(UserSettings stored, LocalDate examDate, LocalDate today) {
         int newCards = stored != null && stored.getNewCardsPerDay() != null
                 ? stored.getNewCardsPerDay() : defaults.newCardsPerDay();
-        int newTests = stored != null && stored.getNewTestQuestionsPerDay() != null
-                ? stored.getNewTestQuestionsPerDay() : defaults.newTestQuestionsPerDay();
+        boolean newTestsAuto = stored == null || stored.getNewTestQuestionsPerDay() == null;
+        int newTests = newTestsAuto ? defaults.newTestQuestionsPerDay() : stored.getNewTestQuestionsPerDay();
         int maxReviews = stored != null && stored.getMaxReviewsPerDay() != null
                 ? stored.getMaxReviewsPerDay() : defaults.maxReviewsPerDay();
         double retention = stored != null && stored.getDesiredRetention() != null
@@ -132,7 +168,7 @@ public class LearningSettingsService {
         return new EffectiveSettings(
                 newCards, newTests, maxReviews,
                 retention, SchedulingRules.effectiveRetention(retention, daysToExam),
-                examOrigin, examDate, daysToExam, shuffle);
+                examOrigin, examDate, daysToExam, shuffle, newTestsAuto);
     }
 
     private LearningSettingsResponse describe(Long userId, UserSettings stored, LocalDate today) {
@@ -140,9 +176,16 @@ public class LearningSettingsService {
         LearningSettingsResponse.Plan plan = e.daysToExam() == null
                 ? null : buildPlan(userId, e.daysToExam(), OriginFilterService.parse(stored == null ? null : stored.getTestOrigins()));
 
+        // Limit w mocy: własny, a bez niego automatyczny, czyli wyliczony z planu (nie mniej niż domyślny, nie więcej niż sufit).
+        int newTestsInForce = e.newTestQuestionsAuto()
+                ? SchedulingRules.autoNewQuestionsLimit(
+                        e.newTestQuestionsPerDay(), plan == null ? 0 : plan.requiredTestQuestionsPerDay())
+                : e.newTestQuestionsPerDay();
+        Theme theme = stored == null ? Theme.DARK : stored.getTheme();
+
         return new LearningSettingsResponse(
-                e.newCardsPerDay(), e.newTestQuestionsPerDay(), e.maxReviewsPerDay(), e.desiredRetention(),
-                e.examOrigin(), e.examDate(), e.shuffleOptions(), e.daysToExam(), e.examPassed(),
+                e.newCardsPerDay(), newTestsInForce, e.newTestQuestionsAuto(), e.maxReviewsPerDay(), e.desiredRetention(),
+                e.examOrigin(), e.examDate(), e.shuffleOptions(), theme, e.daysToExam(), e.examPassed(),
                 e.effectiveRetention(), e.retentionBoosted(),
                 new LearningSettingsResponse.Defaults(
                         defaults.newCardsPerDay(), defaults.newTestQuestionsPerDay(),
@@ -159,6 +202,19 @@ public class LearningSettingsService {
      * więc nie maleje w miarę nauki w ciągu dnia i da się go porównać z liczbą pytań zaczętych dzisiaj.
      */
     private LearningSettingsResponse.Plan buildPlan(Long userId, long daysToExam, Set<QuestionOrigin> testOrigins) {
+        NewCounts counts = countNew(userId, testOrigins);
+        long requiredTests = SchedulingRules.suggestedPerDay(counts.newTests() + counts.startedToday(), daysToExam);
+
+        return new LearningSettingsResponse.Plan(
+                counts.newTests(), counts.newFlashcards(), SchedulingRules.planningDays(daysToExam),
+                requiredTests, SchedulingRules.MAX_AUTO_NEW_PER_DAY,
+                Math.min(requiredTests, SchedulingRules.MAX_AUTO_NEW_PER_DAY),
+                SchedulingRules.suggestedPerDay(counts.newFlashcards(), daysToExam),
+                counts.startedToday());
+    }
+
+    /** Ile jest nowych (nietkniętych) pytań testowych z wybranych pochodzeń i nowych fiszek oraz ile pytań użytkownik zaczął dziś. */
+    private NewCounts countNew(Long userId, Set<QuestionOrigin> testOrigins) {
         List<CardRepository.CardRef> readable = CardScopes.readableRefs(cardRepository, null, null, null, userId);
         Set<Long> started = new HashSet<>();
         for (UserCardStateRepository.CardDue row : stateRepository.findCardDueByUserId(userId)) {
@@ -179,12 +235,10 @@ public class LearningSettingsService {
 
         LocalDateTime startOfDay = LocalDate.now(clock).atStartOfDay();
         long startedToday = reviewLogs.countFirstReviewsBetween(userId, ReviewMode.TEST, startOfDay, startOfDay.plusDays(1));
+        return new NewCounts(newTests, newFlashcards, startedToday);
+    }
 
-        return new LearningSettingsResponse.Plan(
-                newTests, newFlashcards, SchedulingRules.planningDays(daysToExam),
-                SchedulingRules.suggestedPerDay(newTests + startedToday, daysToExam),
-                SchedulingRules.suggestedPerDay(newFlashcards, daysToExam),
-                startedToday);
+    private record NewCounts(long newTests, long newFlashcards, long startedToday) {
     }
 
     private static void validate(UpdateLearningSettingsRequest request) {

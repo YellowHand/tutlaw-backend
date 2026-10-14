@@ -34,7 +34,7 @@ statystykami (kolumna `mode` w `review_logs`: `FLASHCARD` albo `TEST`).
 | Jak odpowiadasz | Wybierasz A, B albo C; opcjonalnie zaznaczasz „Nie jestem pewien” | Odwracasz fiszkę i sam oceniasz: Nie pamiętam / Trudne / Znam / Łatwe |
 | Endpoint odpowiedzi | `POST /api/review/test-answer` | `POST /api/review` |
 | Ocena pamięci (1–4) | Wyznacza serwer z reguły (patrz niżej) | Wybierasz Ty |
-| Limit nowych dziennie | 40 pytań (domyślnie) | 20 fiszek (domyślnie) |
+| Limit nowych dziennie | 40 pytań (domyślnie; automatyczny, idzie za planem) | 20 fiszek (domyślnie) |
 
 Karta jest **albo** pytaniem testowym, **albo** fiszką. Próba odpowiedzi na pytanie testowe jako fiszkę (albo
 odwrotnie) kończy się błędem 400. Nie da się „obejść” testu przez fiszkę.
@@ -279,7 +279,7 @@ Domyślne wartości są w `application.yml` (sekcja `app.fsrs`), a każdy użytk
 | Limit | Domyślnie | Zakres w ustawieniach | Co liczy się do limitu |
 |-------|-----------|-----------------------|------------------------|
 | Nowe fiszki dziennie | 20 | 0–200 | Pierwsze odpowiedzi (`elapsed_days IS NULL`) dziś w trybie `FLASHCARD` |
-| Nowe pytania testowe dziennie | 40 | 0–500 | Pierwsze odpowiedzi dziś w trybie `TEST` |
+| Nowe pytania testowe dziennie | 40 (limit automatyczny, patrz niżej) | 0–500 albo automatyczny | Pierwsze odpowiedzi dziś w trybie `TEST` |
 | Zaległe powtórki dziennie | 100 | 10–1000 | Odpowiedzi dziś po co najmniej 1 dniu od poprzedniej (`elapsed_days ≥ 1`), osobno dla fiszek i testów |
 | Docelowa retencja | 90% | 70–97% | — |
 
@@ -317,8 +317,21 @@ Przykład planu: zostało 300 nowych pytań, a do egzaminu 44 dni. Dni do planow
 
 **Cel dnia jest stały w ciągu dnia.** Liczy się od stanu z początku dnia: (pozostałe nowe + pytania zaczęte dzisiaj)
 / dni do planowania. Dzięki temu po zrobieniu dziesięciu pytań cel nie spada do „9 z 9”, tylko zostaje „10 z 10”
-(`plan.newTestQuestionsToday` mówi, ile już zrobiono dzisiaj). Cel jest tylko informacją; **ceiling** dla kolejki
-to nadal dzienny limit nowych pytań z ustawień.
+(`plan.newTestQuestionsToday` mówi, ile już zrobiono dzisiaj). Sam cel jest informacją; do kolejki wchodzi tyle nowych pytań,
+ile pozwala dzienny limit (następny akapit).
+
+**Limit nowych pytań: automatyczny albo własny.** Użytkownik nie musi niczego ustawiać. Gdy nie ustawił własnego limitu
+(`user_settings.new_test_questions_per_day IS NULL`), obowiązuje limit automatyczny
+(`LearningSettingsService.dailyNewTestQuestionLimit`, `SchedulingRules.autoNewQuestionsLimit`):
+
+- nie mniej niż domyślny (40), żeby daleki egzamin nie oznaczał trzech pytań dziennie;
+- gdy plan do egzaminu wymaga więcej, tyle, ile trzeba (cel dnia), ale **nie więcej niż 100** (`MAX_AUTO_NEW_PER_DAY`):
+  powyżej powtórki rosną szybciej, niż da się je robić, i nauka przestaje działać;
+- bez terminu egzaminu i w ostatnich 14 dniach: po prostu domyślny.
+
+Limit automatyczny liczy się ze stanu z początku dnia, więc w ciągu dnia się nie zmienia. Własny limit (0–500) obowiązuje
+wprost i nie ma sufitu 100. Gdy trzeba więcej, niż pozwala sufit (`plan.requiredTestQuestionsPerDay` >
+`plan.maxTestQuestionsPerDay`), wszystkich nowych pytań nie da się zacząć na czas, a frontend mówi to wprost.
 
 Po egzaminie (termin aplikacji w przeszłości) ustawienia egzaminacyjne przestają działać (`examPassed = true`), a odstępy wracają
 do zwykłych. Plan widać w odpowiedzi `GET /api/me/settings` (pole `plan`). Do planu liczą się tylko pytania z

@@ -25,7 +25,7 @@ flowchart LR
 | Spring Web MVC | w Spring Boot | Kontrolery REST |
 | Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
 | PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1`–`V21`), uruchamiane przy starcie |
+| Flyway | w Spring Boot | Migracje bazy (`V1`–`V22`), uruchamiane przy starcie |
 | Spring Security | w Spring Boot | Ochrona endpointów, role |
 | jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
 | Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |

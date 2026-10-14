@@ -7,6 +7,10 @@ import java.time.LocalDate;
 /**
  * Ustawienia nauki po rozstrzygnięciu wartości domyślnych i trybu egzaminacyjnego.
  *
+ * @param newTestQuestionsPerDay limit nowych pytań testowych na dzień zapisany przez użytkownika; gdy
+ *                           {@code newTestQuestionsAuto}, to wartość domyślna (dolna granica limitu automatycznego)
+ * @param newTestQuestionsAuto użytkownik nie ustawił własnego limitu, więc obowiązuje limit automatyczny, który idzie
+ *                           za planem do egzaminu (liczy go {@link LearningSettingsService#dailyNewTestQuestionLimit})
  * @param desiredRetention   retencja wybrana przez użytkownika (albo domyślna)
  * @param effectiveRetention retencja faktycznie użyta do liczenia terminów (w ostatnich dniach przed egzaminem wyższa)
  * @param examOrigin         aplikacja wybrana przez użytkownika ({@code null}, gdy jeszcze nie wybrał)
@@ -23,7 +27,8 @@ public record EffectiveSettings(
         QuestionOrigin examOrigin,
         LocalDate examDate,
         Long daysToExam,
-        boolean shuffleOptions
+        boolean shuffleOptions,
+        boolean newTestQuestionsAuto
 ) {
 
     public boolean retentionBoosted() {

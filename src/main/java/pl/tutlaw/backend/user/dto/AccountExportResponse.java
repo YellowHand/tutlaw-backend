@@ -1,6 +1,7 @@
 package pl.tutlaw.backend.user.dto;
 
 import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.settings.Theme;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -82,7 +83,8 @@ public record AccountExportResponse(
     public record FlashcardAdditionItem(Long questionId, String question, LocalDateTime addedAt) {}
 
     /**
-     * Zapisane ustawienia nauki; pola {@code null} oznaczają wartość domyślną.
+     * Zapisane ustawienia nauki; pola {@code null} oznaczają wartość domyślną (dla {@code newTestQuestionsPerDay}
+     * limit automatyczny, który idzie za planem do egzaminu).
      * Cały obiekt jest {@code null}, gdy użytkownik niczego nie ustawiał.
      */
     public record LearningSettings(
@@ -92,6 +94,8 @@ public record AccountExportResponse(
             Double desiredRetention,
             /** Aplikacja, do której użytkownik się przygotowuje (data egzaminu bierze się z terminu aplikacji, nie jest zapisana na koncie). */
             QuestionOrigin examOrigin,
+            /** Wygląd aplikacji: DARK (ciemny) albo LIGHT (jasny). */
+            Theme theme,
             boolean shuffleOptions,
             /** Filtr pochodzenia pytań w Testach: kody oddzielone przecinkami albo null (wszystkie). */
             String testOrigins

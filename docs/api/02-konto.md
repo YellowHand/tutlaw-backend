@@ -48,7 +48,7 @@ przenoszenia danych). Bez hasła i tokenów.
                       "durationSeconds": 2710, "timedOut": false } ],
   "flashcardAdditions": [ { "questionId": 101, "question": "Treść…", "addedAt": "2026-10-03T09:00:00" } ],
   "learningSettings": { "newCardsPerDay": null, "newTestQuestionsPerDay": 30, "maxReviewsPerDay": null,
-                        "desiredRetention": 0.92, "examOrigin": "NOTARY", "shuffleOptions": true, "testOrigins": "NOTARY,AUTHORED" }
+                        "desiredRetention": 0.92, "examOrigin": "NOTARY", "theme": "LIGHT", "shuffleOptions": true, "testOrigins": "NOTARY,AUTHORED" }
 }
 ```
 
