@@ -40,7 +40,7 @@ sequenceDiagram
     B-->>F: 200 OK (identyczna odpowiedź w obu przypadkach)
     U->>M: klika link
     F->>B: GET /api/auth/verify?token=...
-    B->>DB: konto: is_active = true, is_university_email_verified = true; token oznaczony jako użyty
+    B->>DB: konto: is_active = true, is_university_email_verified = true, token oznaczony jako użyty
     B-->>F: 200 OK
 ```
 
@@ -129,7 +129,7 @@ sequenceDiagram
     participant M as Poczta (uczelnia)
 
     U->>B: POST /api/auth/forgot-password { privateEmail }
-    B->>B: limity (IP i konto); cooldown 2 minuty
+    B->>B: limity (IP i konto), cooldown 2 minuty
     alt konto istnieje i jest aktywne
         B->>B: losowy token (256 bitów, 43 znaki)
         B->>DB: zapis SKRÓTU SHA-256 tokenu, ważnego 1 godzinę
@@ -137,7 +137,7 @@ sequenceDiagram
     end
     B-->>U: 200 OK (zawsze to samo)
     U->>B: POST /api/auth/reset-password { token, newPassword }
-    B->>DB: szuka skrótu tokenu; token musi być nieużyty i niewygasły
+    B->>DB: szuka skrótu tokenu (musi być nieużyty i niewygasły)
     B->>DB: nowe hasło (BCrypt), tokens_valid_from = teraz, wszystkie otwarte tokeny resetu zamknięte
     B-->>U: 200 OK
 ```

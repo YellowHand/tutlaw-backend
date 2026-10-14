@@ -6,7 +6,7 @@ Uruchomienie (z głównego katalogu repozytorium):  python3 docs/tools/check_doc
 Sprawdza tylko to, co da się porównać mechanicznie:
   1. endpointy: kontrolery w kodzie <-> tabela w docs/api/README.md i nagłówki w docs/api/*.md,
   2. baza: tabele i kolumny z migracji Flyway <-> opis w docs/02-baza-danych.md,
-  3. odnośniki między plikami Markdown i kotwice nagłówków,
+  3. odnośniki między plikami Markdown i kotwice nagłówków oraz składnia diagramów sekwencji (średnik w komunikacie),
   4. liczby: parametry FSRS, domyślne limity z application.yml, liczba migracji, endpointów i klas testowych.
 Opisów słownych nie weryfikuje. Kod wyjścia: 0 = wszystko się zgadza, 1 = są rozbieżności.
 Wymaga tylko Pythona 3 (bez zewnętrznych bibliotek).
@@ -243,6 +243,30 @@ def check_links() -> int:
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# 3b. Diagramy Mermaid
+# ---------------------------------------------------------------------------------------------------------------------
+MERMAID_BLOCK = re.compile(r"```mermaid\n(.*?)```", re.S)
+
+
+def check_mermaid() -> int:
+    """Średnik w treści komunikatu diagramu sekwencji kończy instrukcję i psuje cały diagram (nie rysuje się)."""
+    count = 0
+    for md in sorted(DOCS.rglob("*.md")):
+        text = read(md)
+        for m in MERMAID_BLOCK.finditer(text):
+            count += 1
+            body = m.group(1)
+            if not body.lstrip().startswith("sequenceDiagram"):
+                continue
+            first_line = text[: m.start(1)].count("\n") + 1
+            for i, line in enumerate(body.split("\n")):
+                if ":" in line and ";" in line.split(":", 1)[1]:
+                    fail(f"{md.relative_to(ROOT)}:{first_line + i}: średnik w treści komunikatu diagramu sekwencji "
+                         f"(Mermaid uzna go za koniec instrukcji i nie narysuje diagramu); użyj przecinka")
+    return count
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # 4. Liczby
 # ---------------------------------------------------------------------------------------------------------------------
 def pl_number(value: str) -> str:
@@ -326,9 +350,10 @@ def main() -> int:
     n_endpoints = check_endpoints()
     n_tables, n_migrations = check_database()
     n_links = check_links()
+    n_diagrams = check_mermaid()
     check_numbers()
     print(f"endpointy w kodzie: {n_endpoints} | tabele z migracji: {n_tables} | migracje: {n_migrations} | "
-          f"sprawdzone odnośniki: {n_links}")
+          f"sprawdzone odnośniki: {n_links} | diagramy Mermaid: {n_diagrams}")
     if errors:
         print(f"\nROZBIEŻNOŚCI ({len(errors)}):")
         for e in errors:
