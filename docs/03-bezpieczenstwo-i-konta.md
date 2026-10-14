@@ -165,7 +165,7 @@ Zgadywanie obecnego hasła podlega **temu samemu limitowi co logowanie**.
 | Rola | Co może |
 |------|---------|
 | `STUDENT` (domyślna) | Uczyć się, rozwiązywać testy i egzaminy, zmieniać ustawienia, zgłaszać błędy, zarządzać własnym kontem |
-| `ADMIN` | Wszystko jak `STUDENT` oraz dodawanie treści: kategorii, przedmiotów, źródeł, rozdziałów, tagów i kart (także import zbiorczy) oraz ukrywanie kart |
+| `ADMIN` | Wszystko jak `STUDENT` oraz dodawanie treści: kategorii, przedmiotów, źródeł, rozdziałów, tagów i kart (także import zbiorczy), ukrywanie kart i ustawianie terminów egzaminów aplikacji (`PUT /api/exam-terms/{origin}`) |
 
 Uprawnienia wymusza adnotacja `@PreAuthorize("hasRole('ADMIN')")` na metodach kontrolerów. Zwykły użytkownik
 dostaje wtedy **403**.

@@ -2,13 +2,15 @@ package pl.tutlaw.backend.settings;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import pl.tutlaw.backend.card.QuestionOrigin;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -39,8 +41,10 @@ public class UserSettings {
     @Column(name = "desired_retention")
     private Double desiredRetention;
 
-    @Column(name = "exam_date")
-    private LocalDate examDate;
+    /** Aplikacja, do której użytkownik się przygotowuje (data egzaminu bierze się z {@code ExamTerm}); {@code null}, gdy nie wybrał. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "exam_origin", length = 40)
+    private QuestionOrigin examOrigin;
 
     /** Czy w testach mieszać kolejność odpowiedzi A/B/C (domyślnie tak). */
     @Column(name = "shuffle_options", nullable = false)

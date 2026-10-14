@@ -15,6 +15,7 @@ import pl.tutlaw.backend.review.CardLearningState;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.UserCardStateRepository;
+import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.settings.UserSettings;
 import pl.tutlaw.backend.settings.UserSettingsRepository;
 import pl.tutlaw.backend.testsupport.FakeRepos;
@@ -242,7 +243,7 @@ class AccountServiceTest {
         UserSettings stored = new UserSettings(1L);
         stored.setNewCardsPerDay(15);
         stored.setMaxReviewsPerDay(300);
-        stored.setExamDate(LocalDate.of(2026, 12, 1));
+        stored.setExamOrigin(QuestionOrigin.NOTARY);
         stored.setShuffleOptions(false);
         f.storedSettings = stored;
 
@@ -252,7 +253,7 @@ class AccountServiceTest {
         assertThat(settings.newTestQuestionsPerDay()).isNull();
         assertThat(settings.maxReviewsPerDay()).isEqualTo(300);
         assertThat(settings.desiredRetention()).isNull();
-        assertThat(settings.examDate()).isEqualTo(LocalDate.of(2026, 12, 1));
+        assertThat(settings.examOrigin()).isEqualTo(QuestionOrigin.NOTARY);
         assertThat(settings.shuffleOptions()).isFalse();
         assertThat(settings.testOrigins()).isNull(); // brak filtra = wszystkie pochodzenia
     }

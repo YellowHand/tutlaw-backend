@@ -22,4 +22,9 @@ public enum QuestionOrigin {
     public boolean requiresYear() {
         return this != AUTHORED;
     }
+
+    /** Czy to aplikacja, do której jest egzamin z terminem (wszystko poza pytaniami autorskimi). */
+    public boolean isExamApplication() {
+        return this != AUTHORED;
+    }
 }

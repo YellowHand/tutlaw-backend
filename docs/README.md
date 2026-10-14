@@ -4,7 +4,7 @@ Ten katalog opisuje, jak działa serwer (backend) aplikacji **Tutlaw**: co robi,
 endpointy, jak liczy powtórki i gdzie w kodzie szukać konkretnej funkcji. Wszystko jest po polsku i pisane tak, żeby
 dało się to zrozumieć bez znajomości kodu.
 
-> Stan dokumentacji: backend po **Etapie 28** (migracje bazy V1–V20). Opisuje to, co faktycznie jest w kodzie.
+> Stan dokumentacji: backend po **Etapie 29** (migracje bazy V1–V21). Opisuje to, co faktycznie jest w kodzie.
 > Tam, gdzie coś jest niedoskonałe albo celowo odłożone na koniec, jest to powiedziane wprost w
 > [Znanych ograniczeniach](07-znane-ograniczenia.md).
 
@@ -19,7 +19,7 @@ Aplikacja zapamiętuje, co naprawdę umiesz, a co tylko zgadłeś, i sama układ
 | Plik | O czym jest | Kiedy czytać |
 |------|-------------|--------------|
 | [01. Architektura](01-architektura.md) | Technologie, pakiety, warstwy, droga jednego żądania, wspólne rozwiązania | Na początek, żeby wiedzieć, gdzie co leży |
-| [02. Baza danych](02-baza-danych.md) | Wszystkie tabele, relacje, wyzwalacze, ograniczenia, historia migracji V1–V20 | Gdy chcesz zrozumieć dane albo napisać zapytanie SQL |
+| [02. Baza danych](02-baza-danych.md) | Wszystkie tabele, relacje, wyzwalacze, ograniczenia, historia migracji V1–V21 | Gdy chcesz zrozumieć dane albo napisać zapytanie SQL |
 | [03. Bezpieczeństwo i konta](03-bezpieczenstwo-i-konta.md) | Rejestracja, aktywacja, logowanie, JWT, reset hasła, role, limity prób, usuwanie konta | Gdy chcesz wiedzieć, kto co może i jak chronione są konta |
 | [04. Nauka: testy, fiszki, FSRS](04-nauka-testy-fiszki-fsrs.md) | Serce aplikacji: jak działa algorytm powtórek, kolejki, limity dzienne, tryb egzaminacyjny | Gdy chcesz zrozumieć, dlaczego pytanie wraca akurat dziś |
 | [API: przegląd](api/README.md) | Wspólne zasady API i lista wszystkich 60 endpointów | Gdy łączysz frontend z backendem |

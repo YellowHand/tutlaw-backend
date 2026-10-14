@@ -239,7 +239,7 @@ Po obliczeniu nowej stabilności serwer wyznacza **dokładny termin** w kilku kr
    naraz, odstęp od 2,5 dnia jest losowo przesuwany o kilka dni (jak w Anki). Dla odstępów poniżej 2,5 dnia bez
    zmian. Przykłady zakresów: 3 dni → 2–4; 10 dni → 8–12; 30 dni → 27–33; 100 dni → 93–107. Wynik nigdy nie jest
    krótszy niż 2 dni.
-3. **Przycięcie do egzaminu** — `capForExam`: jeśli ustawiono datę egzaminu, odstęp nie może go przekroczyć (karta ma
+3. **Przycięcie do egzaminu** — `capForExam`: jeśli wybrana aplikacja ma ogłoszony termin egzaminu, odstęp nie może go przekroczyć (karta ma
    wrócić najpóźniej dzień przed egzaminem).
 4. **Zamiana odstępu na termin** — `ReviewPolicy.computeDueDate`:
    - odstęp **krótszy niż doba** (np. „Nie pamiętam” przy nowej karcie, ok. 5 godzin): termin = teraz + ten czas;
@@ -298,19 +298,29 @@ sesji (`deferred`), jaki jest limit (`dailyLimit`) i ile zaległych zrobiono ju�
 
 ## Tryb egzaminacyjny i plan nowych pytań
 
-Gdy użytkownik ustawi **datę egzaminu** (od dziś do 3 lat w przód), włączają się trzy mechanizmy
-(`SchedulingRules`, `LearningSettingsService`):
+Użytkownik nie wpisuje własnej daty. **Wybiera aplikację**, do której się przygotowuje (`PUT /api/me/exam`), a datę
+egzaminu ustawia administrator osobno dla każdej aplikacji (tabela `exam_terms`). Gdy wybrana aplikacja ma ogłoszony
+termin, włączają się trzy mechanizmy (`SchedulingRules`, `LearningSettingsService`). Aplikacja bez terminu
+(„termin nieogłoszony”) i brak wyboru oznaczają zwykłą naukę bez trybu egzaminacyjnego i bez planu.
+
+Wybór aplikacji ustawia też filtr pochodzenia pytań w Testach: wybrana aplikacja i pytania autorskie. Dzieje się to w
+momencie wyboru, a potem filtr zmienia się osobno (`PUT /api/me/origin-filter`).
 
 | Mechanizm | Reguła |
 |-----------|--------|
 | **Wyższa retencja przed egzaminem** | W ostatnich **30 dniach** przed egzaminem retencja do liczenia terminów wynosi co najmniej **95%** (`EXAM_RETENTION`). Odstępy się skracają, więc materiał wraca częściej |
 | **Odstęp nie wykracza poza egzamin** | Odstęp jest przycinany tak, by karta wróciła najpóźniej dzień przed egzaminem (co najmniej 1 dzień) |
-| **Plan nowych pytań** | Ostatnie **7 dni** są zarezerwowane na same powtórki, więc dni do planowania nowych = dni do egzaminu − 7 (co najmniej 1). Aplikacja liczy, ile nowych pytań i fiszek dziennie trzeba zacząć, żeby zdążyć |
+| **Plan nowych pytań** | Ostatnie **14 dni** (`EXAM_REVIEW_RESERVE_DAYS`) są zarezerwowane na same powtórki: pytanie zaczęte później nie zdążyłoby dostać trzech poprawnych odpowiedzi, czyli stać się „opanowane”. Dni do planowania nowych = dni do egzaminu − 14. W rezerwie (14 dni i mniej) nowego się już nie planuje: `planningDays` i cel dnia wynoszą 0. Aplikacja liczy, ile nowych pytań i fiszek dziennie trzeba zacząć, żeby zdążyć |
 
-Przykład planu: zostało 300 nowych pytań, a do egzaminu 37 dni. Dni do planowania: 37 − 7 = 30. Sugerowana liczba:
+Przykład planu: zostało 300 nowych pytań, a do egzaminu 44 dni. Dni do planowania: 44 − 14 = 30. Cel na dziś:
 300 / 30 = **10 nowych pytań dziennie** (zaokrąglone w górę).
 
-Po egzaminie (data w przeszłości) ustawienia egzaminacyjne przestają działać (`examPassed = true`), a odstępy wracają
+**Cel dnia jest stały w ciągu dnia.** Liczy się od stanu z początku dnia: (pozostałe nowe + pytania zaczęte dzisiaj)
+/ dni do planowania. Dzięki temu po zrobieniu dziesięciu pytań cel nie spada do „9 z 9”, tylko zostaje „10 z 10”
+(`plan.newTestQuestionsToday` mówi, ile już zrobiono dzisiaj). Cel jest tylko informacją; **ceiling** dla kolejki
+to nadal dzienny limit nowych pytań z ustawień.
+
+Po egzaminie (termin aplikacji w przeszłości) ustawienia egzaminacyjne przestają działać (`examPassed = true`), a odstępy wracają
 do zwykłych. Plan widać w odpowiedzi `GET /api/me/settings` (pole `plan`). Do planu liczą się tylko pytania z
 pochodzeń wybranych w filtrze.
 

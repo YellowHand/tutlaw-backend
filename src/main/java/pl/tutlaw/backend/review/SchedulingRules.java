@@ -9,8 +9,11 @@ public final class SchedulingRules {
     /** W ostatnich {@value #EXAM_WINDOW_DAYS} dniach przed egzaminem retencja jest co najmniej taka. */
     public static final double EXAM_RETENTION = 0.95;
     public static final int EXAM_WINDOW_DAYS = 30;
-    /** Ostatnie dni przed egzaminem są zarezerwowane na same powtórki: nowych pytań się już nie planuje. */
-    public static final int EXAM_REVIEW_RESERVE_DAYS = 7;
+    /**
+     * Ostatnie dni przed egzaminem są zarezerwowane na same powtórki: nowych pytań się już nie planuje. Dwa tygodnie, bo
+     * pytanie zaczyna się liczyć jako opanowane po trzeciej poprawnej odpowiedzi, czyli zwykle po około 14 dniach.
+     */
+    public static final int EXAM_REVIEW_RESERVE_DAYS = 14;
 
     private SchedulingRules() {
     }
@@ -62,18 +65,20 @@ public final class SchedulingRules {
     }
 
     /**
-     * Ile nowych pytań dziennie, żeby zacząć wszystkie przed egzaminem. Dni liczymy do egzaminu
-     * minus rezerwa na same powtórki (co najmniej 1). Zaokrąglenie w górę, 0 gdy nie ma nic nowego.
+     * Ile nowych pytań dziennie, żeby zacząć wszystkie przed rezerwą na powtórki. Dni liczymy do egzaminu minus
+     * {@value #EXAM_REVIEW_RESERVE_DAYS} dni rezerwy. Zaokrąglenie w górę, 0 gdy nie ma nic nowego albo jesteśmy
+     * już w rezerwie (w ostatnich dwóch tygodniach nowego się nie planuje, zostają same powtórki).
      */
     public static long suggestedPerDay(long remaining, long daysToExam) {
-        if (remaining <= 0) {
+        long days = planningDays(daysToExam);
+        if (remaining <= 0 || days == 0) {
             return 0;
         }
-        long days = planningDays(daysToExam);
         return (remaining + days - 1) / days;
     }
 
+    /** Dni, w których warto jeszcze zaczynać nowe pytania: do egzaminu minus rezerwa; 0 w rezerwie. */
     public static long planningDays(long daysToExam) {
-        return Math.max(1, daysToExam - EXAM_REVIEW_RESERVE_DAYS);
+        return Math.max(0, daysToExam - EXAM_REVIEW_RESERVE_DAYS);
     }
 }

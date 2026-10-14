@@ -1,5 +1,7 @@
 package pl.tutlaw.backend.user.dto;
 
+import pl.tutlaw.backend.card.QuestionOrigin;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -88,7 +90,8 @@ public record AccountExportResponse(
             Integer newTestQuestionsPerDay,
             Integer maxReviewsPerDay,
             Double desiredRetention,
-            LocalDate examDate,
+            /** Aplikacja, do której użytkownik się przygotowuje (data egzaminu bierze się z terminu aplikacji, nie jest zapisana na koncie). */
+            QuestionOrigin examOrigin,
             boolean shuffleOptions,
             /** Filtr pochodzenia pytań w Testach: kody oddzielone przecinkami albo null (wszystkie). */
             String testOrigins

@@ -94,7 +94,7 @@ public class AccountService {
         AccountExportResponse.LearningSettings settings = userSettingsRepository.findById(user.getId())
                 .map(s -> new AccountExportResponse.LearningSettings(
                         s.getNewCardsPerDay(), s.getNewTestQuestionsPerDay(), s.getMaxReviewsPerDay(),
-                        s.getDesiredRetention(), s.getExamDate(), s.isShuffleOptions(), s.getTestOrigins()))
+                        s.getDesiredRetention(), s.getExamOrigin(), s.isShuffleOptions(), s.getTestOrigins()))
                 .orElse(null);
 
         return new AccountExportResponse(

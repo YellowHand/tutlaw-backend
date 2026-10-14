@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **60 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **63 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -163,6 +163,9 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | PUT | `/api/me/settings` | zalogowany | Zapis ustawień nauki |
 | GET | `/api/me/origin-filter` | zalogowany | Filtr pochodzenia pytań w Testach |
 | PUT | `/api/me/origin-filter` | zalogowany | Zapis filtra pochodzenia |
+| PUT | `/api/me/exam` | zalogowany | Wybór aplikacji, do której użytkownik się przygotowuje (ustawia też filtr pochodzenia) |
+| GET | `/api/exam-terms` | zalogowany | Terminy egzaminów wszystkich aplikacji |
+| PUT | `/api/exam-terms/{origin}` | ADMIN | Ustawienie albo usunięcie terminu egzaminu aplikacji |
 
 ### Poza `/api`
 

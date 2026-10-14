@@ -37,7 +37,7 @@ Maven nie musi być zainstalowany: projekt ma wrapper (`./mvnw`, na Windows `mvn
    ./mvnw spring-boot:run
    ```
 
-   Przy pierwszym starcie Flyway sam wykona migracje `V1`–`V20`. Backend nasłuchuje na `http://localhost:8080`.
+   Przy pierwszym starcie Flyway sam wykona migracje `V1`–`V21`. Backend nasłuchuje na `http://localhost:8080`.
 5. **Sprawdzenie:** `http://localhost:8080/actuator/health` powinno pokazać `"status":"UP"`, a pod
    `http://localhost:8080/swagger-ui.html` jest dokumentacja Swagger.
 6. **Frontend** (osobne repozytorium) łączy się z adresem z `VITE_API_BASE_URL` (lokalnie `http://localhost:8080`).
@@ -100,7 +100,7 @@ zmienili.
 ## Baza danych i migracje
 
 - Schemat tworzą wyłącznie migracje (`src/main/resources/db/migration`). Opis tabel: [02](02-baza-danych.md).
-- Nowa zmiana schematu = nowy plik `V20__krotki_opis.sql`. Nie edytuj wykonanych migracji.
+- Nowa zmiana schematu = nowy plik `V22__krotki_opis.sql`. Nie edytuj wykonanych migracji.
 - **Kopia zapasowa bazy:** `docker exec tutlaw-postgres pg_dump -U <POSTGRES_USER> <POSTGRES_DB> > kopia.sql`.
 - **Reset postępów nauki** (nieodwracalne): `docs/reset-study-progress.sql`.
 - **Pusta baza od nowa** (kasuje wszystko, także treść): `docker compose down -v` usuwa kontener i wolumen z danymi;

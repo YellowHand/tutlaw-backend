@@ -1,0 +1,14 @@
+package pl.tutlaw.backend.settings.dto;
+
+import pl.tutlaw.backend.card.QuestionOrigin;
+
+import java.time.LocalDate;
+
+/**
+ * Termin egzaminu jednej aplikacji.
+ *
+ * @param examDate   data egzaminu albo {@code null} (termin nieogłoszony)
+ * @param daysToExam ile dni do egzaminu; {@code null}, gdy daty nie ma albo egzamin już się odbył
+ */
+public record ExamTermResponse(QuestionOrigin origin, LocalDate examDate, Long daysToExam) {
+}

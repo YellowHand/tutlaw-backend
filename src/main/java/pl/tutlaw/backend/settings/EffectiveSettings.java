@@ -1,5 +1,7 @@
 package pl.tutlaw.backend.settings;
 
+import pl.tutlaw.backend.card.QuestionOrigin;
+
 import java.time.LocalDate;
 
 /**
@@ -7,7 +9,9 @@ import java.time.LocalDate;
  *
  * @param desiredRetention   retencja wybrana przez użytkownika (albo domyślna)
  * @param effectiveRetention retencja faktycznie użyta do liczenia terminów (w ostatnich dniach przed egzaminem wyższa)
- * @param examDate           zapisana data egzaminu (także gdy już minęła)
+ * @param examOrigin         aplikacja wybrana przez użytkownika ({@code null}, gdy jeszcze nie wybrał)
+ * @param examDate           termin egzaminu tej aplikacji ustawiony przez administratora (także gdy już minął);
+ *                           {@code null}, gdy aplikacji nie wybrano albo termin nieogłoszony
  * @param daysToExam         ile dni do egzaminu; {@code null}, gdy daty nie ma albo egzamin już się odbył
  */
 public record EffectiveSettings(
@@ -16,6 +20,7 @@ public record EffectiveSettings(
         int maxReviewsPerDay,
         double desiredRetention,
         double effectiveRetention,
+        QuestionOrigin examOrigin,
         LocalDate examDate,
         Long daysToExam,
         boolean shuffleOptions

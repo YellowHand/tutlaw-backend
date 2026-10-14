@@ -120,24 +120,36 @@ class SchedulingRulesTest {
 
     @Test
     void suggestedPerDay_dividesRemainingByDaysMinusReserve() {
-        // 37 dni - 7 rezerwy = 30 dni; 90 pytań => 3 dziennie
-        assertThat(SchedulingRules.suggestedPerDay(90, 37)).isEqualTo(3);
+        // 44 dni - 14 rezerwy = 30 dni planowania; 90 pytań => 3 dziennie
+        assertThat(SchedulingRules.planningDays(44)).isEqualTo(30);
+        assertThat(SchedulingRules.suggestedPerDay(90, 44)).isEqualTo(3);
     }
 
     @Test
     void suggestedPerDay_roundsUp() {
-        assertThat(SchedulingRules.suggestedPerDay(91, 37)).isEqualTo(4);
+        assertThat(SchedulingRules.suggestedPerDay(91, 44)).isEqualTo(4);
     }
 
     @Test
     void suggestedPerDay_nothingLeft_isZero() {
-        assertThat(SchedulingRules.suggestedPerDay(0, 37)).isEqualTo(0);
+        assertThat(SchedulingRules.suggestedPerDay(0, 44)).isEqualTo(0);
     }
 
     @Test
-    void suggestedPerDay_insideTheReserve_usesOneDay() {
-        assertThat(SchedulingRules.planningDays(5)).isEqualTo(1);
-        assertThat(SchedulingRules.suggestedPerDay(40, 5)).isEqualTo(40);
-        assertThat(SchedulingRules.suggestedPerDay(40, 0)).isEqualTo(40);
+    void suggestedPerDay_insideTheReserve_planningStops() {
+        // w ostatnich 14 dniach nie planujemy nowych pytań — zostają same powtórki
+        assertThat(SchedulingRules.planningDays(14)).isEqualTo(0);
+        assertThat(SchedulingRules.planningDays(5)).isEqualTo(0);
+        assertThat(SchedulingRules.planningDays(0)).isEqualTo(0);
+        assertThat(SchedulingRules.suggestedPerDay(40, 14)).isEqualTo(0);
+        assertThat(SchedulingRules.suggestedPerDay(40, 5)).isEqualTo(0);
+        assertThat(SchedulingRules.suggestedPerDay(40, 0)).isEqualTo(0);
+    }
+
+    @Test
+    void suggestedPerDay_firstPlanningDay_usesTheWholeRemainder() {
+        // 15 dni do egzaminu = 1 dzień planowania: wszystko co zostało trzeba zacząć dziś
+        assertThat(SchedulingRules.planningDays(15)).isEqualTo(1);
+        assertThat(SchedulingRules.suggestedPerDay(40, 15)).isEqualTo(40);
     }
 }

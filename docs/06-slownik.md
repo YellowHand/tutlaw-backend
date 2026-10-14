@@ -45,7 +45,7 @@ ułożone alfabetycznie.
 | **Rozdział** | Część podręcznika, do której należą karty | `chapters`, pakiet `chapter` |
 | **Stabilność (stability, S)** | Po ilu dniach szansa przypomnienia karty spada do 90%. Im wyższa, tym trwalej pamiętasz | `user_card_state.stability` |
 | **Trudność (difficulty, D)** | Jak trudna jest karta dla użytkownika (1–10) | `user_card_state.difficulty` |
-| **Tryb egzaminacyjny** | Zachowanie po ustawieniu daty egzaminu: wyższa retencja w ostatnich 30 dniach, odstępy nie wykraczają poza egzamin, plan nowych pytań | `SchedulingRules`, `LearningSettingsService` |
+| **Tryb egzaminacyjny** | Zachowanie, gdy wybrana aplikacja ma ogłoszony termin egzaminu: wyższa retencja w ostatnich 30 dniach, odstępy nie wykraczają poza egzamin, plan nowych pytań (ostatnie 14 dni bez nowych) | `SchedulingRules`, `LearningSettingsService` |
 | **Termin (due date)** | Kiedy karta ma wrócić; od niego karta jest „zaległa” | `user_card_state.due_date` |
 | **Własny test** | Sesja nauki ułożona przez użytkownika: wybrane rodzaje i akty prawne, rodzaj pytań (wszystkie, nowe, błędy, zaległe), lata egzaminu i liczba pytań. Bez progu zaliczenia, odpowiedzi jak w zwykłym teście | `CustomTestService`, `POST /api/review/custom-test` |
 | **Źródło** | Zbiór pytań lub rozdziałów w przedmiocie: podręcznik albo pula płaska | `sources`, pakiet `source` |

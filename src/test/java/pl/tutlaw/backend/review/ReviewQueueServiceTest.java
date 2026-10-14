@@ -14,6 +14,7 @@ import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 import pl.tutlaw.backend.review.fsrs.FsrsEngine;
 import pl.tutlaw.backend.review.fsrs.FsrsWeights;
+import pl.tutlaw.backend.settings.ExamTermRepository;
 import pl.tutlaw.backend.settings.LearningDefaults;
 import pl.tutlaw.backend.settings.LearningSettingsService;
 import pl.tutlaw.backend.settings.OriginFilterService;
@@ -128,7 +129,14 @@ class ReviewQueueServiceTest {
             // Domyślne limity z konfiguracji: nowe fiszki, nowe pytania testowe, zaległe powtórki, retencja.
             LearningSettingsService settings = new LearningSettingsService(
                     settingsRepository, new LearningDefaults(newPerDay, 40, dailyLimit, 0.9),
-                    resolver, cardRepository, states, clock);
+                    resolver, cardRepository, states,
+                    FakeRepos.proxy(ExamTermRepository.class, (method, args) -> {
+                        if (method.equals("findById")) {
+                            return Optional.empty();
+                        }
+                        throw new UnsupportedOperationException("ExamTermRepository." + method);
+                    }),
+                    logs, clock);
 
             service = new ReviewQueueService(
                     cardRepository, states, logs, resolver,

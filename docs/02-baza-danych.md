@@ -3,10 +3,10 @@
 [← Spis treści](README.md)
 
 Baza to **PostgreSQL 16**. Schemat tworzą wyłącznie migracje **Flyway** (`src/main/resources/db/migration`, pliki
-`V1__...sql` do `V20__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
+`V1__...sql` do `V21__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
 (`ddl-auto: validate`), niczego nie tworzy i nie zmienia.
 
-> Nie edytuj starych migracji. Każda zmiana schematu to **nowy plik** `V20__...sql` itd., bo Flyway zapamiętuje
+> Nie edytuj starych migracji. Każda zmiana schematu to **nowy plik** `V22__...sql` itd., bo Flyway zapamiętuje
 > sumę kontrolną każdej wykonanej migracji (tabela `flyway_schema_history`).
 
 ## Schemat w skrócie
@@ -29,6 +29,7 @@ erDiagram
     users ||--o{ user_chapter_progress : "przeczytane rozdziały"
     chapters ||--o{ user_chapter_progress : ""
     users ||--o| user_settings : "ustawienia nauki"
+    exam_terms ||--o{ user_settings : "termin wybranej aplikacji (exam_origin)"
     users ||--o{ exam_attempts : "egzaminy próbne"
     users ||--o{ card_reports : "zgłoszenia błędów"
     cards ||--o{ card_reports : ""
@@ -43,6 +44,7 @@ Dwie grupy tabel:
 1. **Materiał (wspólny dla wszystkich):** `categories`, `subjects`, `sources`, `chapters`, `cards`, `tags`, `card_tags`.
 2. **Dane użytkownika (osobne dla każdego konta):** `users`, `user_card_state`, `review_logs`,
    `user_chapter_progress`, `user_settings`, `exam_attempts`, `card_reports`, `user_flashcard_additions`, tokeny.
+3. **Ustawiane przez administratora:** `exam_terms` (terminy egzaminów aplikacji).
 
 Hierarchia materiału: **kategoria (rodzaj) → przedmiot / akt prawny → źródło → (rozdział) → karta**.
 Przykład: *Prawo karne i postępowanie karne → Kodeks karny → Egzamin notarialny 2024 → pytanie*.
@@ -242,10 +244,23 @@ Klucz główny `user_id` (jeden wiersz na użytkownika, tworzony dopiero po pier
 | `new_test_questions_per_day` | 0–500 | Dzienny limit nowych pytań testowych |
 | `max_reviews_per_day` | 10–1000 | Dzienny limit zaległych powtórek |
 | `desired_retention` | 0,70–0,97 | Docelowa szansa przypomnienia |
-| `exam_date` | data | Data egzaminu (włącza tryb egzaminacyjny) |
+| `exam_origin` | kod aplikacji albo NULL | Aplikacja, do której użytkownik się przygotowuje (CHECK `chk_user_settings_exam_origin`: tylko aplikacje, bez pytań autorskich). Data egzaminu i tryb egzaminacyjny biorą się z `exam_terms`. Własnej daty użytkownika nie ma (kolumna `exam_date` zniknęła w V21) |
 | `shuffle_options` | boolean, domyślnie true | Mieszanie kolejności odpowiedzi A/B/C w pytaniach (korzysta z tego frontend) |
 | `test_origins` | lista kodów po przecinku albo NULL | Filtr pochodzenia pytań w Testach. NULL = wszystkie |
 | `updated_at` | timestamp | |
+
+### `exam_terms` — terminy egzaminów aplikacji
+
+Jeden wiersz na aplikację (5 wierszy założonych w V21; bez pytań autorskich, pilnuje tego CHECK `chk_exam_terms_origin`).
+
+| Kolumna | Typ | Znaczenie |
+|---------|-----|-----------|
+| `origin` | klucz główny, kod aplikacji | `ADVOCATE_LEGAL_ADVISER`, `JUDGE_PROSECUTOR`, `NOTARY`, `SUPPLEMENTARY_JUDGE`, `BAILIFF` |
+| `exam_date` | data albo NULL | Data najbliższego egzaminu. NULL = „termin nieogłoszony” |
+| `updated_at` | timestamp | Kiedy administrator ostatnio zmienił termin |
+
+Terminy ustawia administrator (`PUT /api/exam-terms/{origin}`), użytkownicy tylko je czytają. Tryb egzaminacyjny
+i plan nowych pytań liczą się z terminu aplikacji wybranej w `user_settings.exam_origin`.
 
 ### `exam_attempts` — podejścia do egzaminu próbnego
 
@@ -344,19 +359,28 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 | V18 | 17 | `origin`, `exam_year`, `hidden`, `auto_generated`, wyzwalacze fiszek, kaskady po kartach, `user_flashcard_additions` |
 | V19 | 18 | `test_origins` w `user_settings` (filtr pochodzenia) |
 | V20 | 28 | `pass_points` w `exam_attempts` (stały format egzaminu: próg w punktach) |
+| V21 | 29 | `exam_terms` (terminy egzaminów ustawia administrator), `exam_origin` w `user_settings`; usunięta `user_settings.exam_date` (własna data użytkownika znika razem z zapisanymi wartościami) |
 
 Numery „Etap” wskazują, w którym etapie pracy nad projektem migracja powstała.
 
 ## Przydatne zapytania SQL (ręczna administracja)
 
 Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1–V20.
+pasują do schematu z migracji V1–V21.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się
 **wylogować i zalogować ponownie**, żeby dostać nowy token z rolą `ADMIN`.
 
 ```sql
 UPDATE users SET role = 'ADMIN' WHERE private_email = 'ty@example.com';
+```
+
+**Terminy egzaminów** ustawia administrator w aplikacji (Konto → „Terminy egzaminów”, czyli
+`PUT /api/exam-terms/{origin}`). Awaryjnie można to zrobić w bazie:
+
+```sql
+UPDATE exam_terms SET exam_date = '2027-03-15', updated_at = now() WHERE origin = 'NOTARY';
+UPDATE exam_terms SET exam_date = NULL, updated_at = now() WHERE origin = 'BAILIFF';  -- termin nieogłoszony
 ```
 
 **Ukrycie i odkrycie karty** (znika wszystkim; historia odpowiedzi zostaje):
