@@ -9,6 +9,9 @@ import java.util.List;
 
 public interface ExamAttemptRepository extends JpaRepository<ExamAttempt, Long> {
 
+    /** Ile egzaminów próbnych użytkownik ukończył (do podsumowania nauki). */
+    long countByUserId(Long userId);
+
     /** Ostatnie podejścia użytkownika, od najnowszego. */
     @Query("""
             SELECT a FROM ExamAttempt a

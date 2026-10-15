@@ -2,16 +2,18 @@
 
 [← Spis treści](README.md)
 
-Ten plik opisuje, jak działają konta: rejestracja, aktywacja, logowanie, tokeny JWT, reset i zmiana hasła, role,
+Ten plik opisuje, jak działają konta: rejestracja, aktywacja, logowanie, tokeny (dostępu i odświeżające), reset i zmiana hasła, role,
 limity prób oraz usuwanie konta i eksport danych. Konkretne endpointy z przykładami są w
 [API: konta i logowanie](api/01-auth.md) i [API: konto zalogowanego](api/02-konto.md).
 
 ## W skrócie
 
 - Logujesz się **prywatnym adresem e-mail** i hasłem. Konto trzeba **aktywować linkiem wysłanym na adres uczelniany**.
-- Po zalogowaniu dostajesz **token JWT** (ważny 24 godziny), który frontend dołącza do każdego żądania.
+- Po zalogowaniu dostajesz **parę tokenów**: krótki **token dostępu** JWT (30 minut), który frontend dołącza do każdego
+  żądania, i **token odświeżający** (30 dni), którym przeglądarka po cichu zdobywa kolejny token dostępu. Dzięki temu
+  nikt nie jest wylogowywany co pół godziny, a skradziony token dostępu szybko przestaje działać.
 - Hasła są zapisane jako skrót **BCrypt**. Tokeny z maila (reset hasła) w bazie są zapisane tylko jako skrót SHA-256.
-- Zmiana albo reset hasła **wylogowuje wszystkie urządzenia**.
+- Zmiana albo reset hasła **wylogowuje wszystkie urządzenia**; wylogowanie unieważnia sesję na serwerze.
 - Odpowiedzi na rejestrację, „wyślij link ponownie” i „zapomniałem hasła” są **zawsze takie same**, niezależnie od tego,
   czy konto istnieje (nikt obcy nie sprawdzi, kto ma konto).
 - Logowanie, rejestracja i maile mają **limity prób**.
@@ -76,7 +78,7 @@ flowchart TD
     F -- "nie" --> E400
     F -- "tak" --> G{"Konto aktywne?"}
     G -- "nie" --> E409["409: Konto nie zostało jeszcze aktywowane...<br/>(nie liczy się jako nieudana próba)"]
-    G -- "tak" --> H["200: { accessToken: JWT }"]
+    G -- "tak" --> H["200: { accessToken: JWT, refreshToken }"]
 ```
 
 Ważne szczegóły:
@@ -86,7 +88,7 @@ Ważne szczegóły:
 - Konto nieaktywowane po poprawnym haśle dostaje **409** i podpowiedź, żeby kliknąć link albo poprosić o nowy.
 - Udane logowanie zeruje licznik nieudanych prób dla tej pary (IP, e-mail).
 
-## Token JWT i sesja
+## Token dostępu JWT i sesja
 
 Token tworzy `JwtService` (biblioteka jjwt, podpis HMAC). Zawiera:
 
@@ -95,7 +97,7 @@ Token tworzy `JwtService` (biblioteka jjwt, podpis HMAC). Zawiera:
 | `sub` | Prywatny e-mail użytkownika |
 | `role` | `STUDENT` albo `ADMIN` |
 | `iat` | Kiedy wystawiono (sekundy od 1970) |
-| `exp` | Kiedy wygasa (domyślnie po 24 godzinach: `APP_JWT_EXPIRATION_MS=86400000`) |
+| `exp` | Kiedy wygasa (domyślnie po **30 minutach**: `APP_JWT_EXPIRATION_MS=1800000`) |
 
 Frontend dołącza token do każdego żądania w nagłówku `Authorization: Bearer <token>`. Backend **nie trzyma sesji**
 (tryb bezstanowy): wszystko, co trzeba, jest w tokenie i w jednym lekkim zapytaniu do bazy.
@@ -111,11 +113,56 @@ Jeśli którykolwiek warunek nie jest spełniony, żądanie jest traktowane jak 
 **401** (nie 403 — to ustawienie `HttpStatusEntryPoint(UNAUTHORIZED)`).
 
 **Wylogowanie wszystkich urządzeń:** przy zmianie hasła (w koncie i przez reset) backend zapisuje
-`tokens_valid_from` = „teraz”. Wszystkie wcześniej wydane tokeny od tej chwili dają 401. Przy zmianie hasła z konta
-odpowiedź zawiera **nowy token**, więc bieżące urządzenie nie zostaje wylogowane.
+`tokens_valid_from` = „teraz” i unieważnia wszystkie tokeny odświeżające konta. Wszystkie wcześniej wydane tokeny
+dostępu od tej chwili dają 401, a tokeny odświeżające przestają działać. Przy zmianie hasła z konta odpowiedź zawiera
+**nową parę tokenów**, więc bieżące urządzenie nie zostaje wylogowane.
 
 **Rola w tokenie:** rola jest odczytywana z tokenu, a nie z bazy przy każdym żądaniu. Dlatego po nadaniu komuś roli
 `ADMIN` w bazie musi się on wylogować i zalogować ponownie.
+
+## Sesja: token dostępu i token odświeżający
+
+Token dostępu jest krótki, bo jest bezstanowy: serwer nie może go „cofnąć” przed czasem (poza zmianą hasła). Żeby
+mimo to nie wylogowywać co 30 minut, logowanie zwraca drugi token, **odświeżający**, którego ważność jest sprawdzana w
+bazie (`RefreshTokenService`, tabela `refresh_tokens`).
+
+```mermaid
+sequenceDiagram
+    participant F as Frontend
+    participant B as Backend
+    participant DB as Baza
+    F->>B: żądanie z wygasłym tokenem dostępu
+    B-->>F: 401
+    F->>B: POST /api/auth/refresh { refreshToken: R1 }
+    B->>DB: szuka skrótu SHA-256 tokenu R1
+    B->>DB: R1 zużyty (rotated_at), zapis R2 w tej samej rodzinie
+    B-->>F: 200 { accessToken: nowy, refreshToken: R2 }
+    F->>B: to samo żądanie z nowym tokenem dostępu
+    B-->>F: 200
+```
+
+Zasady:
+
+- **Rotacja.** Każde odświeżenie zużywa token i wydaje następny. Ważny jest zawsze tylko ostatni z „rodziny” (jedno
+  logowanie na jednym urządzeniu, `family_id`).
+- **Tylko skrót w bazie.** Token to 256-bitowa wartość losowa; w tabeli leży jej SHA-256, tak jak przy linkach resetu
+  hasła. Wyciek bazy nie daje działających sesji.
+- **Wykrywanie kradzieży.** Użycie tokenu już zużytego **dawniej niż 10 sekund temu** (`RefreshRules.REUSE_GRACE`) oznacza,
+  że ktoś ma kopię. Cała rodzina zostaje unieważniona, a użytkownik loguje się ponownie. Do 10 sekund wystawiany jest
+  kolejny token tej samej rodziny, bo to zwykle dwie karty przeglądarki odświeżające naraz albo odpowiedź, która zgubiła
+  się w drodze.
+- **Unieważnianie.** Wylogowanie (`POST /api/auth/logout`) kończy sesję tego urządzenia. Zmiana i reset hasła kończą
+  wszystkie sesje konta. Usunięcie konta kasuje tokeny kaskadowo. Nieaktywne konto nie może odświeżać.
+- **Ważność.** 30 dni (`APP_JWT_REFRESH_DAYS`), liczone od ostatniego odświeżenia, więc aktywny użytkownik nie musi się
+  logować. Wygasłe wiersze starsze niż 7 dni są sprzątane przy okazji wystawiania kolejnego tokenu.
+- **Limit.** `refresh` i `logout` mają wspólny limit 300 żądań / 5 min z jednego adresu IP (hojny, bo wiele osób siedzi
+  za jednym adresem uczelni).
+
+Frontend trzyma oba tokeny w `localStorage`. Jedno wspólne odświeżenie obsługuje wszystkie równoległe żądania w karcie, a
+między kartami pilnuje tego blokada Web Locks. Zapis w `localStorage` jest wygodny, ale dostępny dla skryptów strony, więc
+przy ataku XSS token da się wykraść. Docelowo token odświeżający powinien być w ciasteczku `HttpOnly; Secure; SameSite`,
+niedostępnym dla skryptów; wymaga to zmian w CORS i wdrożeniu (adres frontendu i backendu w jednej domenie), więc
+czeka na etap wdrożenia ([Znane ograniczenia](07-znane-ograniczenia.md)).
 
 ## Reset i zmiana hasła
 
@@ -138,7 +185,7 @@ sequenceDiagram
     B-->>U: 200 OK (zawsze to samo)
     U->>B: POST /api/auth/reset-password { token, newPassword }
     B->>DB: szuka skrótu tokenu (musi być nieużyty i niewygasły)
-    B->>DB: nowe hasło (BCrypt), tokens_valid_from = teraz, wszystkie otwarte tokeny resetu zamknięte
+    B->>DB: nowe hasło (BCrypt), tokens_valid_from = teraz, tokeny odświeżające unieważnione, otwarte tokeny resetu zamknięte
     B-->>U: 200 OK
 ```
 
@@ -153,7 +200,7 @@ sequenceDiagram
 `PUT /api/users/me/password` wymaga **obecnego hasła** (zabezpieczenie przed zmianą z zostawionej sesji). Nowe hasło
 musi być inne niż obecne. Po zmianie:
 
-- wszystkie dotychczasowe sesje przestają działać (`tokens_valid_from`), ale odpowiedź zawiera świeży token,
+- wszystkie dotychczasowe sesje przestają działać (`tokens_valid_from` i unieważnienie tokenów odświeżających), ale odpowiedź zawiera świeżą parę tokenów,
 - otwarte linki do resetu hasła są unieważniane,
 - na adres uczelniany idzie powiadomienie „Hasło do Twojego konta w Tutlaw zostało zmienione” z linkiem do ustawienia
   hasła od nowa, gdyby to nie był właściciel.
@@ -201,6 +248,7 @@ Limity liczy `AuthRateLimiter` w **pamięci serwera** (przesuwne okno czasowe). 
 | „Wyślij link ponownie” i „zapomniałem hasła” | 10 | 1 godz. | adres IP (nadmiar = 429) |
 | to samo | 3 | 1 godz. | konto (nadmiar = **cicho** pomijane, odpowiedź 200 bez wysyłki) |
 | Ustawianie nowego hasła z tokenu | 20 | 1 godz. | adres IP |
+| Odświeżenie sesji i wylogowanie (`/api/auth/refresh`, `/api/auth/logout`) | 300 | 5 min | adres IP |
 
 Dodatkowo nie wysyła się kolejnego maila (aktywacja, reset) częściej niż co **2 minuty** dla konta.
 
@@ -217,15 +265,15 @@ Z limitu logowania korzystają też zmiana hasła i usunięcie konta (błędne h
 
 **`GET /api/users/me/export`** zwraca jeden plik JSON z **wszystkimi danymi**, które serwis trzyma o użytkowniku:
 konto (bez hasła i tokenów), postęp rozdziałów, stan każdej karty, pełną historię odpowiedzi, wysłane zgłoszenia,
-podsumowania egzaminów, ręczne dodania do fiszek i ustawienia nauki.
+podsumowania egzaminów, zapisane własne testy, czas nauki dzień po dniu, ręczne dodania do fiszek i ustawienia nauki.
 
 **`DELETE /api/users/me`** (z hasłem w treści żądania) usuwa konto **razem z całą historią nauki**. Kasowanie
 powiązanych danych robi sama baza (`ON DELETE CASCADE`, migracja V11). Złe hasło daje 400 i konto zostaje nietknięte.
-Po usunięciu zwracane jest `204 No Content`.
+Znikają też zapisane własne testy, czas nauki i tokeny odświeżające. Po usunięciu zwracane jest `204 No Content`.
 
 ## Co jest zabezpieczone, a co jeszcze nie
 
-Zabezpieczone: hasła (BCrypt), tokeny resetu (skróty), podpisane tokeny JWT, unieważnianie sesji, jednakowe
+Zabezpieczone: hasła (BCrypt), tokeny resetu i odświeżające (skróty), krótko żyjące podpisane tokeny JWT, rotacja tokenów odświeżających z wykrywaniem kradzieży, unieważnianie sesji, jednakowe
 odpowiedzi chroniące przed sprawdzaniem cudzych kont, limity prób, ochrona endpointów rolami, walidacja wejścia.
 
 Zostawione celowo na koniec (przed wdrożeniem na prawdziwy serwer): domyślny sekret JWT w `application.yml`, plik

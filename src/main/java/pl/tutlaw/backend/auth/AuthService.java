@@ -37,7 +37,7 @@ public class AuthService {
     private final EmailVerificationTokenRepository tokenRepository;
     private final PasswordResetTokenRepository resetTokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
+    private final RefreshTokenService refreshTokens;
     private final EmailService emailService;
     private final AfterCommitMailer mailer;
     private final Clock clock;
@@ -192,12 +192,14 @@ public class AuthService {
         userRepository.save(user);
 
         closeOpenResetTokens(user, now);
+        refreshTokens.revokeAll(user);
         log.info("Password changed for user {}", user.getId());
     }
 
     /**
      * Zmiana hasła zalogowanego użytkownika. Wymaga obecnego hasła (zły: {@link WrongPasswordException}).
-     * Wszystkie dotychczasowe sesje przestają działać, a wywołujący dostaje świeży token dla bieżącej, więc nie zostaje wylogowany.
+     * Wszystkie dotychczasowe sesje przestają działać (tokeny dostępu przez {@code tokensValidFrom}, odświeżające przez
+     * unieważnienie), a wywołujący dostaje świeżą parę tokenów dla bieżącej, więc nie zostaje wylogowany.
      * Otwarte linki do resetu hasła są unieważniane, a na adres uczelniany idzie powiadomienie o zmianie.
      */
     @Transactional
@@ -222,13 +224,14 @@ public class AuthService {
         user.setTokensValidFrom(nowEpochSeconds());
         userRepository.save(user);
         closeOpenResetTokens(user, now);
+        refreshTokens.revokeAll(user);
 
         String universityEmail = user.getUniversityEmail();
         mailer.send("zmiana hasła z konta, użytkownik " + user.getId(),
                 () -> emailService.sendPasswordChangedEmail(universityEmail));
         log.info("Password changed from the account page for user {}", user.getId());
 
-        return new AuthResponse(jwtService.generateToken(user.getPrivateEmail(), user.getRole()));
+        return refreshTokens.startSession(user);
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -247,7 +250,7 @@ public class AuthService {
             throw new IllegalStateException(NOT_VERIFIED);
         }
 
-        return new AuthResponse(jwtService.generateToken(user.getPrivateEmail(), user.getRole()));
+        return refreshTokens.startSession(user);
     }
 
     /** Unieważnia ten link i wszystkie wcześniejsze, których nikt nie użył. */

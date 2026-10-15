@@ -18,6 +18,8 @@ public record AccountExportResponse(
         List<ReportItem> cardReports,
         List<ExamEntry> examAttempts,
         List<FlashcardAdditionItem> flashcardAdditions,
+        List<CustomTestItem> customTests,
+        List<StudyTimeItem> studyTime,
         LearningSettings learningSettings
 ) {
 
@@ -79,6 +81,23 @@ public record AccountExportResponse(
             boolean timedOut
     ) {}
 
+    /** Zapisane własne testy ("Moje testy"): konfiguracja i wynik (odpowiedzi na pojedyncze pytania są w dzienniku odpowiedzi). */
+    public record CustomTestItem(
+            LocalDateTime startedAt,
+            LocalDateTime finishedAt,
+            String scope,
+            String kind,
+            int requestedCount,
+            int questionCount,
+            int answeredCount,
+            int correctCount,
+            int guessedCount,
+            double timeSeconds
+    ) {}
+
+    /** Czas nauki w danym dniu, w sekundach (czas w aplikacji, osobno od czasu odpowiadania na pytania). */
+    public record StudyTimeItem(LocalDate day, int seconds) {}
+
     /** Pytania, które użytkownik sam dodał do fiszek przyciskiem „Dodaj do fiszek". */
     public record FlashcardAdditionItem(Long questionId, String question, LocalDateTime addedAt) {}
 
@@ -98,6 +117,12 @@ public record AccountExportResponse(
             Theme theme,
             boolean shuffleOptions,
             /** Filtr pochodzenia pytań w Testach: kody oddzielone przecinkami albo null (wszystkie). */
-            String testOrigins
+            String testOrigins,
+            /** Czy w oknie startowym dokonano wyboru (aplikacja albo "Jestem studentem"). */
+            boolean startChoiceMade,
+            /** Stałe ukrycie podpowiedzi skrótów klawiszowych w testach, w fiszkach i ukrycie licznika czasu pytania. */
+            boolean hintHiddenTest,
+            boolean hintHiddenFlashcard,
+            boolean questionTimerHidden
     ) {}
 }

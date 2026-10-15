@@ -3,10 +3,10 @@
 [← Spis treści](README.md)
 
 Baza to **PostgreSQL 16**. Schemat tworzą wyłącznie migracje **Flyway** (`src/main/resources/db/migration`, pliki
-`V1__...sql` do `V22__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
+`V1__...sql` do `V25__...sql`), uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność
 (`ddl-auto: validate`), niczego nie tworzy i nie zmienia.
 
-> Nie edytuj starych migracji. Każda zmiana schematu to **nowy plik** `V22__...sql` itd., bo Flyway zapamiętuje
+> Nie edytuj starych migracji. Każda zmiana schematu to **nowy plik** `V26__...sql` itd., bo Flyway zapamiętuje
 > sumę kontrolną każdej wykonanej migracji (tabela `flyway_schema_history`).
 
 ## Schemat w skrócie
@@ -37,13 +37,19 @@ erDiagram
     cards ||--o{ user_flashcard_additions : ""
     users ||--o{ email_verification_tokens : "aktywacja"
     users ||--o{ password_reset_tokens : "reset hasła"
+    users ||--o{ refresh_tokens : "sesje (tokeny odświeżające)"
+    users ||--o{ custom_test_sessions : "zapisane własne testy"
+    custom_test_sessions ||--o{ custom_test_session_questions : "pytania testu"
+    cards ||--o{ custom_test_session_questions : ""
+    users ||--o{ study_time_daily : "czas nauki dzień po dniu"
 ```
 
 Dwie grupy tabel:
 
 1. **Materiał (wspólny dla wszystkich):** `categories`, `subjects`, `sources`, `chapters`, `cards`, `tags`, `card_tags`.
 2. **Dane użytkownika (osobne dla każdego konta):** `users`, `user_card_state`, `review_logs`,
-   `user_chapter_progress`, `user_settings`, `exam_attempts`, `card_reports`, `user_flashcard_additions`, tokeny.
+   `user_chapter_progress`, `user_settings`, `exam_attempts`, `custom_test_sessions` (z pytaniami), `study_time_daily`,
+   `card_reports`, `user_flashcard_additions`, tokeny (aktywacji, resetu hasła i odświeżające).
 3. **Ustawiane przez administratora:** `exam_terms` (terminy egzaminów aplikacji).
 
 Hierarchia materiału: **kategoria (rodzaj) → przedmiot / akt prawny → źródło → (rozdział) → karta**.
@@ -190,6 +196,25 @@ tagami. Usunięcie karty usuwa jej wpisy w `card_tags`.
 | `email_verification_tokens` | `id`, `user_id`, `token` (unikalny), `expires_at`, `used_at`, `created_at` | Token to losowy UUID zapisany **wprost**. Ważny 24 godziny |
 | `password_reset_tokens` | `id`, `user_id` (ON DELETE CASCADE), `token_hash` (unikalny, 64 znaki), `expires_at`, `used_at`, `created_at` | W bazie jest tylko **skrót SHA-256** tokenu, a sam token jest wyłącznie w mailu. Ważny 1 godzinę |
 
+### `refresh_tokens` — sesje użytkownika (V23)
+
+Token dostępu (JWT) żyje 30 minut, a zalogowanym zostaje się dzięki tokenowi odświeżającemu ważnemu 30 dni. Każde
+użycie tokenu wymienia go na nowy (rotacja). Jak to działa dla użytkownika i dla bezpieczeństwa:
+[03](03-bezpieczenstwo-i-konta.md#sesja-token-dostępu-i-token-odświeżający).
+
+| Kolumna | Znaczenie |
+|---------|-----------|
+| `id` | Klucz główny |
+| `user_id` | Właściciel (`ON DELETE CASCADE`: usunięcie konta kasuje sesje) |
+| `token_hash` | **Skrót SHA-256** tokenu (64 znaki, unikalny). Sam token zna tylko przeglądarka, więc wyciek bazy nie daje działających sesji |
+| `family_id` | Numer sesji (jedno logowanie na jednym urządzeniu): wszystkie tokeny kolejnych wymian mają ten sam. Używany do unieważniania całej sesji |
+| `created_at`, `expires_at` | Wystawienie i ważność (30 dni, `APP_JWT_REFRESH_DAYS`) |
+| `rotated_at` | Kiedy token wymieniono na następny. Ponowne użycie w ciągu 10 s jest niewinne, później oznacza kradzież kopii |
+| `revoked_at` | Kiedy sesję unieważniono (wylogowanie, kradzież, zmiana lub reset hasła) |
+
+Indeksy `idx_refresh_tokens_family` i `idx_refresh_tokens_user`. Wygasłe wiersze starsze niż 7 dni są kasowane przy
+okazji wystawiania nowego tokenu temu samemu kontu.
+
 ### `user_chapter_progress`
 
 Klucz główny (`user_id`, `chapter_id`); kolumny `is_read` i `read_at`. Wiersz istnieje, gdy użytkownik kiedykolwiek
@@ -249,6 +274,10 @@ to limit automatyczny, a nie stała wartość domyślna.
 | `theme` | `DARK` albo `LIGHT`, domyślnie `DARK` (NOT NULL, CHECK `chk_user_settings_theme`) | Wygląd aplikacji. Zapisany na koncie, więc taki sam na każdym urządzeniu (V22) |
 | `shuffle_options` | boolean, domyślnie true | Mieszanie kolejności odpowiedzi A/B/C w pytaniach (korzysta z tego frontend) |
 | `test_origins` | lista kodów po przecinku albo NULL | Filtr pochodzenia pytań w Testach. NULL = wszystkie |
+| `start_choice_made` | boolean, domyślnie false | Czy użytkownik dokonał wyboru w oknie startowym (aplikacja albo „Jestem studentem”). Student ma `exam_origin = NULL`, więc samo `exam_origin` już tego nie mówi. Konta z wybraną aplikacją mają `true` (V25) |
+| `hint_hidden_test` | boolean, domyślnie false | Podpowiedź o skrótach klawiszowych w testach jest stale ukryta (V25) |
+| `hint_hidden_flashcard` | boolean, domyślnie false | To samo w fiszkach (V25) |
+| `question_timer_hidden` | boolean, domyślnie false | Licznik czasu przy pytaniu jest ukryty (V25) |
 | `updated_at` | timestamp | |
 
 ### `exam_terms` — terminy egzaminów aplikacji
@@ -276,6 +305,29 @@ użytkownik dostaje w odpowiedzi tuż po zakończeniu. CHECK-i pilnują zakresó
 Podejścia sprzed stałego formatu mają w tej kolumnie `NULL` i zachowują własny próg z `pass_threshold_percent`. Od
 stałego formatu `pass_threshold_percent` jest tylko zaokrągleniem progu w punktach w górę do pełnego procentu
 (100 z 150 to 67).
+
+### `custom_test_sessions` i `custom_test_session_questions` — „Moje testy” (V24)
+
+Własny test jest zapisywany jako sesja **w chwili ułożenia** (konfiguracja i wylosowane pytania), a odpowiedzi dopisują
+się do niego w trakcie. Test, którego nikt nie skończył, zostaje na liście jako „Nieukończony” (`finished_at` puste).
+Powtórki, „Popraw błędy” i egzamin próbny tu nie trafiają. Sesje znikają razem z kontem.
+
+| Tabela | Kolumny | Uwagi |
+|--------|---------|-------|
+| `custom_test_sessions` | `id`, `user_id` (ON DELETE CASCADE), `started_at`, `finished_at` (NULL = nieukończony), `kind` (`ALL`, `NEW`, `MISTAKES`, `DUE`; CHECK), `scope_label` (nazwa zakresu w chwili układania), `category_ids`, `subject_ids` (numery po przecinku; oba puste = cały materiał), `origins` (filtr pochodzenia z tej chwili albo NULL), `requested_count` (1–150; CHECK), `available_count` | Indeks `idx_custom_test_sessions_user_started (user_id, started_at DESC)` pod listę „Moje testy”. Z `category_ids` i `subject_ids` frontend układa test ponownie |
+| `custom_test_session_questions` | `id`, `session_id` (ON DELETE CASCADE), `card_id` (ON DELETE CASCADE), `position`, `selected_option` (`A`/`B`/`C` pod oryginalnym kluczem z bazy), `was_correct`, `was_guessed`, `time_spent_seconds`, `answered_at` | Wiersz bez odpowiedzi ma `answered_at = NULL` (CHECK pilnuje, że `selected_option`, `was_correct` i `answered_at` są puste razem). Para (`session_id`, `position`) i para (`session_id`, `card_id`) są unikalne. Indeks `idx_custom_test_session_questions_card` |
+
+### `study_time_daily` — czas nauki (V25)
+
+Jeden wiersz na użytkownika i dzień (klucz główny (`user_id`, `day`)). Liczy czas spędzony na ekranach nauki (testy,
+powtórki, własne testy, fiszki, egzamin, razem z czytaniem wyjaśnień), tylko gdy karta przeglądarki jest widoczna.
+To inna miara niż czas odpowiadania na pytanie (`review_logs.time_spent_seconds`).
+
+| Kolumna | Znaczenie |
+|---------|-----------|
+| `user_id` | Właściciel (`ON DELETE CASCADE`) |
+| `day` | Dzień według czasu serwera |
+| `seconds` | Suma sekund z tego dnia, 0–86400 (CHECK `chk_study_time_daily_seconds`) |
 
 ### `card_reports` — zgłoszenia błędów w pytaniach
 
@@ -319,8 +371,8 @@ dopiero po „pewnym błędzie” w tym pytaniu albo po ręcznym „Dodaj do fis
 
 | Usuwasz | Co znika razem z tym |
 |---------|----------------------|
-| **Użytkownika** | Wszystko jego: stan kart, historia odpowiedzi, postęp rozdziałów, ustawienia, egzaminy, zgłoszenia, ręczne dodania, tokeny (`ON DELETE CASCADE`, migracja V11) |
-| **Kartę** | Jej stan u wszystkich użytkowników, historia odpowiedzi, tagi, zgłoszenia, ręczne dodania. Automatyczna fiszka pytania znika razem z pytaniem. Fiszka ręczna powiązana z usuwanym pytaniem zostaje zwykłą fiszką (`SET NULL`) |
+| **Użytkownika** | Wszystko jego: stan kart, historia odpowiedzi, postęp rozdziałów, ustawienia, egzaminy, zapisane własne testy, czas nauki, zgłoszenia, ręczne dodania, tokeny (aktywacji, resetu hasła i odświeżające) (`ON DELETE CASCADE`, migracja V11 i późniejsze) |
+| **Kartę** | Jej stan u wszystkich użytkowników, historia odpowiedzi, tagi, zgłoszenia, ręczne dodania, pytanie w zapisanych własnych testach. Automatyczna fiszka pytania znika razem z pytaniem. Fiszka ręczna powiązana z usuwanym pytaniem zostaje zwykłą fiszką (`SET NULL`) |
 
 Przy usuwaniu kategorii, przedmiotów, źródeł i rozdziałów kaskady nie ma: baza odmówi, dopóki coś do nich należy.
 Aplikacja nie ma zresztą endpointów do usuwania treści (tylko dodawanie i ukrywanie kart).
@@ -363,13 +415,16 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 | V20 | 28 | `pass_points` w `exam_attempts` (stały format egzaminu: próg w punktach) |
 | V21 | 29 | `exam_terms` (terminy egzaminów ustawia administrator), `exam_origin` w `user_settings`; usunięta `user_settings.exam_date` (własna data użytkownika znika razem z zapisanymi wartościami) |
 | V22 | 30 | `theme` w `user_settings` (wygląd aplikacji: ciemny / jasny, domyślnie ciemny) |
+| V23 | 31 | `refresh_tokens` (tokeny odświeżające: skrót SHA-256, rodzina sesji, rotacja, unieważnianie) |
+| V24 | 31 | `custom_test_sessions` i `custom_test_session_questions` (własne testy zapisywane jako sesje, „Moje testy”) |
+| V25 | 31 | `study_time_daily` (czas nauki); `hint_hidden_test`, `hint_hidden_flashcard`, `question_timer_hidden` i `start_choice_made` w `user_settings` |
 
 Numery „Etap” wskazują, w którym etapie pracy nad projektem migracja powstała.
 
 ## Przydatne zapytania SQL (ręczna administracja)
 
 Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1–V22.
+pasują do schematu z migracji V1–V25.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się
 **wylogować i zalogować ponownie**, żeby dostać nowy token z rolą `ADMIN`.

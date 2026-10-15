@@ -37,11 +37,16 @@ public class ReviewService {
     private final LearningSettingsService settingsService;
     private final IntervalFuzzer intervalFuzzer;
     private final LeechPolicy leechPolicy;
+    private final CustomTestSessionService customTestSessions;
     private final Clock clock;
 
-    /** Ocena fiszki: 1–4 wybrana przez użytkownika. „Nie pamiętam" (1) liczy się jako błąd. */
+    /**
+     * Ocena fiszki: 1–4 wybrana przez użytkownika. „Nie pamiętam" (1) liczy się jako błąd.
+     *
+     * @return czy to była pierwsza ocena tej fiszki (zaczęła się uczyć właśnie teraz)
+     */
     @Transactional
-    public void submitReview(SubmitReviewRequest request, Authentication authentication) {
+    public boolean submitReview(SubmitReviewRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         Card card = findReadableCard(request.cardId(), user);
 
@@ -51,8 +56,9 @@ public class ReviewService {
         }
 
         Rating rating = Rating.values()[request.rating() - 1];
-        applyReview(user, card, rating, request.timeSpentSeconds(),
+        UserCardState state = applyReview(user, card, rating, request.timeSpentSeconds(),
                 ReviewMode.FLASHCARD, null, false, rating == Rating.AGAIN);
+        return state.getReps() == 1;
     }
 
     /**
@@ -84,9 +90,14 @@ public class ReviewService {
         UserCardState state = applyReview(user, card, ReviewPolicy.testRating(correct, guessed),
                 request.timeSpentSeconds(), ReviewMode.TEST, correct, guessed, !correct);
 
+        // Odpowiedź w zapisanym własnym teście ("Moje testy"). Powtórki, błędy i egzamin przychodzą bez numeru testu.
+        customTestSessions.recordAnswer(user.getId(), request.sessionId(), card.getId(), request.selectedOption(),
+                correct, guessed, request.timeSpentSeconds());
+
         return new TestAnswerResultResponse(
                 correct, card.getCorrectOption(), card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(),
-                state.getLapses(), leechPolicy.isLeech(state.getLapses()), unlocksFlashcard, flashcard);
+                state.getLapses(), leechPolicy.isLeech(state.getLapses()), unlocksFlashcard, flashcard,
+                state.getReps() == 1);
     }
 
     /**

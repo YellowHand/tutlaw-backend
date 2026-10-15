@@ -18,7 +18,9 @@ import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -171,6 +173,20 @@ public class ReviewQueueService {
         return stateRepository.countDue(
                 user.getId(), LocalDateTime.now(clock), mode == ReviewMode.FLASHCARD, mode == ReviewMode.TEST,
                 testOrigins);
+    }
+
+    /**
+     * Ile kart danego trybu będzie miało minięty termin powtórki do końca jutra: te, które czekają już teraz, i te,
+     * które wrócą jutro. To liczba do podsumowania sesji ("Jutro wróci N powtórek"): dzisiejsze zaległości, które
+     * nie zmieściły się w sesji, też czekają na jutro.
+     */
+    public long countDueByEndOfTomorrow(ReviewMode mode, Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        Set<QuestionOrigin> testOrigins = mode == ReviewMode.TEST
+                ? originFilter.activeFor(user.getId()) : EnumSet.allOf(QuestionOrigin.class);
+        LocalDateTime endOfTomorrow = LocalDate.now(clock).plusDays(1).atTime(LocalTime.MAX);
+        return stateRepository.countDue(
+                user.getId(), endOfTomorrow, mode == ReviewMode.FLASHCARD, mode == ReviewMode.TEST, testOrigins);
     }
 
     /** Pytania testowe (z poprawną odpowiedzią) spośród podanych kart, z wybranych pochodzeń. */

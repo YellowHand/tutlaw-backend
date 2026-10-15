@@ -59,6 +59,7 @@ class ReviewQueueServiceTest {
         /** Pochodzenia przekazane do ostatniego zapytania o liczbę zaległych (odznaka). */
         Collection<QuestionOrigin> lastCountDueOrigins;
         boolean lastCountDueWithTests;
+        java.time.LocalDateTime lastCountDueAt;
         /** Ustawienia zapisane przez użytkownika (null = same domyślne z konfiguracji). */
         UserSettings stored;
         ReviewQueueService service;
@@ -91,6 +92,7 @@ class ReviewQueueServiceTest {
                     return new ArrayList<>(schedule);
                 }
                 if (method.equals("countDue")) {
+                    lastCountDueAt = (java.time.LocalDateTime) args[1];
                     lastCountDueWithTests = (boolean) args[3];
                     lastCountDueOrigins = (Collection<QuestionOrigin>) args[4];
                     return 7L;
@@ -807,6 +809,23 @@ class ReviewQueueServiceTest {
         assertThat(f.lastCountDueOrigins).containsExactlyInAnyOrder(QuestionOrigin.NOTARY, QuestionOrigin.BAILIFF);
 
         f.service.countDueNow(ReviewMode.FLASHCARD, f.jan);
+        assertThat(f.lastCountDueWithTests).isFalse();
+        assertThat(f.lastCountDueOrigins).isEqualTo(EnumSet.allOf(QuestionOrigin.class));
+    }
+
+    @Test
+    void theTomorrowCountReachesToTheEndOfTomorrowAndUsesTheSameFilters() {
+        Fixture f = new Fixture(100);
+        f.filterTo(QuestionOrigin.NOTARY);
+
+        assertThat(f.service.countDueByEndOfTomorrow(ReviewMode.TEST, f.jan)).isEqualTo(7L);
+
+        // dziś 12 października (czas warszawski), więc granica to koniec 13 października
+        assertThat(f.lastCountDueAt).isEqualTo(java.time.LocalDateTime.of(2026, 10, 13, 23, 59, 59, 999_999_999));
+        assertThat(f.lastCountDueWithTests).isTrue();
+        assertThat(f.lastCountDueOrigins).containsExactly(QuestionOrigin.NOTARY);
+
+        f.service.countDueByEndOfTomorrow(ReviewMode.FLASHCARD, f.jan);
         assertThat(f.lastCountDueWithTests).isFalse();
         assertThat(f.lastCountDueOrigins).isEqualTo(EnumSet.allOf(QuestionOrigin.class));
     }

@@ -38,6 +38,7 @@ class AuthFlowTest {
         final List<User> users = new ArrayList<>();
         final List<EmailVerificationToken> verificationTokens = new ArrayList<>();
         final List<PasswordResetToken> resetTokens = new ArrayList<>();
+        final List<RefreshToken> refreshTokenRows = new ArrayList<>();
         final FakeRepos.Mailbox mailbox = new FakeRepos.Mailbox();
         int dummyChecks = 0;
         int encodes = 0;
@@ -63,12 +64,15 @@ class AuthFlowTest {
             }
         };
 
+        final RefreshTokenService refreshService =
+                new RefreshTokenService(FakeRepos.refreshTokens(refreshTokenRows), jwt, clock, 30);
+
         final AuthService service = new AuthService(
                 FakeRepos.users(users),
                 FakeRepos.verificationTokens(verificationTokens),
                 FakeRepos.resetTokens(resetTokens),
                 encoder,
-                jwt,
+                refreshService,
                 new EmailService(mailbox.sender(), "https://tutlaw.example/"),
                 new AfterCommitMailer(Runnable::run),
                 clock);
@@ -245,6 +249,8 @@ class AuthFlowTest {
         f.service.verify(f.verificationTokens.get(0).getToken());
         AuthResponse response = f.service.login(new LoginRequest("jan@gmail.com", "haslo1234"));
         assertThat(response.accessToken()).isEqualTo("jwt:jan@gmail.com:STUDENT");
+        assertThat(response.refreshToken()).isNotBlank();
+        assertThat(f.refreshTokenRows).hasSize(1);
     }
 
     @Test
@@ -478,6 +484,33 @@ class AuthFlowTest {
         assertThatThrownBy(() -> f.service.login(new LoginRequest("jan@gmail.com", "haslo1234")))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(f.service.login(new LoginRequest("jan@gmail.com", "nowehaslo99")).accessToken()).isNotNull();
+    }
+
+    @Test
+    void changePasswordRevokesEveryRefreshTokenAndStartsAFreshSessionForTheCaller() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        AuthResponse laptop = f.service.login(new LoginRequest("jan@gmail.com", "haslo1234"));
+        AuthResponse phone = f.service.login(new LoginRequest("jan@gmail.com", "haslo1234"));
+
+        AuthResponse fresh = f.service.changePassword("jan@gmail.com", "haslo1234", "nowehaslo99");
+
+        assertThat(f.refreshService.refresh(laptop.refreshToken())).isEmpty();
+        assertThat(f.refreshService.refresh(phone.refreshToken())).isEmpty();
+        assertThat(fresh.refreshToken()).isNotBlank();
+        assertThat(f.refreshService.refresh(fresh.refreshToken())).isPresent();
+    }
+
+    @Test
+    void resetPasswordRevokesEveryRefreshToken() {
+        Fixture f = new Fixture();
+        f.registerAndActivate("jan@gmail.com", "jan@uni.pl", "haslo1234");
+        AuthResponse laptop = f.service.login(new LoginRequest("jan@gmail.com", "haslo1234"));
+        f.service.forgotPassword("jan@gmail.com");
+
+        f.service.resetPassword(f.tokenFromLastMail(), "nowehaslo99");
+
+        assertThat(f.refreshService.refresh(laptop.refreshToken())).isEmpty();
     }
 
     @Test

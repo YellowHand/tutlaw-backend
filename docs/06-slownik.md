@@ -10,6 +10,7 @@ ułożone alfabetycznie.
 | **Akt prawny** | Ustawa lub kodeks (np. „Kodeks karny”) jako pozycja w kategorii. W bazie to zwykły przedmiot; „Akty prawne” to etykieta kategorii | `subjects`, `categories.items_label` |
 | **Aplikacja (egzamin)** | Egzamin zawodowy: adwokacki i radcowski, sędziowski i prokuratorski, notarialny, uzupełniający sędziowski, komorniczy. Z którego egzaminu pochodzi pytanie, mówi pochodzenie | `QuestionOrigin` |
 | **Blokada optymistyczna** | Zabezpieczenie przed jednoczesną zmianą tego samego stanu karty w dwóch oknach: drugi zapis dostaje błąd 409 | `UserCardState.version` (`@Version`) |
+| **Czas nauki** | Czas spędzony na ekranach nauki przy widocznej karcie, razem z czytaniem wyjaśnień. Osobny od czasu odpowiedzi na pytanie | `study_time_daily`, `POST /api/me/study-time` |
 | **Dostępna karta** | Karta, którą użytkownik może teraz ćwiczyć: nieukryta i z puli płaskiej albo z przeczytanego rozdziału | `CardRepository.findReadableRefs...` |
 | **Egzamin próbny** | Losowy zestaw pytań testowych oceniany przez serwer; nie wpływa na harmonogram powtórek | `exam`, `exam_attempts` |
 | **Fiszka** | Karta z przodem i odwrotem, bez opcji ABC. Oceniasz ją sam | `Card` bez `correctOption` |
@@ -28,6 +29,7 @@ ułożone alfabetycznie.
 | **Leech (trudne pytanie)** | Karta, na której pomyłek jest co najmniej 8 (próg w konfiguracji). Aplikacja podpowiada zawieszenie albo zgłoszenie | `LeechPolicy`, `app.review.leech-threshold` |
 | **Limit dzienny** | Ile nowych fiszek, nowych pytań i zaległych powtórek wchodzi do sesji danego dnia | `app.fsrs.*`, `user_settings` |
 | **Mode (tryb)** | Skąd pochodzi odpowiedź: z fiszek (`FLASHCARD`) czy z testu (`TEST`). Ma osobne limity i statystyki | `ReviewMode`, `review_logs.mode` |
+| **Moje testy** | Lista zapisanych własnych testów (także nieukończonych) ze szczegółami i odpowiedziami; z niej można ułożyć test ponownie | `custom_test_sessions`, `GET /api/custom-tests/sessions` |
 | **Nowa karta** | Karta, na którą użytkownik jeszcze nie odpowiadał (brak wiersza w `user_card_state`) | — |
 | **Opanowane** | Karty o stabilności powyżej 21 dni | `StatisticsService.MATURE_STABILITY_THRESHOLD` |
 | **Pewny błąd** | Błędna odpowiedź w teście **bez** „Nie jestem pewien”. Oznacza utrwalone błędne przekonanie i odblokowuje fiszkę pytania | `countConfidentMistakes`, `FlashcardUnlockService` |
@@ -44,10 +46,12 @@ ułożone alfabetycznie.
 | **Rola** | `STUDENT` (zwykły użytkownik) albo `ADMIN` (może dodawać treści) | `Role`, `users.role` |
 | **Rozdział** | Część podręcznika, do której należą karty | `chapters`, pakiet `chapter` |
 | **Stabilność (stability, S)** | Po ilu dniach szansa przypomnienia karty spada do 90%. Im wyższa, tym trwalej pamiętasz | `user_card_state.stability` |
+| **Student** | Wybór w oknie startowym „Jestem studentem / jeszcze nie wybrałem”: bez aplikacji, terminu egzaminu i planu dnia | `PUT /api/me/exam { student: true }`, `user_settings.start_choice_made` |
 | **Trudność (difficulty, D)** | Jak trudna jest karta dla użytkownika (1–10) | `user_card_state.difficulty` |
 | **Tryb egzaminacyjny** | Zachowanie, gdy wybrana aplikacja ma ogłoszony termin egzaminu: wyższa retencja w ostatnich 30 dniach, odstępy nie wykraczają poza egzamin, plan nowych pytań (ostatnie 14 dni bez nowych) | `SchedulingRules`, `LearningSettingsService` |
 | **Termin (due date)** | Kiedy karta ma wrócić; od niego karta jest „zaległa” | `user_card_state.due_date` |
-| **Własny test** | Sesja nauki ułożona przez użytkownika: wybrane rodzaje i akty prawne, rodzaj pytań (wszystkie, nowe, błędy, zaległe), lata egzaminu i liczba pytań. Bez progu zaliczenia, odpowiedzi jak w zwykłym teście | `CustomTestService`, `POST /api/review/custom-test` |
+| **Token odświeżający** | Długo żyjący (30 dni) jednorazowy token, którym przeglądarka zdobywa nowy token dostępu bez logowania; wymieniany przy każdym użyciu | `RefreshTokenService`, `refresh_tokens` |
+| **Własny test** | Sesja nauki ułożona przez użytkownika: wybrane rodzaje i akty prawne, rodzaj pytań (wszystkie, nowe, błędy, zaległe) i liczba pytań (10, 20, 50, 100 albo 150). Bez progu zaliczenia, odpowiedzi jak w zwykłym teście. Zapisywany jako sesja | `CustomTestService`, `CustomTestSessionService`, `POST /api/review/custom-test` |
 | **Źródło** | Zbiór pytań lub rozdziałów w przedmiocie: podręcznik albo pula płaska | `sources`, pakiet `source` |
 | **Zaległa karta** | Karta z minionym terminem powtórki | `ReviewQueueService.splitByDue` |
 | **Zawieszenie** | Wyłączenie karty z kolejek i liczników dla jednego użytkownika, bez utraty postępu | `user_card_state.suspended`, `SuspensionService` |

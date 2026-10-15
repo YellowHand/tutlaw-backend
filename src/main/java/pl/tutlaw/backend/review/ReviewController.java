@@ -19,6 +19,7 @@ public class ReviewController {
     private final MistakesService mistakesService;
     private final PracticeQueueService practiceQueueService;
     private final CustomTestService customTestService;
+    private final CustomTestSessionService customTestSessionService;
 
     // categoryId, subjectId i sourceId są opcjonalne (od najwęższego: źródło, przedmiot, kategoria).
     // Bez żadnego z nich kolejka obejmuje cały materiał użytkownika.
@@ -80,25 +81,23 @@ public class ReviewController {
     /**
      * Własny test, krok 1: ile pytań każdego rodzaju (wszystkie, nowe, błędy, zaległe) jest w wybranym zakresie.
      * Zakres to suma rodzajów ({@code categoryIds}) i aktów prawnych ({@code subjectIds}); bez żadnego cały materiał.
-     * Lata egzaminu ({@code yearFrom}, {@code yearTo}) są opcjonalne.
      */
     @GetMapping("/custom-test/counts")
     public CustomTestCountsResponse getCustomTestCounts(
             @RequestParam(required = false) List<Long> categoryIds,
             @RequestParam(required = false) List<Long> subjectIds,
-            @RequestParam(required = false) Integer yearFrom,
-            @RequestParam(required = false) Integer yearTo,
             Authentication authentication) {
-        return customTestService.counts(categoryIds, subjectIds, yearFrom, yearTo, authentication);
+        return customTestService.counts(categoryIds, subjectIds, authentication);
     }
 
     /**
-     * Własny test, krok 2: losuje numery pytań. Sesję otwiera się potem przez {@code /practice-queue}. Niczego nie zapisuje.
+     * Własny test, krok 2: losuje numery pytań i zapisuje test ("Moje testy"; odpowiedź ma jego numer w
+     * {@code sessionId}). Sesję otwiera się potem przez {@code /practice-queue}, a odpowiedzi wysyła z tym numerem.
      */
     @PostMapping("/custom-test")
     public CustomTestSelectionResponse drawCustomTest(
             @Valid @RequestBody CustomTestRequest request, Authentication authentication) {
-        return customTestService.select(request, authentication);
+        return customTestSessionService.draw(request, authentication);
     }
 
     /** "Powtórz moje błędy": sesja z pytań, w których ostatnia odpowiedź w teście była błędna. */
@@ -119,11 +118,21 @@ public class ReviewController {
         return new DueCountResponse(queueService.countDueNow(mode, authentication));
     }
 
+    /**
+     * Ile kart trybu (FLASHCARD albo TEST) wróci na powtórkę do końca jutra, razem z tymi, które czekają już teraz.
+     * Do podsumowania sesji ("Jutro wróci N powtórek").
+     */
+    @GetMapping("/due-tomorrow")
+    public DueCountResponse getDueByEndOfTomorrow(
+            @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode, Authentication authentication) {
+        return new DueCountResponse(queueService.countDueByEndOfTomorrow(mode, authentication));
+    }
+
+    /** Ocena fiszki. W odpowiedzi: czy to była pierwsza ocena tej fiszki (karta zaczęła się uczyć właśnie teraz). */
     @PostMapping
-    public ResponseEntity<Void> submitReview(
+    public ReviewResultResponse submitReview(
             @Valid @RequestBody SubmitReviewRequest request, Authentication authentication) {
-        reviewService.submitReview(request, authentication);
-        return ResponseEntity.ok().build();
+        return new ReviewResultResponse(reviewService.submitReview(request, authentication));
     }
 
     @PostMapping("/test-answer")

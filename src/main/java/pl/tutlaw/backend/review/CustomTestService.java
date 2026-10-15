@@ -27,9 +27,10 @@ import java.util.Set;
 
 /**
  * Własny test: użytkownik składa sesję z wybranych rodzajów i aktów prawnych, wybiera, które pytania mają w niej być
- * (wszystkie, nowe, błędy, zaległe), może zawęzić lata egzaminu i mówi, ile pytań chce. Serwis tylko LOSUJE numery
- * pytań; samą sesję otwiera się zwykłą kolejką ćwiczeń ({@link PracticeQueueService}), więc odpowiedzi idą normalną
- * drogą testu: z oceną pamięci, a pomyłki trafiają do „Moich błędów".
+ * (wszystkie, nowe, błędy, zaległe) i mówi, ile pytań chce (10, 20, 50, 100 albo 150). Serwis tylko LOSUJE numery
+ * pytań (zapisuje je jako sesję {@link CustomTestSessionService}); samą sesję otwiera się zwykłą kolejką ćwiczeń
+ * ({@link PracticeQueueService}), więc odpowiedzi idą normalną drogą testu: z oceną pamięci, a pomyłki trafiają do
+ * „Moich błędów".
  *
  * <p>W puli są wyłącznie pytania testowe dostępne dla użytkownika (pula płaska albo przeczytany rozdział),
  * niezawieszone i z wybranych pochodzeń (filtr pochodzenia w Testach). Własny test nie jest ograniczony dziennym
@@ -39,10 +40,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class CustomTestService {
 
-    /** Tyle samo co limit kolejki ćwiczeń, przez którą sesja jest potem otwierana. */
-    static final int MAX_QUESTIONS = PracticeQueueService.MAX_CARDS;
-    static final int MIN_YEAR = 1900;
-    static final int MAX_YEAR = 2100;
+    /** Liczby pytań do wyboru. Własnej liczby nie ma. */
+    public static final List<Integer> COUNT_CHOICES = List.of(10, 20, 50, 100, 150);
+    /** Największa możliwa sesja (musi mieścić się w limicie kolejki ćwiczeń, przez którą jest otwierana). */
+    static final int MAX_QUESTIONS = COUNT_CHOICES.get(COUNT_CHOICES.size() - 1);
     /** Numer, którego nie ma w bazie: zamiast pustej listy w {@code IN}. */
     private static final Long NO_SUCH_ID = -1L;
 
@@ -58,10 +59,9 @@ public class CustomTestService {
 
     /** Pytania dostępne w zakresie, z podziałem na rodzaje: do podglądu „Dostępnych: N" przy układaniu testu. */
     public CustomTestCountsResponse counts(
-            List<Long> categoryIds, List<Long> subjectIds, Integer yearFrom, Integer yearTo,
-            Authentication authentication) {
+            List<Long> categoryIds, List<Long> subjectIds, Authentication authentication) {
         Long userId = currentUserResolver.resolve(authentication).getId();
-        Pool pool = pool(userId, categoryIds, subjectIds, yearFrom, yearTo);
+        Pool pool = pool(userId, categoryIds, subjectIds);
         LocalDateTime now = LocalDateTime.now(clock);
         return new CustomTestCountsResponse(
                 pool.refs().size(),
@@ -82,7 +82,7 @@ public class CustomTestService {
             throw new IllegalArgumentException("Liczba pytań musi wynosić od 1 do " + MAX_QUESTIONS + ".");
         }
 
-        Pool pool = pool(userId, request.categoryIds(), request.subjectIds(), request.yearFrom(), request.yearTo());
+        Pool pool = pool(userId, request.categoryIds(), request.subjectIds());
         List<Long> candidates = new ArrayList<>(
                 candidates(kind, pool, userId, LocalDateTime.now(clock)));
         if (candidates.isEmpty()) {
@@ -90,6 +90,9 @@ public class CustomTestService {
         }
 
         int available = candidates.size();
+        if (!isAllowedCount(requested, available)) {
+            throw new IllegalArgumentException("Wybierz liczbę pytań: 10, 20, 50, 100 albo 150.");
+        }
         boolean mostUrgentFirst = kind == CustomTestKind.DUE || kind == CustomTestKind.MISTAKES;
         if (!mostUrgentFirst) {
             Collections.shuffle(candidates, random);
@@ -98,20 +101,19 @@ public class CustomTestService {
         if (mostUrgentFirst) {
             Collections.shuffle(chosen, random);
         }
-        return new CustomTestSelectionResponse(chosen, available, requested);
+        return new CustomTestSelectionResponse(chosen, available, requested, null);
     }
 
     // ---------------------------------------------------------------- pula
 
     /**
-     * Pytania zakresu po wszystkich filtrach (pochodzenie, lata, zawieszone) i harmonogram użytkownika.
+     * Pytania zakresu po wszystkich filtrach (pochodzenie, zawieszone) i harmonogram użytkownika.
      * {@code inScope} to liczba pytań zakresu przed filtrami: odróżnia „nie ma pytań" od „filtr wszystko wyciął".
      */
     private record Pool(List<CardRepository.TestRef> refs, int inScope, Map<Long, UserCardStateRepository.CardDue> schedule) {
     }
 
-    private Pool pool(Long userId, List<Long> categoryIds, List<Long> subjectIds, Integer yearFrom, Integer yearTo) {
-        validateYears(yearFrom, yearTo);
+    private Pool pool(Long userId, List<Long> categoryIds, List<Long> subjectIds) {
         List<Long> categories = ids(categoryIds);
         List<Long> subjects = ids(subjectIds);
 
@@ -128,7 +130,6 @@ public class CustomTestService {
 
         List<CardRepository.TestRef> refs = inScope.stream()
                 .filter(ref -> CardScopes.originAllowed(ref.getOrigin(), origins))
-                .filter(ref -> inYears(ref.getExamYear(), yearFrom, yearTo))
                 .filter(ref -> !isSuspended(schedule.get(ref.getId())))
                 .toList();
         return new Pool(refs, inScope.size(), schedule);
@@ -176,26 +177,13 @@ public class CustomTestService {
         return schedule != null && Boolean.TRUE.equals(schedule.getSuspended());
     }
 
-    /** Bez zakresu lat przechodzi wszystko; z zakresem tylko pytania z rokiem w tym zakresie (autorskie nie mają roku). */
-    static boolean inYears(Integer examYear, Integer yearFrom, Integer yearTo) {
-        if (yearFrom == null && yearTo == null) {
-            return true;
-        }
-        if (examYear == null) {
-            return false;
-        }
-        return (yearFrom == null || examYear >= yearFrom) && (yearTo == null || examYear <= yearTo);
-    }
-
-    static void validateYears(Integer yearFrom, Integer yearTo) {
-        for (Integer year : new Integer[]{yearFrom, yearTo}) {
-            if (year != null && (year < MIN_YEAR || year > MAX_YEAR)) {
-                throw new IllegalArgumentException("Rok egzaminu musi mieścić się między " + MIN_YEAR + " a " + MAX_YEAR + ".");
-            }
-        }
-        if (yearFrom != null && yearTo != null && yearFrom > yearTo) {
-            throw new IllegalArgumentException("Początek zakresu lat nie może być późniejszy niż jego koniec.");
-        }
+    /**
+     * Wolno wybrać 10, 20, 50, 100 albo 150 pytań (gdy jest ich mniej, test dostaje wszystkie). Wyjątek: gdy w zakresie
+     * jest mniej niż 10 pytań, jedyny wybór to wszystkie z nich, czyli liczba równa liczbie dostępnych.
+     */
+    static boolean isAllowedCount(int requested, int available) {
+        return COUNT_CHOICES.contains(requested)
+                || (available < COUNT_CHOICES.get(0) && requested == available);
     }
 
     /** Numery bez pustych i powtórzeń, w kolejności podania. */
@@ -214,8 +202,7 @@ public class CustomTestService {
         if (pool.refs().isEmpty()) {
             return pool.inScope() == 0
                     ? "W wybranym zakresie nie ma teraz pytań testowych, które możesz rozwiązać."
-                    : "W wybranym zakresie nie ma pytań z wybranych pochodzeń i lat. "
-                            + "Zmień filtr pochodzenia w Testach albo zakres lat.";
+                    : "W wybranym zakresie nie ma pytań z wybranych pochodzeń. Zmień filtr pochodzenia w Testach.";
         }
         return switch (kind) {
             case NEW -> "Wszystkie pytania z wybranego zakresu były już rozwiązywane.";

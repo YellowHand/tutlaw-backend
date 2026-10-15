@@ -293,7 +293,7 @@ class LearningSettingsServiceTest {
         when(cardRepository.findReadableRefsForUser(5L)).thenReturn(List.of());
         when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
 
-        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.BAILIFF), authentication);
+        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.BAILIFF, null), authentication);
 
         ArgumentCaptor<UserSettings> captor = ArgumentCaptor.forClass(UserSettings.class);
         verify(repository).save(captor.capture());
@@ -318,7 +318,7 @@ class LearningSettingsServiceTest {
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
         when(examTerms.findById(QuestionOrigin.JUDGE_PROSECUTOR)).thenReturn(Optional.empty());
 
-        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.JUDGE_PROSECUTOR), authentication);
+        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.JUDGE_PROSECUTOR, null), authentication);
 
         assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
         assertThat(existing.getExamOrigin()).isEqualTo(QuestionOrigin.JUDGE_PROSECUTOR);
@@ -331,11 +331,84 @@ class LearningSettingsServiceTest {
     void chooseExam_rejectsAuthoredQuestions() {
         when(currentUserResolver.resolve(authentication)).thenReturn(user());
 
-        assertThatThrownBy(() -> service.chooseExam(new ChooseExamRequest(QuestionOrigin.AUTHORED), authentication))
+        assertThatThrownBy(() -> service.chooseExam(new ChooseExamRequest(QuestionOrigin.AUTHORED, null), authentication))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("autorskie");
-        assertThatThrownBy(() -> service.chooseExam(new ChooseExamRequest(null), authentication))
+        assertThatThrownBy(() -> service.chooseExam(new ChooseExamRequest(null, null), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void chooseExam_marksTheStartChoiceAsMade() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.empty());
+        when(examTerms.findById(QuestionOrigin.NOTARY)).thenReturn(Optional.empty());
+
+        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.NOTARY, null), authentication);
+
+        assertThat(response.startChoiceMade()).isTrue();
+    }
+
+    @Test
+    void chooseExam_asAStudent_hasNoApplicationNoExamDateAndNoOriginFilter() {
+        UserSettings existing = new UserSettings(5L);
+        existing.setExamOrigin(QuestionOrigin.NOTARY);
+        existing.setTestOrigins("AUTHORED,NOTARY");
+        existing.setStartChoiceMade(true);
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
+
+        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(null, true), authentication);
+
+        assertThat(existing.getExamOrigin()).isNull();
+        assertThat(existing.getTestOrigins()).isNull();
+        assertThat(response.examOrigin()).isNull();
+        assertThat(response.examDate()).isNull();
+        assertThat(response.daysToExam()).isNull();
+        assertThat(response.plan()).isNull();
+        assertThat(response.startChoiceMade()).isTrue();
+    }
+
+    @Test
+    void chooseExam_asAStudent_ignoresAnApplicationSentAlong() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.empty());
+
+        service.chooseExam(new ChooseExamRequest(QuestionOrigin.BAILIFF, true), authentication);
+
+        ArgumentCaptor<UserSettings> captor = ArgumentCaptor.forClass(UserSettings.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getExamOrigin()).isNull();
+        assertThat(captor.getValue().isStartChoiceMade()).isTrue();
+    }
+
+    @Test
+    void chooseExam_studentCanChooseAnApplicationLater() {
+        UserSettings student = new UserSettings(5L);
+        student.setStartChoiceMade(true);
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.of(student));
+        when(examTerms.findById(QuestionOrigin.JUDGE_PROSECUTOR)).thenReturn(Optional.empty());
+
+        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.JUDGE_PROSECUTOR, null), authentication);
+
+        assertThat(response.examOrigin()).isEqualTo(QuestionOrigin.JUDGE_PROSECUTOR);
+        assertThat(OriginFilterService.parse(student.getTestOrigins()))
+                .isEqualTo(EnumSet.of(QuestionOrigin.JUDGE_PROSECUTOR, QuestionOrigin.AUTHORED));
+    }
+
+    @Test
+    void get_reportsTheStartChoiceOnlyOnceMade() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        when(repository.findById(5L)).thenReturn(Optional.empty());
+        assertThat(service.get(authentication).startChoiceMade()).isFalse();
+
+        UserSettings stored = new UserSettings(5L);
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        assertThat(service.get(authentication).startChoiceMade()).isFalse(); // wiersz jest, ale wyboru nie było
+
+        stored.setStartChoiceMade(true);
+        assertThat(service.get(authentication).startChoiceMade()).isTrue();
     }
 
     // ---------------------------------------------------------------- plan

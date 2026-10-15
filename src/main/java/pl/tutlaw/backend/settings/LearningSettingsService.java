@@ -72,19 +72,28 @@ public class LearningSettingsService {
     /**
      * Wybór aplikacji, do której użytkownik się przygotowuje. Od tej chwili jego egzaminem jest termin tej aplikacji, a
      * filtr pytań w Testach zostaje ustawiony na nią i na pytania autorskie (jednorazowo: później filtr zmienia się
-     * osobno i nie wpływa na wybrany egzamin).
+     * osobno i nie wpływa na wybrany egzamin). Student ({@code student = true}) wybiera "bez aplikacji": nie ma
+     * wtedy terminu egzaminu ani planu, a filtr pytań obejmuje wszystko. W obu przypadkach okno startowe jest zamknięte.
      */
     @Transactional
     public LearningSettingsResponse chooseExam(ChooseExamRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         QuestionOrigin origin = request.origin();
-        if (origin == null || !origin.isExamApplication()) {
+        boolean student = request.isStudent();
+        if (!student && (origin == null || !origin.isExamApplication())) {
             throw new IllegalArgumentException("Wybierz aplikację, do której się przygotowujesz (pytania autorskie nie mają egzaminu).");
         }
 
         UserSettings settings = repository.findById(user.getId()).orElseGet(() -> new UserSettings(user.getId()));
-        settings.setExamOrigin(origin);
-        settings.setTestOrigins(OriginFilterService.serialize(EnumSet.of(origin, QuestionOrigin.AUTHORED)));
+        if (student) {
+            // Student: bez aplikacji, terminu egzaminu i zawężenia pytań (wszystkie pochodzenia).
+            settings.setExamOrigin(null);
+            settings.setTestOrigins(null);
+        } else {
+            settings.setExamOrigin(origin);
+            settings.setTestOrigins(OriginFilterService.serialize(EnumSet.of(origin, QuestionOrigin.AUTHORED)));
+        }
+        settings.setStartChoiceMade(true);
         settings.setUpdatedAt(LocalDateTime.now(clock));
         repository.save(settings);
 
@@ -182,10 +191,11 @@ public class LearningSettingsService {
                         e.newTestQuestionsPerDay(), plan == null ? 0 : plan.requiredTestQuestionsPerDay())
                 : e.newTestQuestionsPerDay();
         Theme theme = stored == null ? Theme.DARK : stored.getTheme();
+        boolean startChoiceMade = stored != null && stored.isStartChoiceMade();
 
         return new LearningSettingsResponse(
                 e.newCardsPerDay(), newTestsInForce, e.newTestQuestionsAuto(), e.maxReviewsPerDay(), e.desiredRetention(),
-                e.examOrigin(), e.examDate(), e.shuffleOptions(), theme, e.daysToExam(), e.examPassed(),
+                e.examOrigin(), e.examDate(), e.shuffleOptions(), theme, startChoiceMade, e.daysToExam(), e.examPassed(),
                 e.effectiveRetention(), e.retentionBoosted(),
                 new LearningSettingsResponse.Defaults(
                         defaults.newCardsPerDay(), defaults.newTestQuestionsPerDay(),

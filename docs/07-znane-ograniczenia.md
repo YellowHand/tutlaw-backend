@@ -29,8 +29,9 @@ aplikacji pod publiczny adres, dopóki się ich nie załatwi**.
 | 6 | **Actuator** | `management.endpoint.health.show-details: always` i `/actuator/**` bez logowania. Spring Boot domyślnie wystawia tylko `/actuator/health`, ale ze szczegółami (stan bazy itp.) widocznymi dla każdego | Zmienić na `when-authorized` albo `never`, ograniczyć dostęp |
 | 7 | **Swagger UI i `/v3/api-docs`** | Otwarte bez logowania | Wyłączyć na produkcji (`springdoc.api-docs.enabled=false`, `springdoc.swagger-ui.enabled=false`) albo zabezpieczyć |
 
-Po stronie frontendu odłożone jest też m.in. trzymanie tokenu w `localStorage` (to świadoma decyzja na ten etap:
-token w `localStorage` jest narażony na kradzież przy ewentualnym ataku XSS).
+Po stronie frontendu odłożone jest też m.in. trzymanie tokenów w `localStorage` (to świadoma decyzja na ten etap:
+tokeny w `localStorage` są narażone na kradzież przy ewentualnym ataku XSS; docelowo token odświeżający powinien trafić do
+ciasteczka `HttpOnly; Secure; SameSite`, razem z konfiguracją CORS i wdrożeniem).
 
 ---
 
@@ -88,10 +89,11 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 - **Limity prób są w pamięci jednej instancji aplikacji.** Po restarcie liczniki się zerują, a przy kilku instancjach
   każda liczyłaby osobno (potrzebny byłby wspólny magazyn, np. Redis). Za serwerem pośredniczącym trzeba ustawić
   `FORWARD_HEADERS_STRATEGY=native`.
-- **Rola jest odczytywana z tokenu**, więc zmiana roli w bazie działa dopiero po ponownym zalogowaniu (token ważny 24
-  godziny).
-- **Token JWT jest ważny 24 godziny i nie ma mechanizmu odświeżania** (refresh token). Po wygaśnięciu trzeba się
-  zalogować ponownie.
+- **Rola jest odczytywana z tokenu dostępu**, więc zmiana roli w bazie działa dopiero po następnym odświeżeniu sesji
+  (token dostępu żyje 30 minut) albo ponownym zalogowaniu.
+- **Token dostępu nie da się cofnąć przed czasem.** Jest bezstanowy i ważny 30 minut; wylogowanie unieważnia tokeny
+  odświeżające, a wszystkie sesje kończy zmiana hasła (`tokens_valid_from`). Skradziony token dostępu działa więc do 30
+  minut.
 - **Kolejka maili jest w pamięci** (2 wątki, 200 miejsc). Gdy poczta stoi, nadmiar maili jest odrzucany z wpisem w logu,
   a maile nie są ponawiane po restarcie.
 

@@ -25,7 +25,7 @@ flowchart LR
 | Spring Web MVC | w Spring Boot | Kontrolery REST |
 | Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
 | PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1`–`V22`), uruchamiane przy starcie |
+| Flyway | w Spring Boot | Migracje bazy (`V1`–`V25`), uruchamiane przy starcie |
 | Spring Security | w Spring Boot | Ochrona endpointów, role |
 | jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
 | Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |
@@ -46,7 +46,7 @@ komplet klas.
 
 | Pakiet | Za co odpowiada |
 |--------|-----------------|
-| `auth` | Rejestracja, aktywacja, logowanie, reset hasła, JWT, maile, limity prób |
+| `auth` | Rejestracja, aktywacja, logowanie, reset hasła, JWT (token dostępu) i tokeny odświeżające (rotacja, wykrywanie kradzieży), maile, limity prób |
 | `user` | Encja użytkownika, rola, konto zalogowanego (eksport danych, zmiana hasła, usunięcie konta) |
 | `security` | Filtr JWT (sprawdza token przy każdym żądaniu) i reguła ważności sesji |
 | `category` | Kategorie (rodzaje, np. „Prawo karne i postępowanie karne”) |
@@ -57,13 +57,14 @@ komplet klas.
 | `progress` | Oznaczanie rozdziałów jako przeczytane |
 | `card` | Karty: pytania testowe ABC i fiszki; reguły treści, import zbiorczy |
 | `catalog` | Drzewo ekranu Testów: rodzaj → przedmiot → źródło, z licznikami pytań |
-| `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS), zawieszanie, błędy |
+| `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS), zawieszanie, błędy, własny test i jego zapis jako sesji („Moje testy”) |
 | `review.fsrs` | Sam algorytm FSRS-6 (wzory matematyczne) |
 | `flashcard` | Fiszki powiązane z pytaniami: odblokowywanie, „Dodaj do fiszek” |
 | `exam` | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie, ocena, historia podejść |
 | `report` | Zgłoszenia błędów w pytaniach |
-| `statistics` | Statystyki: przegląd, skuteczność, aktywność, rozbicie wg aplikacji i roku |
-| `settings` | Ustawienia nauki (limity dzienne, retencja, wybrana aplikacja egzaminacyjna), terminy egzaminów aplikacji (ustawia admin) i filtr pochodzenia |
+| `statistics` | Statystyki: przegląd, skuteczność, aktywność, rozbicie wg aplikacji i roku, „Podsumowanie nauki” |
+| `studytime` | Czas nauki: porcje sekund zgłaszane przez przeglądarkę i sumy dla każdego dnia |
+| `settings` | Ustawienia nauki (limity dzienne, retencja, wybrana aplikacja egzaminacyjna albo „student”), ustawienia interfejsu (ukrycie podpowiedzi skrótów i licznika czasu), terminy egzaminów aplikacji (ustawia admin) i filtr pochodzenia |
 | `common` | Elementy wspólne: stronicowanie, sortowanie po polsku, wyjątki, konfiguracja |
 | `common.config` | Konfiguracja Springa: bezpieczeństwo, CORS, hasła, zegar |
 | `common.exception` | Wyjątki i jedno miejsce zamieniające je na odpowiedzi HTTP |
@@ -195,7 +196,7 @@ jako kolejna powtórka). Szczegóły w [04](04-nauka-testy-fiszki-fsrs.md#ochron
 
 ## Testy
 
-W `src/test` jest **46 klas testowych** (ok. 477 testów) i 3 klasy pomocnicze (`testsupport`: zegar do sterowania
+W `src/test` jest **54 klasy testowe** (ok. 566 testów) i 3 klasy pomocnicze (`testsupport`: zegar do sterowania
 czasem, „fałszywe” repozytoria w pamięci, uproszczone karty). Większość to testy jednostkowe czystej logiki
 (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`…) oraz serwisów na repozytoriach w pamięci (np. `AuthFlowTest`
 przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez Dockera).

@@ -39,7 +39,7 @@ class AccountPasswordEndpointTest {
     @Test
     void returnsTheFreshTokenFromTheService() {
         when(authService.changePassword("jan@gmail.com", "stare-haslo", "nowe-haslo-99"))
-                .thenReturn(new AuthResponse("nowy-token"));
+                .thenReturn(new AuthResponse("nowy-token", "nowy-odswiezajacy"));
 
         AuthResponse response = controller.changePassword(request(), JAN, HTTP);
 
@@ -81,7 +81,7 @@ class AccountPasswordEndpointTest {
                 .thenThrow(new WrongPasswordException("Obecne hasło jest nieprawidłowe"))
                 .thenThrow(new WrongPasswordException("Obecne hasło jest nieprawidłowe"))
                 .thenThrow(new WrongPasswordException("Obecne hasło jest nieprawidłowe"))
-                .thenReturn(new AuthResponse("nowy-token"));
+                .thenReturn(new AuthResponse("nowy-token", "nowy-odswiezajacy"));
 
         for (int i = 0; i < 7; i++) {
             assertThatThrownBy(() -> controller.changePassword(request(), JAN, HTTP))

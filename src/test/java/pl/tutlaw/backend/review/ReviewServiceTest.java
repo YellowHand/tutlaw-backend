@@ -50,6 +50,7 @@ class ReviewServiceTest {
     @Mock private CurrentUserResolver currentUserResolver;
     @Mock private FlashcardService flashcardService;
     @Mock private LearningSettingsService settingsService;
+    @Mock private CustomTestSessionService customTestSessions;
     private final Authentication authentication = mock(Authentication.class);
 
     private ReviewService service;
@@ -60,7 +61,7 @@ class ReviewServiceTest {
     void setUp() {
         service = new ReviewService(stateRepository, reviewLogRepository, cardRepository, currentUserResolver,
                 flashcardService, new FsrsEngine(FsrsWeights.defaults(), 0.9), settingsService,
-                new IntervalFuzzer(new Random(3)), new LeechPolicy(8), clock);
+                new IntervalFuzzer(new Random(3)), new LeechPolicy(8), customTestSessions, clock);
         user = new User();
         user.setId(5L);
         card = new Card();
@@ -214,7 +215,7 @@ class ReviewServiceTest {
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false, null), authentication);
 
         assertThat(result.correct()).isFalse();
         assertThat(result.correctOption()).isEqualTo(CorrectOption.B);
@@ -232,7 +233,7 @@ class ReviewServiceTest {
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false, null), authentication);
 
         assertThat(result.correct()).isTrue();
         assertThat(state.getLapses()).isEqualTo(0);
@@ -249,7 +250,7 @@ class ReviewServiceTest {
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false, null), authentication);
 
         assertThat(result.correct()).isFalse();
         assertThat(result.lapses()).isEqualTo(8);
@@ -265,7 +266,7 @@ class ReviewServiceTest {
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false, null), authentication);
 
         assertThat(result.lapses()).isEqualTo(7);
         assertThat(result.leech()).isFalse();
@@ -279,7 +280,7 @@ class ReviewServiceTest {
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false, null), authentication);
 
         assertThat(result.correct()).isTrue();
         assertThat(result.lapses()).isEqualTo(9);
@@ -294,7 +295,7 @@ class ReviewServiceTest {
         state.setSuspendedAt(NOW.minusDays(1));
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
 
-        service.submitTestAnswer(new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+        service.submitTestAnswer(new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false, null), authentication);
 
         assertThat(state.getReps()).isEqualTo(5);
         assertThat(state.isSuspended()).isTrue();
@@ -309,7 +310,7 @@ class ReviewServiceTest {
         when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.empty());
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.B, null, null), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, null, null, null), authentication);
 
         assertThat(result.correct()).isTrue();
         assertThat(result.explanation()).isNull();
@@ -321,7 +322,7 @@ class ReviewServiceTest {
         card.setCorrectOption(null);
 
         assertThatThrownBy(() -> service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, null, null), authentication))
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, null, null, null), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(stateRepository, never()).save(any());
     }
@@ -356,7 +357,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.ADDED_BY_MISTAKE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false, null), authentication);
 
         assertThat(result.correct()).isFalse();
         assertThat(result.flashcardUnlocked()).isTrue();
@@ -372,7 +373,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.ADDED_BY_MISTAKE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false, null), authentication);
 
         assertThat(result.flashcardUnlocked()).isFalse();
         assertThat(result.flashcard()).isEqualTo(FlashcardStatus.ADDED_BY_MISTAKE);
@@ -387,7 +388,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.AVAILABLE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, true), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, true, null), authentication);
 
         assertThat(result.correct()).isFalse();
         assertThat(result.flashcardUnlocked()).isFalse();
@@ -403,7 +404,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.ADDED_BY_MISTAKE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, true), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, true, null), authentication);
 
         assertThat(result.flashcardUnlocked()).isFalse();
         assertThat(result.flashcard()).isEqualTo(FlashcardStatus.ADDED_BY_MISTAKE);
@@ -418,7 +419,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.AVAILABLE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false, null), authentication);
 
         assertThat(result.correct()).isTrue();
         assertThat(result.flashcardUnlocked()).isFalse();
@@ -434,7 +435,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.AVAILABLE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, true), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, true, null), authentication);
 
         assertThat(result.correct()).isTrue();
         assertThat(result.flashcard()).isEqualTo(FlashcardStatus.AVAILABLE);
@@ -449,7 +450,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, false)).thenReturn(FlashcardStatus.ADDED_MANUALLY);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.B, 4.0, false, null), authentication);
 
         assertThat(result.flashcard()).isEqualTo(FlashcardStatus.ADDED_MANUALLY);
     }
@@ -463,7 +464,7 @@ class ReviewServiceTest {
         when(flashcardService.statusOf(5L, 11L, true)).thenReturn(FlashcardStatus.UNAVAILABLE);
 
         TestAnswerResultResponse result = service.submitTestAnswer(
-                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false), authentication);
+                new SubmitTestAnswerRequest(11L, CorrectOption.A, 4.0, false, null), authentication);
 
         assertThat(result.flashcardUnlocked()).isFalse();
         assertThat(result.flashcard()).isEqualTo(FlashcardStatus.UNAVAILABLE);

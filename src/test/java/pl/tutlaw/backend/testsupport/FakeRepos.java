@@ -6,6 +6,8 @@ import pl.tutlaw.backend.auth.EmailVerificationToken;
 import pl.tutlaw.backend.auth.EmailVerificationTokenRepository;
 import pl.tutlaw.backend.auth.PasswordResetToken;
 import pl.tutlaw.backend.auth.PasswordResetTokenRepository;
+import pl.tutlaw.backend.auth.RefreshToken;
+import pl.tutlaw.backend.auth.RefreshTokenRepository;
 import pl.tutlaw.backend.user.User;
 import pl.tutlaw.backend.user.UserRepository;
 
@@ -13,6 +15,7 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -130,6 +133,53 @@ public final class FakeRepos {
                             .toList());
                 default:
                     throw new UnsupportedOperationException("PasswordResetTokenRepository." + method);
+            }
+        });
+    }
+
+    public static RefreshTokenRepository refreshTokens(List<RefreshToken> store) {
+        AtomicLong ids = new AtomicLong(1);
+        return proxy(RefreshTokenRepository.class, (method, args) -> {
+            switch (method) {
+                case "save": {
+                    RefreshToken token = (RefreshToken) args[0];
+                    if (token.getId() == null) {
+                        token.setId(ids.getAndIncrement());
+                    }
+                    if (!store.contains(token)) {
+                        store.add(token);
+                    }
+                    return token;
+                }
+                case "findByTokenHash":
+                    return store.stream().filter(t -> t.getTokenHash().equals(args[0])).findFirst();
+                case "revokeFamily": {
+                    int changed = 0;
+                    for (RefreshToken t : store) {
+                        if (t.getFamilyId().equals(args[0]) && t.getRevokedAt() == null) {
+                            t.setRevokedAt((LocalDateTime) args[1]);
+                            changed++;
+                        }
+                    }
+                    return changed;
+                }
+                case "revokeAllForUser": {
+                    int changed = 0;
+                    for (RefreshToken t : store) {
+                        if (t.getUser().getId().equals(args[0]) && t.getRevokedAt() == null) {
+                            t.setRevokedAt((LocalDateTime) args[1]);
+                            changed++;
+                        }
+                    }
+                    return changed;
+                }
+                case "deleteExpiredBefore": {
+                    int before = store.size();
+                    store.removeIf(t -> t.getUser().getId().equals(args[0]) && t.getExpiresAt().isBefore((LocalDateTime) args[1]));
+                    return before - store.size();
+                }
+                default:
+                    throw new UnsupportedOperationException("RefreshTokenRepository." + method);
             }
         });
     }

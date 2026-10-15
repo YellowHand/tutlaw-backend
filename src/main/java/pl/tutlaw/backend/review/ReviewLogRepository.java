@@ -15,6 +15,28 @@ import java.util.List;
 public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
 
     /**
+     * Numery pierwszych odpowiedzi użytkownika w danym trybie (stronicowane): długość listy to liczba odpowiedzi
+     * przycięta do rozmiaru strony. Do rozstrzygania "czy dał już 10 odpowiedzi" bez liczenia całej historii.
+     */
+    @Query("SELECT r.id FROM ReviewLog r WHERE r.user.id = :userId AND r.mode = :mode ORDER BY r.id")
+    List<Long> findIdsByMode(@Param("userId") Long userId, @Param("mode") ReviewMode mode, Pageable pageable);
+
+    long countByUserIdAndMode(Long userId, ReviewMode mode);
+
+    /**
+     * Średni czas odpowiedzi w sekundach w danym trybie. Pojedyncza odpowiedź liczy się najwyżej tyle, ile
+     * {@link AnswerTimes#CAP_SECONDS} (pytanie zostawione otwarte nie psuje średniej); wpisy bez pomiaru pomijamy.
+     * Null, gdy nie ma żadnego pomiaru.
+     */
+    @Query("""
+            SELECT AVG(CASE WHEN r.timeSpentSeconds > 120.0 THEN 120.0 ELSE r.timeSpentSeconds END)
+            FROM ReviewLog r
+            WHERE r.user.id = :userId AND r.mode = :mode
+            AND r.timeSpentSeconds IS NOT NULL AND r.timeSpentSeconds > 0
+            """)
+    Double averageAnswerSeconds(@Param("userId") Long userId, @Param("mode") ReviewMode mode);
+
+    /**
      * Ile kart użytkownik zobaczył po raz pierwszy w danym przedziale czasu (w danym trybie).
      * Pierwsza powtórka to wpis bez {@code elapsedDays}.
      */

@@ -26,7 +26,9 @@ spring:
 app:
   jwt:
     secret: ${APP_JWT_SECRET:lokalny-dev-sekret-min-32-znaki-zmien-koniecznie-na-produkcji}
-    access-token-expiration-ms: ${APP_JWT_EXPIRATION_MS:86400000}
+    # Token dostępu żyje krótko (30 min); użytkownika w aplikacji utrzymuje token odświeżający.
+    access-token-expiration-ms: ${APP_JWT_EXPIRATION_MS:1800000}
+    refresh-token-expiration-days: ${APP_JWT_REFRESH_DAYS:30}
   cors:
     allowed-origin: ${FRONTEND_URL:http://localhost:5173}
   # Adres frontendu w linkach z maili o zmianie hasła (ten sam FRONTEND_URL co CORS).

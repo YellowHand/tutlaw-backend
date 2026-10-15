@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pl.tutlaw.backend.auth.dto.*;
+import pl.tutlaw.backend.common.exception.UnauthorizedException;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -16,6 +17,7 @@ import pl.tutlaw.backend.auth.dto.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final RefreshTokenService refreshTokenService;
     private final AuthRateLimiter rateLimiter;
 
     /** Odpowiedź jest zawsze taka sama (200), czy konto już istniało, czy nie. */
@@ -52,6 +54,25 @@ public class AuthController {
         }
         rateLimiter.recordLoginSuccess(ip, request.privateEmail());
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Wymienia token odświeżający na nową parę tokenów. Nieznany, wygasły, unieważniony albo zużyty token to 401, a
+     * klient wraca wtedy do logowania. Endpoint jest publiczny, bo token dostępu zwykle już wygasł.
+     */
+    @PostMapping("/refresh")
+    public AuthResponse refresh(@Valid @RequestBody RefreshRequest request, HttpServletRequest http) {
+        rateLimiter.checkRefresh(http.getRemoteAddr());
+        return refreshTokenService.refresh(request.refreshToken())
+                .orElseThrow(() -> new UnauthorizedException("Sesja wygasła. Zaloguj się ponownie."));
+    }
+
+    /** Wylogowanie: unieważnia sesję tokenu odświeżającego. Zawsze 204, także dla nieznanego tokenu. */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request, HttpServletRequest http) {
+        rateLimiter.checkRefresh(http.getRemoteAddr());
+        refreshTokenService.revokeSession(request.refreshToken());
+        return ResponseEntity.noContent().build();
     }
 
     /** Odpowiedź jest zawsze taka sama (200), czy konto istnieje, czy nie. */

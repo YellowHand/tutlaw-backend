@@ -136,6 +136,36 @@ Testów: zawsze pokazuje wszystkie pochodzenia.
   `matureQuestions` to stabilność powyżej 21 dni, `dueQuestions` to pytania z minionym terminem (bez zawieszonych).
   `accuracyRate` i `accuracyLast30Days` są `null` bez odpowiedzi.
 
+## `GET /api/statistics/learning-summary`
+
+„Podsumowanie nauki” na ekranie Statystyk: luźne liczby o całej dotychczasowej nauce. Nie przyjmuje `mode`.
+
+```json
+{
+  "totalAnswers": 1234,
+  "testAnswers": 1000,
+  "flashcardReviews": 234,
+  "examsDone": 3,
+  "customTestsDone": 5,
+  "studySecondsToday": 1500,
+  "studySecondsLast7Days": 9000,
+  "studySecondsTotal": 100000,
+  "averageSecondsPerQuestion": 18.4,
+  "averageSecondsPerFlashcard": 9.2
+}
+```
+
+| Pole | Znaczenie |
+|------|-----------|
+| `totalAnswers`, `testAnswers`, `flashcardReviews` | Wszystkie odpowiedzi: w testach (także powtórki, błędy i własne testy) i oceny fiszek. Egzaminy próbne liczone są osobno |
+| `examsDone` | Ukończone egzaminy próbne |
+| `customTestsDone` | Ukończone własne testy („Moje testy”); nieukończone się nie liczą |
+| `studySecondsToday`, `studySecondsLast7Days`, `studySecondsTotal` | **Czas nauki**: czas spędzony na ekranach nauki przy widocznej karcie przeglądarki, razem z czytaniem wyjaśnień (dziś, dziś i sześć poprzednich dni, łącznie). Zgłasza go przeglądarka przez `POST /api/me/study-time` |
+| `averageSecondsPerQuestion`, `averageSecondsPerFlashcard` | Średni **czas odpowiedzi** na pytanie testowe i na fiszkę w sekundach (pojedyncza odpowiedź liczy się najwyżej 120 s); `null`, gdy nie ma pomiarów |
+
+Czas nauki i czas odpowiedzi to dwie osobne miary: pierwsza obejmuje cały pobyt na ekranie nauki, druga tylko czas do
+udzielenia odpowiedzi na jedno pytanie.
+
 ## `GET /api/statistics/activity`
 
 Liczba odpowiedzi na dzień. Parametry: `days` (domyślnie 30, od 1 do 365), `mode`.

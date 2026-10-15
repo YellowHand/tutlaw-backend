@@ -13,7 +13,9 @@ import java.time.LocalDate;
  *                           automatycznym jest wyliczony z planu do egzaminu (nie mniej niż domyślny, nie więcej niż sufit)
  * @param newTestQuestionsAuto {@code true}, gdy użytkownik nie ustawił własnego limitu i obowiązuje limit automatyczny
  * @param theme      wygląd aplikacji wybrany przez użytkownika (domyślnie ciemny)
- * @param examOrigin aplikacja wybrana przez użytkownika; {@code null}, gdy jeszcze nie wybrał
+ * @param examOrigin aplikacja wybrana przez użytkownika; {@code null}, gdy jeszcze nie wybrał albo jest studentem
+ * @param startChoiceMade {@code true}, gdy użytkownik zrobił wybór w oknie startowym (aplikacja albo "Jestem studentem");
+ *                   przy {@code false} aplikacja pokazuje okno startowe
  * @param examDate   termin egzaminu tej aplikacji (ustawia go administrator); tylko do odczytu, {@code null}, gdy
  *                   aplikacji nie wybrano albo termin nieogłoszony
  * @param examPassed termin egzaminu wybranej aplikacji jest już w przeszłości (ustawienia egzaminacyjne wtedy nie działają)
@@ -29,6 +31,7 @@ public record LearningSettingsResponse(
         LocalDate examDate,
         boolean shuffleOptions,
         Theme theme,
+        boolean startChoiceMade,
         Long daysToExam,
         boolean examPassed,
         double effectiveRetention,

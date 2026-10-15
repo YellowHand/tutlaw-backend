@@ -118,15 +118,11 @@ class CustomTestServiceTest {
     }
 
     private static CustomTestRequest request(CustomTestKind kind, int count) {
-        return new CustomTestRequest(null, null, kind, null, null, count);
-    }
-
-    private static CustomTestRequest request(Integer yearFrom, Integer yearTo, int count) {
-        return new CustomTestRequest(null, null, CustomTestKind.ALL, yearFrom, yearTo, count);
+        return new CustomTestRequest(null, null, kind, count);
     }
 
     private CustomTestCountsResponse counts() {
-        return service.counts(null, null, null, null, authentication);
+        return service.counts(null, null, authentication);
     }
 
     private static Set<Long> set(List<Long> ids) {
@@ -178,7 +174,7 @@ class CustomTestServiceTest {
                 ArgumentMatchers.<Collection<Long>>any())).thenReturn(refs(1, 4));
 
         CustomTestCountsResponse counts = service.counts(
-                java.util.Arrays.asList(2L, 2L, null), List.of(7L, 8L), null, null, authentication);
+                java.util.Arrays.asList(2L, 2L, null), List.of(7L, 8L), authentication);
 
         assertThat(counts.all()).isEqualTo(4);
         @SuppressWarnings("unchecked")
@@ -195,7 +191,7 @@ class CustomTestServiceTest {
         when(cardRepository.findReadableTestRefsInScope(eq(5L), ArgumentMatchers.<Collection<Long>>any(),
                 ArgumentMatchers.<Collection<Long>>any())).thenReturn(refs(1, 2));
 
-        service.counts(null, List.of(7L), null, null, authentication);
+        service.counts(null, List.of(7L), authentication);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<Long>> categories = ArgumentCaptor.forClass(Collection.class);
@@ -214,32 +210,6 @@ class CustomTestServiceTest {
         when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY, QuestionOrigin.AUTHORED));
 
         assertThat(counts().all()).isEqualTo(2);
-    }
-
-    @Test
-    void yearRange_keepsOnlyQuestionsWithAYearInsideIt() {
-        wholeMaterial(List.of(
-                ref(1, QuestionOrigin.NOTARY, 2019),
-                ref(2, QuestionOrigin.NOTARY, 2021),
-                ref(3, QuestionOrigin.NOTARY, 2024),
-                ref(4, QuestionOrigin.AUTHORED, null)));
-
-        assertThat(service.counts(null, null, 2020, 2024, authentication).all()).isEqualTo(2);
-        assertThat(service.counts(null, null, 2021, 2021, authentication).all()).isEqualTo(1);
-        assertThat(service.counts(null, null, 2022, null, authentication).all()).isEqualTo(1);
-        assertThat(service.counts(null, null, null, 2020, authentication).all()).isEqualTo(1);
-        // bez zakresu lat wchodzi wszystko, także pytanie autorskie bez roku
-        assertThat(counts().all()).isEqualTo(4);
-    }
-
-    @Test
-    void yearRange_isValidated() {
-        assertThatThrownBy(() -> service.counts(null, null, 2024, 2020, authentication))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.counts(null, null, 1800, null, authentication))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.counts(null, null, null, 3000, authentication))
-                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -288,7 +258,7 @@ class CustomTestServiceTest {
         schedule(overdue(1, 10));
 
         CustomTestSelectionResponse response = service.select(
-                new CustomTestRequest(null, null, null, null, null, 10), authentication);
+                new CustomTestRequest(null, null, null, 10), authentication);
 
         assertThat(response.cardIds()).hasSize(5);
     }
@@ -305,38 +275,72 @@ class CustomTestServiceTest {
 
     @Test
     void select_dueTakesTheMostForgottenFirst() {
-        wholeMaterial(refs(1, 5));
-        // wszystkie po terminie; im dawniej ostatnia powtórka (przy tej samej stabilności), tym mniejsza szansa przypomnienia
-        schedule(overdue(1, 3), overdue(2, 90), overdue(3, 30), overdue(4, 10), notYetDue(5));
+        wholeMaterial(refs(1, 15));
+        // 1-12 po terminie: im dawniej ostatnia powtórka (przy tej samej stabilności), tym mniejsza szansa przypomnienia;
+        // 13-15 jeszcze nie ich czas
+        List<UserCardStateRepository.CardDue> rows = new ArrayList<>();
+        for (long id = 1; id <= 12; id++) {
+            rows.add(overdue(id, (int) (id * 5))); // karta 12 najdawniej, karta 1 najświeżej
+        }
+        for (long id = 13; id <= 15; id++) {
+            rows.add(notYetDue(id));
+        }
+        schedule(rows.toArray(new UserCardStateRepository.CardDue[0]));
 
-        CustomTestSelectionResponse response = service.select(request(CustomTestKind.DUE, 2), authentication);
+        CustomTestSelectionResponse response = service.select(request(CustomTestKind.DUE, 10), authentication);
 
-        assertThat(set(response.cardIds())).containsExactlyInAnyOrder(2L, 3L);
-        assertThat(response.available()).isEqualTo(4); // 5 nie jest zaległe
+        assertThat(set(response.cardIds())).containsExactlyInAnyOrder(3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L);
+        assertThat(response.available()).isEqualTo(12); // 13-15 nie są zaległe
     }
 
     @Test
     void select_mistakesTakesTheFreshestFirstAndOnlyThoseInScope() {
-        wholeMaterial(refs(1, 5));
-        // od najświeższej pomyłki; 9 jest poza zakresem
-        when(mistakesService.recentMistakeCardIds(5L)).thenReturn(List.of(9L, 4L, 2L, 1L));
+        wholeMaterial(refs(1, 20));
+        // od najświeższej pomyłki; 99 jest poza zakresem
+        List<Long> mistakes = new ArrayList<>(List.of(99L));
+        for (long id = 20; id >= 1; id--) {
+            mistakes.add(id);
+        }
+        when(mistakesService.recentMistakeCardIds(5L)).thenReturn(mistakes);
 
-        CustomTestSelectionResponse response = service.select(request(CustomTestKind.MISTAKES, 2), authentication);
+        CustomTestSelectionResponse response = service.select(request(CustomTestKind.MISTAKES, 10), authentication);
 
-        assertThat(set(response.cardIds())).containsExactlyInAnyOrder(4L, 2L);
-        assertThat(response.available()).isEqualTo(3);
+        assertThat(set(response.cardIds())).containsExactlyInAnyOrder(11L, 12L, 13L, 14L, 15L, 16L, 17L, 18L, 19L, 20L);
+        assertThat(response.available()).isEqualTo(20);
     }
 
     @Test
-    void select_appliesYearRange() {
-        wholeMaterial(List.of(
-                ref(1, QuestionOrigin.NOTARY, 2018),
-                ref(2, QuestionOrigin.NOTARY, 2022),
-                ref(3, QuestionOrigin.AUTHORED, null)));
+    void select_acceptsOnlyTheOfferedCounts() {
+        wholeMaterial(refs(1, 200));
+        for (int count : new int[]{10, 20, 50, 100, 150}) {
+            assertThat(service.select(request(CustomTestKind.ALL, count), authentication).cardIds()).hasSize(count);
+        }
+        for (int count : new int[]{1, 5, 15, 30, 149}) {
+            assertThatThrownBy(() -> service.select(request(CustomTestKind.ALL, count), authentication))
+                    .as("liczba " + count)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("10, 20, 50, 100 albo 150");
+        }
+    }
 
-        CustomTestSelectionResponse response = service.select(request(2020, 2024, 10), authentication);
+    @Test
+    void select_inATinyScopeTheOnlyChoiceIsEverything() {
+        wholeMaterial(refs(1, 7));
 
-        assertThat(response.cardIds()).containsExactly(2L);
+        assertThat(set(service.select(request(CustomTestKind.ALL, 7), authentication).cardIds())).hasSize(7);
+        assertThatThrownBy(() -> service.select(request(CustomTestKind.ALL, 5), authentication))
+                .isInstanceOf(IllegalArgumentException.class);
+        // liczba z listy też jest dozwolona: test dostaje po prostu wszystkie pytania
+        assertThat(service.select(request(CustomTestKind.ALL, 10), authentication).cardIds()).hasSize(7);
+    }
+
+    @Test
+    void select_ofTenOrMoreQuestionsDoesNotAllowAnArbitraryNumber() {
+        wholeMaterial(refs(1, 35));
+
+        assertThatThrownBy(() -> service.select(request(CustomTestKind.ALL, 35), authentication))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(service.select(request(CustomTestKind.ALL, 20), authentication).cardIds()).hasSize(20);
     }
 
     // ---------------------------------------------------------------- błędy
@@ -377,22 +381,14 @@ class CustomTestServiceTest {
     void select_rejectsQuestionCountOutsideTheLimits() {
         assertThatThrownBy(() -> service.select(request(CustomTestKind.ALL, 0), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.select(request(CustomTestKind.ALL, 201), authentication))
+        assertThatThrownBy(() -> service.select(request(CustomTestKind.ALL, 151), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void maxQuestions_matchesThePracticeQueueLimit() {
+    void maxQuestions_fitsInThePracticeQueue() {
         // sesję otwiera kolejka ćwiczeń, więc losowanie nie może dać więcej, niż ona przyjmie
-        assertThat(CustomTestService.MAX_QUESTIONS).isEqualTo(PracticeQueueService.MAX_CARDS).isEqualTo(200);
-    }
-
-    @Test
-    void inYears_handlesOpenEnds() {
-        assertThat(CustomTestService.inYears(null, null, null)).isTrue();
-        assertThat(CustomTestService.inYears(null, 2020, null)).isFalse();
-        assertThat(CustomTestService.inYears(2020, 2020, 2020)).isTrue();
-        assertThat(CustomTestService.inYears(2019, 2020, null)).isFalse();
-        assertThat(CustomTestService.inYears(2025, null, 2024)).isFalse();
+        assertThat(CustomTestService.MAX_QUESTIONS).isEqualTo(150).isLessThanOrEqualTo(PracticeQueueService.MAX_CARDS);
+        assertThat(CustomTestService.COUNT_CHOICES).containsExactly(10, 20, 50, 100, 150);
     }
 }

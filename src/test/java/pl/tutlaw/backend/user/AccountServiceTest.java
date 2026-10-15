@@ -7,6 +7,11 @@ import pl.tutlaw.backend.common.exception.UnauthorizedException;
 import pl.tutlaw.backend.exam.ExamAttempt;
 import pl.tutlaw.backend.exam.ExamAttemptRepository;
 import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
+import pl.tutlaw.backend.review.CustomTestKind;
+import pl.tutlaw.backend.review.CustomTestSessionService;
+import pl.tutlaw.backend.review.dto.CustomTestSessionSummaryResponse;
+import pl.tutlaw.backend.studytime.StudyTimeDaily;
+import pl.tutlaw.backend.studytime.StudyTimeRepository;
 import pl.tutlaw.backend.progress.ChapterProgressRepository;
 import pl.tutlaw.backend.report.CardReportReason;
 import pl.tutlaw.backend.report.CardReportRepository;
@@ -150,6 +155,12 @@ class AccountServiceTest {
                 return List.of(attempt);
             });
 
+            CustomTestSessionService customTests = org.mockito.Mockito.mock(CustomTestSessionService.class);
+            org.mockito.Mockito.when(customTests.listAll(1L)).thenReturn(List.of(new CustomTestSessionSummaryResponse(
+                    7L, T.minusDays(2), T.minusDays(2).plusMinutes(20), true, "Prawo karne", CustomTestKind.NEW,
+                    List.of(2L), List.of(), java.util.EnumSet.allOf(QuestionOrigin.class),
+                    20, 20, 20, 15, 2, 300.0)));
+
             service = new AccountService(
                     new CurrentUserResolver(FakeRepos.users(users)),
                     FakeRepos.users(users),
@@ -169,8 +180,37 @@ class AccountServiceTest {
                             public LocalDateTime getAddedAt() { return T.minusHours(2); }
                         });
                     }),
+                    customTests,
+                    FakeRepos.proxy(StudyTimeRepository.class, (method, args) -> {
+                        assertThat(method).isEqualTo("findAllForUser");
+                        assertThat(args[0]).isEqualTo(1L);
+                        StudyTimeDaily day = new StudyTimeDaily();
+                        day.setUserId(1L);
+                        day.setStudyDay(java.time.LocalDate.of(2026, 10, 11));
+                        day.setSeconds(1800);
+                        return List.of(day);
+                    }),
                     new MutableClock(Instant.parse("2026-10-12T08:00:00Z"), ZoneId.of("Europe/Warsaw")));
         }
+    }
+
+    @Test
+    void exportContainsSavedCustomTestsAndDailyStudyTime() {
+        Fixture f = new Fixture();
+
+        AccountExportResponse export = f.service.export(f.jan);
+
+        assertThat(export.customTests()).hasSize(1);
+        AccountExportResponse.CustomTestItem test = export.customTests().get(0);
+        assertThat(test.scope()).isEqualTo("Prawo karne");
+        assertThat(test.kind()).isEqualTo("NEW");
+        assertThat(test.questionCount()).isEqualTo(20);
+        assertThat(test.correctCount()).isEqualTo(15);
+        assertThat(test.guessedCount()).isEqualTo(2);
+        assertThat(test.finishedAt()).isNotNull();
+        assertThat(export.studyTime()).hasSize(1);
+        assertThat(export.studyTime().get(0).day()).isEqualTo(java.time.LocalDate.of(2026, 10, 11));
+        assertThat(export.studyTime().get(0).seconds()).isEqualTo(1800);
     }
 
     @Test

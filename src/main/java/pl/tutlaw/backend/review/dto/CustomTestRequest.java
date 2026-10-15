@@ -10,13 +10,12 @@ import java.util.List;
 
 /**
  * Własny test: co ma w nim być. Zakres to suma wskazanych rodzajów ({@code categoryIds}) i aktów prawnych albo
- * przedmiotów ({@code subjectIds}); bez żadnego z nich test obejmuje cały dostępny materiał. Zakres lat egzaminu
- * jest opcjonalny: gdy podany, pytania bez roku (autorskie) nie wchodzą do testu.
+ * przedmiotów ({@code subjectIds}); bez żadnego z nich test obejmuje cały dostępny materiał.
  *
  * @param kind          które pytania (domyślnie wszystkie)
- * @param yearFrom      najwcześniejszy rok egzaminu (włącznie) albo null
- * @param yearTo        najpóźniejszy rok egzaminu (włącznie) albo null
- * @param questionCount ile pytań wylosować (1-200); gdy jest ich mniej, test dostaje wszystkie
+ * @param questionCount ile pytań wylosować: 10, 20, 50, 100 albo 150. Gdy w zakresie jest mniej niż 10 pytań, jedyny
+ *                      wybór to wszystkie z nich (liczba równa liczbie dostępnych). Gdy jest ich mniej niż wybrano,
+ *                      test dostaje wszystkie
  */
 public record CustomTestRequest(
         @Size(max = 200, message = "za dużo wybranych rodzajów")
@@ -24,11 +23,9 @@ public record CustomTestRequest(
         @Size(max = 200, message = "za dużo wybranych aktów prawnych")
         List<Long> subjectIds,
         CustomTestKind kind,
-        Integer yearFrom,
-        Integer yearTo,
         @NotNull(message = "liczba pytań jest wymagana")
-        @Min(value = 1, message = "liczba pytań musi wynosić od 1 do 200")
-        @Max(value = 200, message = "liczba pytań musi wynosić od 1 do 200")
+        @Min(value = 1, message = "liczba pytań musi wynosić od 1 do 150")
+        @Max(value = 150, message = "liczba pytań musi wynosić od 1 do 150")
         Integer questionCount
 ) {
 }

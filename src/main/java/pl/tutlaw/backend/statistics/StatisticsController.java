@@ -18,6 +18,7 @@ public class StatisticsController {
 
     private final StatisticsService statisticsService;
     private final OriginStatisticsService originStatisticsService;
+    private final LearningSummaryService learningSummaryService;
 
     /** Przegląd nauki. {@code mode}: FLASHCARD (tylko fiszki), TEST (tylko pytania testowe), bez trybu: cały materiał. */
     @GetMapping("/overview")
@@ -63,6 +64,12 @@ public class StatisticsController {
     @GetMapping("/origins")
     public OriginStatsResponse getOriginStats(Authentication authentication) {
         return originStatisticsService.getOriginStats(authentication);
+    }
+
+    /** "Podsumowanie nauki": liczba odpowiedzi, egzaminów i własnych testów, czas nauki i średni czas odpowiedzi. */
+    @GetMapping("/learning-summary")
+    public LearningSummaryResponse getLearningSummary(Authentication authentication) {
+        return learningSummaryService.get(authentication);
     }
 
     @GetMapping("/activity")

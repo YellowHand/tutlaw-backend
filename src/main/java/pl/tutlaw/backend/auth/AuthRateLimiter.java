@@ -32,6 +32,13 @@ public class AuthRateLimiter {
     static final int RESET_ATTEMPTS_PER_IP = 20;
     static final Duration RESET_ATTEMPTS_WINDOW = Duration.ofHours(1);
 
+    /**
+     * Odświeżanie i wylogowanie. Limit jest hojny, bo wiele osób siedzi za jednym adresem IP (sieć uczelni), a sam
+     * token jest nie do zgadnięcia: limit tylko ucina nadużycia.
+     */
+    static final int REFRESH_PER_IP = 300;
+    static final Duration REFRESH_WINDOW = Duration.ofMinutes(5);
+
     private static final int MAX_EMAIL_KEY_LENGTH = 254;
 
     private final SlidingWindowRateLimiter limiter;
@@ -64,6 +71,13 @@ public class AuthRateLimiter {
         String key = "register-ip|" + ip;
         if (!limiter.tryAcquire(key, REGISTER_PER_IP, REGISTER_WINDOW)) {
             throw tooMany(key, REGISTER_WINDOW);
+        }
+    }
+
+    public void checkRefresh(String ip) {
+        String key = "refresh-ip|" + ip;
+        if (!limiter.tryAcquire(key, REFRESH_PER_IP, REFRESH_WINDOW)) {
+            throw tooMany(key, REFRESH_WINDOW);
         }
     }
 

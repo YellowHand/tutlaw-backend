@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **64 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **73 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -14,7 +14,7 @@ endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 |-------|--------|
 | Adres | Lokalnie `http://localhost:8080`. Wszystkie endpointy aplikacji zaczynają się od `/api/` |
 | Format | Żądania i odpowiedzi to JSON (`Content-Type: application/json`), nazwy pól w `camelCase` |
-| Logowanie | Nagłówek `Authorization: Bearer <accessToken>` (token z `POST /api/auth/login`). Bez niego wszystko poza `/api/auth/**` daje **401** |
+| Logowanie | Nagłówek `Authorization: Bearer <accessToken>` (token dostępu z `POST /api/auth/login` albo `POST /api/auth/refresh`). Bez niego wszystko poza `/api/auth/**` daje **401** |
 | Role | Endpointy oznaczone **ADMIN** wymagają roli `ADMIN`; zwykły użytkownik dostaje **403** |
 | Wyliczenia (enum) | Wartości jako napisy, np. `"A"`, `"TEST"`, `"NOTARY"`. Nieznana wartość daje 400 „Nieprawidłowy format żądania” |
 | Daty | `LocalDate`: `"2026-10-12"`. `LocalDateTime` (czas lokalny bez strefy, zwykle czas polski): `"2026-10-12T08:15:30"`. W błędach i eksporcie danych `Instant`: `"2026-10-12T06:15:30.123Z"` |
@@ -44,7 +44,7 @@ Każdy błąd ma ten sam kształt:
 | Kod | Kiedy | Przykładowy komunikat |
 |-----|-------|------------------------|
 | **400** Bad Request | Błędne dane: walidacja pól, zły JSON, nieznana wartość enum, naruszona reguła (np. zbyt słabe hasło) | „Hasło: musi mieć od 8 do 72 znaków” |
-| **401** Unauthorized | Brak tokenu, zły lub wygasły token, konto usunięte, sesja unieważniona zmianą hasła | „Wymagane zalogowanie” |
+| **401** Unauthorized | Brak tokenu, zły lub wygasły token dostępu (30 minut), konto usunięte, sesja unieważniona zmianą hasła. Klient odpowiada na to wywołaniem `POST /api/auth/refresh` i ponawia żądanie | „Wymagane zalogowanie” |
 | **403** Forbidden | Brak uprawnień (endpoint tylko dla `ADMIN`) | — |
 | **404** Not Found | Nie ma takiego zasobu albo jest niedostępny dla użytkownika (np. karta z nieprzeczytanego rozdziału) | „Card not found” |
 | **405 / 415** | Zła metoda HTTP / zły typ treści (standardowe odpowiedzi Springa) | — |
@@ -65,7 +65,9 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 |--------|-------|--------|------|
 | POST | `/api/auth/register` | publiczny | Rejestracja konta |
 | GET | `/api/auth/verify?token=` | publiczny | Aktywacja konta linkiem z maila |
-| POST | `/api/auth/login` | publiczny | Logowanie, zwraca token JWT |
+| POST | `/api/auth/login` | publiczny | Logowanie, zwraca token dostępu (30 min) i token odświeżający (30 dni) |
+| POST | `/api/auth/refresh` | publiczny | Wymiana tokenu odświeżającego na nową parę tokenów (rotacja) |
+| POST | `/api/auth/logout` | publiczny | Wylogowanie: unieważnienie sesji tokenu odświeżającego |
 | POST | `/api/auth/resend-verification` | publiczny | Ponowne wysłanie linku aktywacyjnego |
 | POST | `/api/auth/forgot-password` | publiczny | Wysłanie linku do zmiany hasła |
 | POST | `/api/auth/reset-password` | publiczny | Ustawienie nowego hasła tokenem z maila |
@@ -76,7 +78,7 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 |--------|-------|--------|------|
 | GET | `/api/me` | zalogowany | Adres e-mail zalogowanego (do sprawdzenia sesji) |
 | GET | `/api/users/me/export` | zalogowany | Kopia wszystkich danych w JSON |
-| PUT | `/api/users/me/password` | zalogowany | Zmiana hasła, zwraca nowy token |
+| PUT | `/api/users/me/password` | zalogowany | Zmiana hasła, zwraca nową parę tokenów |
 | DELETE | `/api/users/me` | zalogowany | Usunięcie konta (wymaga hasła) |
 
 ### Struktura materiału — [03-tresci.md](03-tresci.md)
@@ -116,11 +118,14 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | GET | `/api/review/queue/new-cards-available` | zalogowany | Ile nowych kart czeka w zakresie |
 | GET | `/api/review/queue/backlog` | zalogowany | Zaległości w zakresie |
 | GET | `/api/review/due-count` | zalogowany | Ile kart czeka na powtórkę (licznik na pasku) |
+| GET | `/api/review/due-tomorrow` | zalogowany | Ile kart wróci na powtórkę do końca jutra (podsumowanie sesji) |
 | GET | `/api/review/practice-queue` | zalogowany | Sesja testowa z podanych pytań |
 | GET | `/api/review/mistakes-queue` | zalogowany | Sesja „Powtórz moje błędy” |
 | GET | `/api/review/mistakes-count` | zalogowany | Ile jest błędów do powtórzenia |
 | GET | `/api/review/custom-test/counts` | zalogowany | Własny test: ile pytań każdego rodzaju w wybranym zakresie |
-| POST | `/api/review/custom-test` | zalogowany | Własny test: losowanie pytań z wybranego zakresu |
+| POST | `/api/review/custom-test` | zalogowany | Własny test: losowanie pytań z wybranego zakresu i zapis testu (10, 20, 50, 100 albo 150 pytań) |
+| GET | `/api/custom-tests/sessions` | zalogowany | „Moje testy”: lista zapisanych własnych testów |
+| GET | `/api/custom-tests/sessions/{id}` | zalogowany | „Moje testy”: szczegóły testu z odpowiedziami |
 | POST | `/api/review` | zalogowany | Ocena fiszki (1–4) |
 | POST | `/api/review/test-answer` | zalogowany | Odpowiedź na pytanie testowe |
 
@@ -154,6 +159,7 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | GET | `/api/statistics/tests` | zalogowany | Statystyki Testów (30 dni) |
 | GET | `/api/statistics/origins` | zalogowany | Statystyki wg aplikacji i roku |
 | GET | `/api/statistics/activity` | zalogowany | Liczba odpowiedzi na dzień |
+| GET | `/api/statistics/learning-summary` | zalogowany | Podsumowanie nauki: odpowiedzi, egzaminy, własne testy, czas nauki, średni czas odpowiedzi |
 
 ### Ustawienia — [09-ustawienia.md](09-ustawienia.md)
 
@@ -163,8 +169,11 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | PUT | `/api/me/settings` | zalogowany | Zapis ustawień nauki |
 | GET | `/api/me/origin-filter` | zalogowany | Filtr pochodzenia pytań w Testach |
 | PUT | `/api/me/origin-filter` | zalogowany | Zapis filtra pochodzenia |
-| PUT | `/api/me/exam` | zalogowany | Wybór aplikacji, do której użytkownik się przygotowuje (ustawia też filtr pochodzenia) |
+| PUT | `/api/me/exam` | zalogowany | Wybór aplikacji, do której użytkownik się przygotowuje, albo „Jestem studentem” (ustawia też filtr pochodzenia) |
 | PUT | `/api/me/theme` | zalogowany | Wybór wyglądu aplikacji (ciemny / jasny) |
+| GET | `/api/me/interface` | zalogowany | Ustawienia interfejsu: ukrycie podpowiedzi skrótów i licznika czasu, liczba dotychczasowych odpowiedzi |
+| PUT | `/api/me/interface` | zalogowany | Zapis ustawień interfejsu |
+| POST | `/api/me/study-time` | zalogowany | Doliczenie porcji czasu nauki (1–300 s) do dzisiejszego dnia |
 | GET | `/api/exam-terms` | zalogowany | Terminy egzaminów wszystkich aplikacji |
 | PUT | `/api/exam-terms/{origin}` | ADMIN | Ustawienie albo usunięcie terminu egzaminu aplikacji |
 

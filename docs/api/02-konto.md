@@ -47,13 +47,19 @@ przenoszenia danych). Bez hasła i tokenów.
                       "correctCount": 41, "passThresholdPercent": 75, "passPoints": null, "passed": true, "timeLimitMinutes": 60,
                       "durationSeconds": 2710, "timedOut": false } ],
   "flashcardAdditions": [ { "questionId": 101, "question": "Treść…", "addedAt": "2026-10-03T09:00:00" } ],
+  "customTests": [ { "startedAt": "2026-10-10T18:30:00", "finishedAt": "2026-10-10T18:52:00", "scope": "Prawo karne i postępowanie karne",
+                     "kind": "NEW", "requestedCount": 20, "questionCount": 20, "answeredCount": 20, "correctCount": 15,
+                     "guessedCount": 2, "timeSeconds": 311.5 } ],
+  "studyTime": [ { "day": "2026-10-10", "seconds": 1820 } ],
   "learningSettings": { "newCardsPerDay": null, "newTestQuestionsPerDay": 30, "maxReviewsPerDay": null,
-                        "desiredRetention": 0.92, "examOrigin": "NOTARY", "theme": "LIGHT", "shuffleOptions": true, "testOrigins": "NOTARY,AUTHORED" }
+                        "desiredRetention": 0.92, "examOrigin": "NOTARY", "theme": "LIGHT", "shuffleOptions": true, "testOrigins": "NOTARY,AUTHORED",
+                        "startChoiceMade": true, "hintHiddenTest": false, "hintHiddenFlashcard": false, "questionTimerHidden": false }
 }
 ```
 
-`learningSettings` jest `null`, jeśli użytkownik nigdy nie zmieniał ustawień; `null` w polu liczbowym oznacza wartość
-domyślną.
+`customTests` to zapisane własne testy („Moje testy”) z konfiguracją i wynikiem; odpowiedzi na pojedyncze pytania są w
+`reviewLogs`. `studyTime` to czas nauki w sekundach, osobno dla każdego dnia. `learningSettings` jest `null`, jeśli
+użytkownik nigdy nie zmieniał ustawień; `null` w polu liczbowym oznacza wartość domyślną.
 
 ## `PUT /api/users/me/password` — zmiana hasła
 
@@ -71,11 +77,12 @@ domyślną.
 **Odpowiedź `200`**
 
 ```json
-{ "accessToken": "eyJhbGciOi...(nowy token)" }
+{ "accessToken": "eyJhbGciOi...(nowy token)", "refreshToken": "8d1f0c52-7e0b-4c0a-b6a1-3f2b9d4e7a10" }
 ```
 
-Wszystkie dotychczasowe sesje (także ta) przestają działać, więc frontend **musi zapisać nowy token**. Otwarte linki do
-resetu hasła są unieważniane, a na adres uczelniany idzie powiadomienie o zmianie.
+Wszystkie dotychczasowe sesje (także ta) przestają działać: tokeny dostępu przez znacznik czasu na koncie, a tokeny
+odświeżające przez unieważnienie. Frontend **musi zapisać nową parę tokenów**. Otwarte linki do resetu hasła są
+unieważniane, a na adres uczelniany idzie powiadomienie o zmianie.
 
 **Błędy:** `400` — „Obecne hasło jest nieprawidłowe”, „Nowe hasło musi być inne niż obecne”, problem z hasłem;
 `429` — limit jak przy logowaniu (błędne obecne hasło liczy się jako nieudana próba).
@@ -88,6 +95,6 @@ resetu hasła są unieważniane, a na adres uczelniany idzie powiadomienie o zmi
 { "password": "mojeHaslo123" }
 ```
 
-**Odpowiedź:** `204 No Content`. Konto i **cała** historia nauki są usuwane bezpowrotnie (kaskada w bazie).
+**Odpowiedź:** `204 No Content`. Konto i **cała** historia nauki (także zapisane własne testy, czas nauki i tokeny odświeżające) są usuwane bezpowrotnie (kaskada w bazie).
 
 **Błędy:** `400` — „Nieprawidłowe hasło” (konto zostaje nietknięte); `429` — limit jak przy logowaniu.

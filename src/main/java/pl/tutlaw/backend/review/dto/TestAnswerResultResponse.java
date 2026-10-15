@@ -24,6 +24,7 @@ public record TestAnswerResultResponse(
         int lapses,
         boolean leech,
         boolean flashcardUnlocked,
-        FlashcardStatus flashcard
+        FlashcardStatus flashcard,
+        boolean newQuestion
 ) {
 }

@@ -2,7 +2,7 @@
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
-Wszystkie endpointy tej grupy są **publiczne** (bez tokenu). Jak to działa w środku: rejestracja, aktywacja, logowanie,
+Wszystkie endpointy tej grupy są **publiczne** (bez tokenu dostępu). Jak to działa w środku: rejestracja, aktywacja, logowanie,
 tokeny i limity prób opisane są w [03. Bezpieczeństwo i konta](../03-bezpieczenstwo-i-konta.md).
 
 ## `POST /api/auth/register` — rejestracja
@@ -57,10 +57,15 @@ albo „Link aktywacyjny został już wykorzystany”.
 **Odpowiedź `200`**
 
 ```json
-{ "accessToken": "eyJhbGciOi...(długi podpisany token)" }
+{
+  "accessToken": "eyJhbGciOi...(długi podpisany token)",
+  "refreshToken": "3f9c1a7e-5b0d-4c6e-9a41-0d2c7e8b6f15"
+}
 ```
 
-Token należy wysyłać w nagłówku `Authorization: Bearer <accessToken>`. Ważny 24 godziny.
+Token dostępu należy wysyłać w nagłówku `Authorization: Bearer <accessToken>`. Jest ważny **30 minut**
+(`APP_JWT_EXPIRATION_MS`). Token odświeżający jest ważny **30 dni** (`APP_JWT_REFRESH_DAYS`) i służy tylko do
+`POST /api/auth/refresh`: dzięki niemu użytkownik zostaje zalogowany bez ponownego wpisywania hasła.
 
 **Błędy**
 
@@ -69,6 +74,43 @@ Token należy wysyłać w nagłówku `Authorization: Bearer <accessToken>`. Waż
 | 400 | Nieprawidłowy adres e-mail lub hasło | Zły adres albo hasło (ten sam komunikat dla obu przypadków) |
 | 409 | Konto nie zostało jeszcze aktywowane. Kliknij link z maila uczelnianego albo poproś o nowy. | Poprawne dane, ale konto nieaktywne |
 | 429 | Zbyt wiele prób. Spróbuj ponownie za ... | 30 prób / 5 min z IP albo 8 nieudanych / 15 min dla pary IP + adres |
+
+## `POST /api/auth/refresh` — odświeżenie sesji
+
+Wymienia token odświeżający na **nową parę** tokenów. Endpoint jest publiczny, bo token dostępu zwykle już wygasł.
+Frontend wywołuje go sam, gdy dostanie `401` na zwykłe żądanie, i ponawia to żądanie z nowym tokenem.
+
+**Ciało żądania**
+
+```json
+{ "refreshToken": "3f9c1a7e-5b0d-4c6e-9a41-0d2c7e8b6f15" }
+```
+
+**Odpowiedź `200`:** `{ "accessToken": "...", "refreshToken": "..." }`. Stary token odświeżający **przestaje działać**
+(rotacja): od teraz ważny jest zwrócony w odpowiedzi.
+
+**Błędy**
+
+| Kod | Komunikat | Kiedy |
+|-----|-----------|-------|
+| 400 | Walidacja | Brak pola `refreshToken` albo jest za długie |
+| 401 | Sesja wygasła. Zaloguj się ponownie. | Token nieznany, wygasły (po 30 dniach), unieważniony (wylogowanie, zmiana lub reset hasła), konto nieaktywne albo token **już zużyty** |
+| 429 | Zbyt wiele prób. Spróbuj ponownie za ... | Więcej niż 300 żądań / 5 min z jednego IP (wspólny limit z `logout`) |
+
+Ponowne użycie zużytego tokenu: w ciągu **10 sekund** od wymiany serwer wystawia kolejny token tej samej sesji (dwie
+karty przeglądarki odświeżające naraz albo odpowiedź, która zgubiła się w drodze). Później uznaje to za kradzież kopii
+tokenu, **unieważnia całą sesję** i zwraca `401`; użytkownik musi się zalogować ponownie.
+
+## `POST /api/auth/logout` — wylogowanie
+
+Unieważnia sesję (całą rodzinę tokenów odświeżających) wskazanego tokenu. Wylogowuje tylko to urządzenie.
+
+**Ciało żądania:** `{ "refreshToken": "..." }`
+
+**Odpowiedź:** zawsze `204 No Content`, także dla nieznanego lub wygasłego tokenu (nie da się w ten sposób sprawdzać, które
+tokeny istnieją). Token dostępu działa jeszcze do końca swoich 30 minut, bo jest bezstanowy; frontend usuwa go od razu.
+
+**Błędy:** `400` (brak pola), `429` (wspólny limit z `refresh`).
 
 ## `POST /api/auth/resend-verification` — ponowne wysłanie linku aktywacyjnego
 
@@ -102,8 +144,8 @@ Ciało i zasady jak wyżej (`{ "privateEmail": "..." }`). Link do ustawienia now
 | `token` | Wymagane, do 200 znaków. Token z linku w mailu |
 | `newPassword` | 8–72 znaków |
 
-**Odpowiedź:** `200 OK`, bez treści. Efekt: nowe hasło, **wylogowanie wszystkich urządzeń**, unieważnienie pozostałych
-linków resetu.
+**Odpowiedź:** `200 OK`, bez treści. Efekt: nowe hasło, **wylogowanie wszystkich urządzeń** (tokeny dostępu i odświeżające), unieważnienie
+pozostałych linków resetu.
 
 **Błędy:** `400` — „Link do zmiany hasła jest nieprawidłowy lub wygasł. Poproś o nowy.” albo problem z hasłem;
 `429` — więcej niż 20 prób na godzinę z jednego IP.

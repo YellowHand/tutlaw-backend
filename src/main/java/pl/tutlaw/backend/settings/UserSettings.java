@@ -52,6 +52,25 @@ public class UserSettings {
     @Column(name = "theme", nullable = false, length = 10)
     private Theme theme = Theme.DARK;
 
+    /**
+     * Czy użytkownik dokonał wyboru w oknie startowym: aplikacja ({@code examOrigin}) albo "Jestem studentem". Student
+     * nie ma aplikacji, więc samo {@code examOrigin == null} nie wystarcza do rozpoznania, że wybór został zrobiony.
+     */
+    @Column(name = "start_choice_made", nullable = false)
+    private boolean startChoiceMade = false;
+
+    /** Stałe ukrycie podpowiedzi o skrótach klawiszowych w testach (przycisk „×" przy podpowiedzi). */
+    @Column(name = "hint_hidden_test", nullable = false)
+    private boolean hintHiddenTest = false;
+
+    /** To samo dla fiszek. */
+    @Column(name = "hint_hidden_flashcard", nullable = false)
+    private boolean hintHiddenFlashcard = false;
+
+    /** Licznik czasu przy pytaniu jest ukryty (domyślnie widoczny). */
+    @Column(name = "question_timer_hidden", nullable = false)
+    private boolean questionTimerHidden = false;
+
     /** Czy w testach mieszać kolejność odpowiedzi A/B/C (domyślnie tak). */
     @Column(name = "shuffle_options", nullable = false)
     private boolean shuffleOptions = true;

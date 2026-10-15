@@ -1,8 +1,15 @@
 package pl.tutlaw.backend.settings.dto;
 
-import jakarta.validation.constraints.NotNull;
 import pl.tutlaw.backend.card.QuestionOrigin;
 
-/** Aplikacja, do której użytkownik się przygotowuje (jedna z pięciu, bez pytań autorskich). */
-public record ChooseExamRequest(@NotNull QuestionOrigin origin) {
+/**
+ * Wybór w oknie startowym i w Koncie: aplikacja, do której użytkownik się przygotowuje (jedna z pięciu, bez pytań
+ * autorskich), albo {@code student = true} ("Jestem studentem / jeszcze nie wybrałem"): bez aplikacji, terminu
+ * egzaminu i zawężenia pytań. Gdy {@code student} jest prawdą, {@code origin} jest pomijane.
+ */
+public record ChooseExamRequest(QuestionOrigin origin, Boolean student) {
+
+    public boolean isStudent() {
+        return Boolean.TRUE.equals(student);
+    }
 }

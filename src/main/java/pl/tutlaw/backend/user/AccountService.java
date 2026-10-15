@@ -9,7 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.exam.ExamAttemptRepository;
 import pl.tutlaw.backend.progress.ChapterProgressRepository;
 import pl.tutlaw.backend.report.CardReportRepository;
+import pl.tutlaw.backend.review.CustomTestSessionService;
 import pl.tutlaw.backend.review.ReviewLogRepository;
+import pl.tutlaw.backend.studytime.StudyTimeRepository;
 import pl.tutlaw.backend.review.UserCardStateRepository;
 import pl.tutlaw.backend.settings.UserSettingsRepository;
 import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
@@ -35,6 +37,8 @@ public class AccountService {
     private final UserSettingsRepository userSettingsRepository;
     private final ExamAttemptRepository examAttemptRepository;
     private final FlashcardAdditionRepository flashcardAdditionRepository;
+    private final CustomTestSessionService customTestSessions;
+    private final StudyTimeRepository studyTimeRepository;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -94,11 +98,23 @@ public class AccountService {
         AccountExportResponse.LearningSettings settings = userSettingsRepository.findById(user.getId())
                 .map(s -> new AccountExportResponse.LearningSettings(
                         s.getNewCardsPerDay(), s.getNewTestQuestionsPerDay(), s.getMaxReviewsPerDay(),
-                        s.getDesiredRetention(), s.getExamOrigin(), s.getTheme(), s.isShuffleOptions(), s.getTestOrigins()))
+                        s.getDesiredRetention(), s.getExamOrigin(), s.getTheme(), s.isShuffleOptions(), s.getTestOrigins(),
+                        s.isStartChoiceMade(), s.isHintHiddenTest(), s.isHintHiddenFlashcard(), s.isQuestionTimerHidden()))
                 .orElse(null);
 
+        List<AccountExportResponse.CustomTestItem> customTests = customTestSessions.listAll(user.getId()).stream()
+                .map(t -> new AccountExportResponse.CustomTestItem(
+                        t.startedAt(), t.finishedAt(), t.scopeLabel(), t.kind().name(), t.requestedCount(),
+                        t.questionCount(), t.answeredCount(), t.correctCount(), t.guessedCount(), t.timeSeconds()))
+                .toList();
+
+        List<AccountExportResponse.StudyTimeItem> studyTime = studyTimeRepository.findAllForUser(user.getId()).stream()
+                .map(d -> new AccountExportResponse.StudyTimeItem(d.getStudyDay(), d.getSeconds()))
+                .toList();
+
         return new AccountExportResponse(
-                Instant.now(clock), account, progress, states, reviews, reports, exams, additions, settings);
+                Instant.now(clock), account, progress, states, reviews, reports, exams, additions, customTests, studyTime,
+                settings);
     }
 
     /**

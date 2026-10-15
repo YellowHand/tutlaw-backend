@@ -368,19 +368,40 @@ Obie sesje (i „Własny test” poniżej) to zwykłe sesje testowe: odpowiedzi 
 
 Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera dowolne **rodzaje i akty
 prawne** (zakres to ich suma, bez powtórzeń), **które pytania** mają w niej być (wszystkie, nowe, z błędną ostatnią
-odpowiedzią, zaległe), opcjonalnie **lata egzaminu** i **liczbę pytań** (1–200). Podgląd „Dostępnych: N” dla każdego
-rodzaju daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
+odpowiedzią, zaległe) i **liczbę pytań**: **10, 20, 50, 100 albo 150** (własnej liczby ani wyboru lat egzaminu nie ma).
+Gdy w zakresie jest mniej niż 10 pytań, jedyny wybór to wszystkie z nich. Podgląd „Dostępnych: N” dla każdego rodzaju
+daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
 
-- **To nauka, nie egzamin.** Serwer tylko losuje numery pytań, a sesję otwiera się zwykłą kolejką ćwiczeń
+- **To nauka, nie egzamin.** Serwer losuje numery pytań, a sesję otwiera się zwykłą kolejką ćwiczeń
   (`/practice-queue`), więc odpowiedzi mają ocenę pamięci i terminy, a pomyłki trafiają do „Moich błędów”.
   Nie ma progu zaliczenia ani raportu „zdał / nie zdał”.
+- **Zapisany jako sesja („Moje testy”).** Losowanie od razu zapisuje test (`CustomTestSessionService`, tabele
+  `custom_test_sessions` i `custom_test_session_questions`): zakres, rodzaj pytań, filtr pochodzenia z tej chwili i
+  wylosowane pytania w kolejności sesji. Odpowiedzi wysyłane z numerem testu (`sessionId`) dopisują się do niego; po
+  odpowiedzi na ostatnie pytanie test jest ukończony, a porzucony w połowie zostaje na liście jako **nieukończony**.
+  Lista (`GET /api/custom-tests/sessions`, 50 ostatnich) i szczegóły z odpowiedziami (`/{id}`) służą ekranowi „Moje
+  testy”, z którego da się ułożyć test ponownie z tymi samymi ustawieniami. Powtórki, „Popraw błędy” i egzamin nie są
+  zapisywane jako własne testy. Własne testy liczą się osobno od egzaminów w „Podsumowaniu nauki”.
 - **Pula**: pytania testowe dostępne dla użytkownika (pula płaska albo przeczytany rozdział), nieukryte,
-  **niezawieszone** i z wybranych pochodzeń (filtr pochodzenia). Zakres lat odrzuca pytania bez roku (autorskie).
+  **niezawieszone** i z wybranych pochodzeń (filtr pochodzenia).
 - **Dobór przy ograniczonej liczbie**: `MISTAKES` bierze najświeższe błędy (jak „Moje błędy”, tylko w wybranym zakresie
   i bez limitu 50), `DUE` te o najniższej szansie przypomnienia (jak kolejka nauki), `ALL` i `NEW` losują. Kolejność w
   sesji jest zawsze losowa.
 - **Limity dzienne**: własny test ich nie stosuje (użytkownik sam mówi, ile chce), ale pierwsze odpowiedzi na nowe
   pytania liczą się potem do dziennego limitu nowych pytań, jak każde inne.
+
+## Czas nauki i czas odpowiedzi
+
+Aplikacja mierzy czas na dwa sposoby, które się nie mieszają:
+
+- **Czas odpowiedzi** (`timeSpentSeconds` przy odpowiedzi, `review_logs.time_spent_seconds`): ile trwało jedno pytanie
+  albo jedna fiszka, od pokazania do odpowiedzi, **tylko przy widocznej karcie przeglądarki**. Pojedyncza odpowiedź liczy
+  się najwyżej 120 s (`AnswerTimes`), żeby przerwa na kawę nie zawyżała średniej. Z niego jest „średnio na pytanie” i
+  „średnio na fiszkę” w „Podsumowaniu nauki”.
+- **Czas nauki** (`study_time_daily`): ile czasu użytkownik spędził na ekranach nauki (testy, powtórki, „Popraw błędy”,
+  własny test, fiszki, egzamin próbny), razem z czytaniem wyjaśnień. Mierzy go przeglądarka: liczy tylko przy widocznej
+  karcie i wstrzymuje się po 3 minutach bez ruchu, a porcje (1–300 s) wysyła co ok. 30 s przez `POST /api/me/study-time`.
+  Serwer dolicza je do dzisiejszego dnia. Sumy „dziś / 7 dni / łącznie” zwraca `GET /api/statistics/learning-summary`.
 
 ## Egzamin próbny
 

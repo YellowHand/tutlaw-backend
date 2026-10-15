@@ -1,4 +1,4 @@
-# API: ustawienia (`/api/me/settings`, `/api/me/exam`, `/api/me/theme`, `/api/me/origin-filter`, `/api/exam-terms`)
+# API: ustawienia (`/api/me/settings`, `/api/me/exam`, `/api/me/theme`, `/api/me/interface`, `/api/me/study-time`, `/api/me/origin-filter`, `/api/exam-terms`)
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
@@ -25,6 +25,7 @@ domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej term
   "examDate": "2027-03-15",
   "shuffleOptions": true,
   "theme": "DARK",
+  "startChoiceMade": true,
   "daysToExam": 154,
   "examPassed": false,
   "effectiveRetention": 0.9,
@@ -53,7 +54,8 @@ domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej term
 | `theme` | Wygląd aplikacji: `DARK` (domyślnie) albo `LIGHT`. Zmienia się przez `PUT /api/me/theme` |
 | `maxReviewsPerDay` | Dzienny limit zaległych powtórek (osobno dla fiszek i testów) |
 | `desiredRetention` | Docelowa szansa przypomnienia wybrana przez użytkownika |
-| `examOrigin` | Aplikacja wybrana przez użytkownika (`PUT /api/me/exam`); `null`, gdy jeszcze nie wybrał |
+| `examOrigin` | Aplikacja wybrana przez użytkownika (`PUT /api/me/exam`); `null`, gdy jeszcze nie wybrał albo jest studentem |
+| `startChoiceMade` | `true`, gdy użytkownik zrobił wybór w oknie startowym (aplikacja albo „Jestem studentem / jeszcze nie wybrałem”). Przy `false` aplikacja pokazuje okno startowe. Samo `examOrigin = null` nie wystarcza, bo student też go nie ma |
 | `examDate` | Termin egzaminu wybranej aplikacji (ustawia go administrator, tylko do odczytu); `null`, gdy aplikacji nie wybrano albo termin jest nieogłoszony. Także gdy już minął |
 | `shuffleOptions` | Czy mieszać kolejność odpowiedzi A/B/C w pytaniach (korzysta z tego frontend) |
 | `daysToExam` | Ile dni do egzaminu; `null`, gdy terminu nie ma albo egzamin już się odbył |
@@ -107,8 +109,18 @@ Ponowny wybór (inna aplikacja) znów ustawia filtr, nadpisując wcześniejszy.
 { "origin": "NOTARY" }
 ```
 
+albo, dla studenta („Jestem studentem / jeszcze nie wybrałem”):
+
+```json
+{ "student": true }
+```
+
+Student nie ma aplikacji: `examOrigin` zostaje `null`, nie ma terminu egzaminu ani planu dnia, a filtr pochodzenia
+obejmuje wszystko. Przy `student = true` pole `origin` jest pomijane. Obie odmiany zapisują `startChoiceMade = true`.
+Student może później wybrać aplikację tym samym endpointem, a aplikację zmienić z powrotem na studenta.
+
 **Odpowiedź `200`**: ten sam kształt co `GET /api/me/settings`, już po zapisie. **Błędy `400`:** „Wybierz aplikację, do
-której się przygotowujesz (pytania autorskie nie mają egzaminu).” (`AUTHORED` albo brak `origin`), „Nieprawidłowy
+której się przygotowujesz (pytania autorskie nie mają egzaminu).” (`AUTHORED` albo brak `origin` bez `student`), „Nieprawidłowy
 format żądania” (nieznany kod).
 
 ### `PUT /api/me/theme`
@@ -123,6 +135,49 @@ mignęła w złym kolorze przed odpowiedzią serwera; wygląd z konta ma pierwsz
 
 **Odpowiedź `200`**: ten sam kształt co `GET /api/me/settings`, już po zapisie. **Błędy `400`:** „Nieprawidłowy format
 żądania” (brak `theme` albo nieznana wartość; dozwolone `DARK`, `LIGHT`).
+
+### `GET /api/me/interface`, `PUT /api/me/interface`
+
+Ustawienia interfejsu zapisane **na koncie**, żeby były takie same na każdym urządzeniu: stałe ukrycie podpowiedzi o
+skrótach klawiszowych (osobno w testach i w fiszkach) oraz ukrycie licznika czasu przy pytaniu. Nie ma ich w ustawieniach
+Konta; przełącza się je małym „×” przy podpowiedzi i kliknięciem w licznik.
+
+```json
+{
+  "testHintHidden": false,
+  "flashcardHintHidden": true,
+  "questionTimerHidden": false,
+  "testAnswers": 10,
+  "flashcardReviews": 4
+}
+```
+
+| Pole | Znaczenie |
+|------|-----------|
+| `testHintHidden`, `flashcardHintHidden` | Podpowiedź skrótów jest stale ukryta w danym trybie |
+| `questionTimerHidden` | Licznik czasu przy pytaniu jest ukryty (domyślnie widoczny) |
+| `testAnswers`, `flashcardReviews` | Ile odpowiedzi w testach i ocen fiszek użytkownik już dał, liczone **najwyżej do 10** (z dziennika odpowiedzi). Frontend chowa podpowiedź po 10 odpowiedziach w danym trybie, także na nowym urządzeniu; przy `testAnswers = 0` pokazuje jednorazową podpowiedź o „Nie jestem pewien” |
+
+`PUT` przyjmuje `testHintHidden`, `flashcardHintHidden` i `questionTimerHidden`; pole pominięte (albo `null`) zostaje bez
+zmian. Odpowiedź ma ten sam kształt co `GET`.
+
+### `POST /api/me/study-time`
+
+Doliczanie **czasu nauki** do dzisiejszego dnia (czas serwera). Przeglądarka liczy go sama, tylko na ekranach nauki
+(testy, powtórki, błędy, własny test, fiszki, egzamin), tylko gdy karta jest widoczna, i wstrzymuje liczenie po 3 minutach
+bez ruchu; porcje wysyła co około 30 sekund (przy zamykaniu karty przez `fetch` z `keepalive`).
+
+```json
+{ "seconds": 30 }
+```
+
+| Pole | Reguła |
+|------|--------|
+| `seconds` | Liczba całkowita **1–300**: tyle sekund dolicza się do dzisiejszego dnia |
+
+**Odpowiedź:** `204 No Content`. **Błędy:** `400` („liczba sekund musi wynosić od 1 do 300”). Suma z jednego dnia nie
+przekracza 24 godzin. To inna miara niż czas odpowiedzi na pytanie (`timeSpentSeconds` przy odpowiedzi); obie widać w
+[Podsumowaniu nauki](08-statystyki.md#get-apistatisticslearning-summary).
 
 ## Terminy egzaminów
 
