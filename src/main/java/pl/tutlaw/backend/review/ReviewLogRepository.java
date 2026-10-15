@@ -29,7 +29,7 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
      * Null, gdy nie ma żadnego pomiaru.
      */
     @Query("""
-            SELECT AVG(CASE WHEN r.timeSpentSeconds > 120.0 THEN 120.0 ELSE r.timeSpentSeconds END)
+            SELECT AVG(CASE WHEN r.timeSpentSeconds > 120.0D THEN 120.0D ELSE r.timeSpentSeconds END)
             FROM ReviewLog r
             WHERE r.user.id = :userId AND r.mode = :mode
             AND r.timeSpentSeconds IS NOT NULL AND r.timeSpentSeconds > 0

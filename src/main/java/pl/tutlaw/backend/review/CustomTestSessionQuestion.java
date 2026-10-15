@@ -33,9 +33,13 @@ public class CustomTestSessionQuestion {
     @Column(nullable = false)
     private int position;
 
-    /** Wybrana odpowiedź pod oryginalnym kluczem z bazy (odpowiedzi w teście są mieszane, więc to nie litera z ekranu). */
+    /**
+     * Wybrana odpowiedź pod oryginalnym kluczem z bazy (odpowiedzi w teście są mieszane, więc to nie litera z ekranu).
+     * Bez {@code length = 1}: Hibernate mapuje wtedy enum jako CHAR(1), a kolumna jest VARCHAR(1) (tak samo jak
+     * {@code Card.correctOption}), więc walidacja schematu przy starcie by się nie powiodła.
+     */
     @Enumerated(EnumType.STRING)
-    @Column(name = "selected_option", length = 1)
+    @Column(name = "selected_option")
     private CorrectOption selectedOption;
 
     @Column(name = "was_correct")

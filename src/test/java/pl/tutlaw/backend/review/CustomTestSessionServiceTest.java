@@ -23,6 +23,9 @@ import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -30,9 +33,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -427,5 +433,41 @@ class CustomTestSessionServiceTest {
         assertThat(OriginFilterService.parse(
                 CustomTestSessionService.serializeOrigins(EnumSet.of(QuestionOrigin.BAILIFF, QuestionOrigin.AUTHORED))))
                 .containsExactlyInAnyOrder(QuestionOrigin.BAILIFF, QuestionOrigin.AUTHORED);
+    }
+
+    // --- Strażnik mapowania encji ---
+    // Po Etapie 31 aplikacja nie wstała, bo pole enum zapisane jako tekst z length = 1 (selected_option) Hibernate mapuje
+    // na CHAR(1), a kolumna jest VARCHAR(1); przy ddl-auto: validate kończy się to błędem "wrong column type". Testy
+    // jednostkowe nie startują Hibernate, więc pilnujemy tego wzorca, czytając źródła encji.
+
+    private static final Pattern ENUM_STRING_WITH_LENGTH_ONE = Pattern.compile(
+            "@Enumerated\\(\\s*EnumType\\.STRING\\s*\\)\\s*@Column\\([^)]*\\blength\\s*=\\s*1\\b[^)]*\\)", Pattern.DOTALL);
+
+    @Test
+    void noEntityMapsAnEnumAsTextWithLengthOne() throws IOException {
+        Path sources = Path.of("src", "main", "java");
+        assumeTrue(Files.isDirectory(sources), "uruchomiono poza katalogiem projektu");
+
+        List<String> offenders = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(sources)) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                if (ENUM_STRING_WITH_LENGTH_ONE.matcher(Files.readString(file)).find()) {
+                    offenders.add(sources.relativize(file).toString());
+                }
+            }
+        }
+
+        assertThat(offenders)
+                .as("enum jako tekst z length = 1 jest mapowany na CHAR(1), a kolumny w bazie są VARCHAR(1)")
+                .isEmpty();
+    }
+
+    @Test
+    void theEnumLengthOneGuardRecognisesTheOffendingPattern() {
+        String bad = "@Enumerated(EnumType.STRING)\n@Column(name = \"selected_option\", length = 1)\nprivate CorrectOption x;";
+        String good = "@Enumerated(EnumType.STRING)\n@Column(name = \"selected_option\")\nprivate CorrectOption x;";
+
+        assertThat(ENUM_STRING_WITH_LENGTH_ONE.matcher(bad).find()).isTrue();
+        assertThat(ENUM_STRING_WITH_LENGTH_ONE.matcher(good).find()).isFalse();
     }
 }

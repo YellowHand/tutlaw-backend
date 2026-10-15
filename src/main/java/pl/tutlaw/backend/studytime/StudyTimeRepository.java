@@ -24,8 +24,8 @@ public interface StudyTimeRepository extends JpaRepository<StudyTimeDaily, Study
     int addSeconds(@Param("userId") Long userId, @Param("day") LocalDate day, @Param("seconds") int seconds);
 
     /** Suma sekund od podanego dnia włącznie. */
-    @Query("SELECT COALESCE(SUM(d.seconds), 0L) FROM StudyTimeDaily d WHERE d.userId = :userId AND d.studyDay >= :from")
-    long sumSince(@Param("userId") Long userId, @Param("from") LocalDate from);
+    @Query("SELECT COALESCE(SUM(d.seconds), 0L) FROM StudyTimeDaily d WHERE d.userId = :userId AND d.studyDay >= :sinceDay")
+    long sumSince(@Param("userId") Long userId, @Param("sinceDay") LocalDate sinceDay);
 
     @Query("SELECT COALESCE(SUM(d.seconds), 0L) FROM StudyTimeDaily d WHERE d.userId = :userId")
     long sumAll(@Param("userId") Long userId);

@@ -89,6 +89,7 @@ class LearningSummaryServiceTest {
         Method method = ReviewLogRepository.class.getMethod("averageAnswerSeconds", Long.class, ReviewMode.class);
         String query = method.getAnnotation(org.springframework.data.jpa.repository.Query.class).value();
 
-        assertThat(query).contains("> " + AnswerTimes.CAP_SECONDS + " THEN " + AnswerTimes.CAP_SECONDS);
+        // Literał z sufiksem D (double), żeby Hibernate nie porównywał Double z BigDecimal.
+        assertThat(query).contains("> " + AnswerTimes.CAP_SECONDS + "D THEN " + AnswerTimes.CAP_SECONDS + "D");
     }
 }
