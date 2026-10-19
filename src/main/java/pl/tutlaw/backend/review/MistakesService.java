@@ -4,12 +4,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.pool.Pool;
+import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.MistakesCountResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
-import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -29,8 +29,8 @@ import java.util.Set;
  * "Powtórz moje błędy": sesja testowa z pytań, w których OSTATNIA odpowiedź użytkownika w teście była błędna
  * (z ostatnich {@value #LOOKBACK_DAYS} dni). Pytanie, na które później odpowiedział dobrze, już się tu nie pojawia.
  * Odpowiedzi w tej sesji idą zwykłą drogą testu (z oceną pamięci i terminami), więc to dodatkowe ćwiczenie,
- * a nie osobny tor nauki. Zawieszone i niedostępne pytania odpadają, a także te spoza wybranych pochodzeń
- * (filtr pochodzenia w Testach).
+ * a nie osobny tor nauki. Zawieszone i niedostępne pytania odpadają, a także te spoza puli użytkownika
+ * (akty jego ścieżki i filtr źródeł w Testach).
  */
 @Service
 @RequiredArgsConstructor
@@ -39,15 +39,15 @@ public class MistakesService {
     static final int LOOKBACK_DAYS = 30;
     /** Ile pytań maksymalnie w jednej sesji. */
     static final int SESSION_SIZE = 50;
-    /** Ile ostatnich odpowiedzi w testach analizujemy i ile kart sprawdzamy pod kątem dostępności. */
+    /** Ile ostatnich odpowiedzi w testach analizujemy i ile pytań sprawdzamy pod kątem dostępności. */
     static final int MAX_ANSWERS_SCANNED = 20_000;
-    static final int MAX_MISTAKE_CARDS = 1_000;
+    static final int MAX_MISTAKE_QUESTIONS = 1_000;
 
     private final ReviewLogRepository reviewLogRepository;
-    private final CardRepository cardRepository;
+    private final QuestionRepository questionRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
-    private final OriginFilterService originFilter;
+    private final PoolService poolService;
 
     private final Random random = new Random();
 
@@ -59,55 +59,57 @@ public class MistakesService {
     /** Do {@value #SESSION_SIZE} najświeższych błędów, w losowej kolejności. */
     public List<TestQueueItemResponse> queue(Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<Card> session = new ArrayList<>(eligibleMistakes(user).stream().limit(SESSION_SIZE).toList());
+        List<Question> session = new ArrayList<>(eligibleMistakes(user).stream().limit(SESSION_SIZE).toList());
         Collections.shuffle(session, random);
-        return session.stream().map(ReviewQueueMapper::toTestResponse).toList();
+        return session.stream().map(ReviewQueueMapper::toTest).toList();
     }
 
     /**
-     * Numery kart z błędną ostatnią odpowiedzią (z ostatnich {@value #LOOKBACK_DAYS} dni), od najświeższej pomyłki.
-     * Bez sprawdzania dostępności, zawieszenia i filtra pochodzenia: korzysta z tego własny test, który robi to sam
-     * na swojej puli ({@link CustomTestService}).
+     * Numery pytań z błędną ostatnią odpowiedzią (z ostatnich {@value #LOOKBACK_DAYS} dni), od najświeższej pomyłki.
+     * Bez sprawdzania puli i zawieszenia: korzysta z tego własny test, który robi to sam na swojej puli
+     * ({@link CustomTestService}).
      */
-    List<Long> recentMistakeCardIds(Long userId) {
-        return latestMistakeCardIds(userId, LocalDateTime.now(clock).minusDays(LOOKBACK_DAYS));
+    List<Long> recentMistakeQuestionIds(Long userId) {
+        return latestMistakeQuestionIds(userId, LocalDateTime.now(clock).minusDays(LOOKBACK_DAYS));
     }
 
-    /** Karty z błędną ostatnią odpowiedzią, od najświeższej pomyłki, tylko te, które nadal można ćwiczyć. */
-    private List<Card> eligibleMistakes(User user) {
+    /** Pytania z błędną ostatnią odpowiedzią, od najświeższej pomyłki, tylko te, które nadal można ćwiczyć. */
+    private List<Question> eligibleMistakes(User user) {
         LocalDateTime since = LocalDateTime.now(clock).minusDays(LOOKBACK_DAYS);
-        List<Long> mistakeIds = latestMistakeCardIds(user.getId(), since);
+        List<Long> mistakeIds = latestMistakeQuestionIds(user.getId(), since);
         if (mistakeIds.isEmpty()) {
             return List.of();
         }
 
-        // Filtr pochodzenia z Testów obowiązuje także tutaj: błędy z wyłączonych pochodzeń nie wchodzą do sesji ani do licznika.
-        Set<QuestionOrigin> origins = originFilter.activeFor(user.getId());
-        Map<Long, Card> practicable = new HashMap<>();
-        for (Card card : cardRepository.findPracticeTestCards(mistakeIds, user.getId())) {
-            if (card.getOrigin() == null || origins.contains(card.getOrigin())) {
-                practicable.put(card.getId(), card);
+        // Pula z Testów obowiązuje także tutaj: błędy spoza aktów ścieżki i z wyłączonych źródeł nie wchodzą do sesji
+        // ani do licznika.
+        Pool pool = poolService.forUser(user.getId());
+        Set<Long> allowedSources = new HashSet<>(pool.sourceIds());
+        Map<Long, Question> practicable = new HashMap<>();
+        for (Question question : questionRepository.findPracticeQuestions(mistakeIds, user.getId(), pool.actIds())) {
+            if (allowedSources.contains(question.getSource().getId())) {
+                practicable.put(question.getId(), question);
             }
         }
-        // Kolejność z listy błędów (najświeższy pierwszy); karty, których nie zwróciło zapytanie, odpadają.
-        return mistakeIds.stream().map(practicable::get).filter(card -> card != null).toList();
+        // Kolejność z listy błędów (najświeższy pierwszy); pytania, których nie zwróciło zapytanie, odpadają.
+        return mistakeIds.stream().map(practicable::get).filter(question -> question != null).toList();
     }
 
     /**
-     * Karty, których najnowsza odpowiedź w teście z okresu była błędna, od najświeższej pomyłki.
-     * Odpowiedzi przychodzą od najnowszej, więc pierwsze spotkanie karty rozstrzyga o jej "ostatniej odpowiedzi".
+     * Pytania, których najnowsza odpowiedź w teście z okresu była błędna, od najświeższej pomyłki.
+     * Odpowiedzi przychodzą od najnowszej, więc pierwsze spotkanie pytania rozstrzyga o jego "ostatniej odpowiedzi".
      */
-    private List<Long> latestMistakeCardIds(Long userId, LocalDateTime since) {
+    private List<Long> latestMistakeQuestionIds(Long userId, LocalDateTime since) {
         Set<Long> seen = new HashSet<>();
         Set<Long> mistakes = new LinkedHashSet<>();
         for (ReviewLogRepository.TestAnswerRow row : reviewLogRepository.findTestAnswersSince(
                 userId, since, PageRequest.of(0, MAX_ANSWERS_SCANNED))) {
-            if (!seen.add(row.getCardId())) {
-                continue; // starsza odpowiedź na kartę, której ostatnią odpowiedź już znamy
+            if (!seen.add(row.getQuestionId())) {
+                continue; // starsza odpowiedź na pytanie, którego ostatnią odpowiedź już znamy
             }
             if (Boolean.FALSE.equals(row.getWasCorrect())) {
-                mistakes.add(row.getCardId());
-                if (mistakes.size() >= MAX_MISTAKE_CARDS) {
+                mistakes.add(row.getQuestionId());
+                if (mistakes.size() >= MAX_MISTAKE_QUESTIONS) {
                     break;
                 }
             }

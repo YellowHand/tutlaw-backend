@@ -1,7 +1,7 @@
 package pl.tutlaw.backend.exam.dto;
 
-import pl.tutlaw.backend.card.CorrectOption;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.question.CorrectOption;
+import pl.tutlaw.backend.source.SourceKind;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -29,8 +29,8 @@ public record ExamResultResponse(
      * @param selectedOption null = bez odpowiedzi
      */
     public record QuestionResult(
-            Long cardId,
-            String front,
+            Long questionId,
+            String body,
             String optionA,
             String optionB,
             String optionC,
@@ -41,8 +41,10 @@ public record ExamResultResponse(
             String legalBasis,
             LocalDate validAsOf,
             String sourceName,
-            QuestionOrigin origin,
-            Integer examYear
+            SourceKind sourceKind,
+            Integer examYear,
+            String actName,
+            String actShortName
     ) {
     }
 }

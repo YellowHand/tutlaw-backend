@@ -73,7 +73,7 @@ class AuthFlowTest {
                 FakeRepos.resetTokens(resetTokens),
                 encoder,
                 refreshService,
-                new EmailService(mailbox.sender(), "https://tutlaw.example/"),
+                new EmailService(mailbox.sender(), "https://gradus.example/"),
                 new AfterCommitMailer(Runnable::run),
                 clock);
 
@@ -361,7 +361,7 @@ class AuthFlowTest {
         assertThat(f.mailbox.sent).hasSize(1);
         SimpleMailMessage mail = f.mailbox.last();
         assertThat(mail.getTo()[0]).isEqualTo("jan@uni.pl");
-        assertThat(mail.getText()).contains("https://tutlaw.example/reset-password?token=");
+        assertThat(mail.getText()).contains("https://gradus.example/reset-password?token=");
         String rawToken = f.tokenFromLastMail();
         assertThat(f.resetTokens).hasSize(1);
         PasswordResetToken stored = f.resetTokens.get(0);
@@ -525,7 +525,7 @@ class AuthFlowTest {
         SimpleMailMessage mail = f.mailbox.last();
         assertThat(mail.getTo()[0]).isEqualTo("jan@uni.pl");
         assertThat(mail.getSubject()).contains("zostało zmienione");
-        assertThat(mail.getText()).contains("https://tutlaw.example/forgot-password");
+        assertThat(mail.getText()).contains("https://gradus.example/forgot-password");
         assertThat(mail.getText()).doesNotContain("token=").doesNotContain("nowehaslo99").doesNotContain("haslo1234");
     }
 

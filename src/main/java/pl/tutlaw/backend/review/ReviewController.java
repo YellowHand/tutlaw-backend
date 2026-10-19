@@ -21,17 +21,17 @@ public class ReviewController {
     private final CustomTestService customTestService;
     private final CustomTestSessionService customTestSessionService;
 
-    // categoryId, subjectId i sourceId są opcjonalne (od najwęższego: źródło, przedmiot, kategoria).
-    // Bez żadnego z nich kolejka obejmuje cały materiał użytkownika.
-    @GetMapping("/queue")
-    public List<ReviewQueueItemResponse> getQueue(
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) Long subjectId,
+    // fieldId, actId i sourceId są opcjonalne (od najwęższego: źródło, akt prawny, dziedzina).
+    // Bez żadnego z nich kolejka obejmuje całą pulę użytkownika.
+    @GetMapping("/flashcard-queue")
+    public List<FlashcardQueueItemResponse> getFlashcardQueue(
+            @RequestParam(required = false) Long fieldId,
+            @RequestParam(required = false) Long actId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
             @RequestParam(required = false) Integer extraDueReviews,
             Authentication authentication) {
-        return queueService.getQueue(categoryId, subjectId, sourceId, extraNewCards, extraDueReviews, authentication);
+        return queueService.getFlashcardQueue(fieldId, actId, sourceId, extraNewCards, extraDueReviews, authentication);
     }
 
     /**
@@ -40,54 +40,54 @@ public class ReviewController {
      */
     @GetMapping("/test-queue")
     public List<TestQueueItemResponse> getTestQueue(
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) Long fieldId,
+            @RequestParam(required = false) Long actId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(required = false) Integer extraNewCards,
             @RequestParam(required = false) Integer extraDueReviews,
             Authentication authentication) {
-        return queueService.getTestQueue(categoryId, subjectId, sourceId, extraNewCards, extraDueReviews, authentication);
+        return queueService.getTestQueue(fieldId, actId, sourceId, extraNewCards, extraDueReviews, authentication);
     }
 
-    @GetMapping("/queue/new-cards-available")
+    @GetMapping("/queue/new-available")
     public NewCardsAvailableResponse getAvailableNewCards(
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) Long fieldId,
+            @RequestParam(required = false) Long actId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode,
             Authentication authentication) {
         return new NewCardsAvailableResponse(
-                queueService.countAvailableNewCards(categoryId, subjectId, sourceId, mode, authentication));
+                queueService.countAvailableNewQuestions(fieldId, actId, sourceId, mode, authentication));
     }
 
     /** Zaległości w wybranym zakresie i trybie (FLASHCARD albo TEST): ile czeka i ile nie zmieści się dziś w sesji. */
     @GetMapping("/queue/backlog")
     public BacklogResponse getBacklog(
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) Long fieldId,
+            @RequestParam(required = false) Long actId,
             @RequestParam(required = false) Long sourceId,
             @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode,
             Authentication authentication) {
-        return queueService.getBacklog(categoryId, subjectId, sourceId, mode, authentication);
+        return queueService.getBacklog(fieldId, actId, sourceId, mode, authentication);
     }
 
     /** Sesja testowa z podanych pytań (np. "Przerób błędy teraz" po egzaminie próbnym), w podanej kolejności. */
     @GetMapping("/practice-queue")
     public List<TestQueueItemResponse> getPracticeQueue(
-            @RequestParam List<Long> cardIds, Authentication authentication) {
-        return practiceQueueService.queue(cardIds, authentication);
+            @RequestParam List<Long> questionIds, Authentication authentication) {
+        return practiceQueueService.queue(questionIds, authentication);
     }
 
     /**
      * Własny test, krok 1: ile pytań każdego rodzaju (wszystkie, nowe, błędy, zaległe) jest w wybranym zakresie.
-     * Zakres to suma rodzajów ({@code categoryIds}) i aktów prawnych ({@code subjectIds}); bez żadnego cały materiał.
+     * Zakres to suma dziedzin ({@code fieldIds}) i aktów prawnych ({@code actIds}); bez żadnego cała pula.
      */
     @GetMapping("/custom-test/counts")
     public CustomTestCountsResponse getCustomTestCounts(
-            @RequestParam(required = false) List<Long> categoryIds,
-            @RequestParam(required = false) List<Long> subjectIds,
+            @RequestParam(required = false) List<Long> fieldIds,
+            @RequestParam(required = false) List<Long> actIds,
             Authentication authentication) {
-        return customTestService.counts(categoryIds, subjectIds, authentication);
+        return customTestService.counts(fieldIds, actIds, authentication);
     }
 
     /**
@@ -111,7 +111,7 @@ public class ReviewController {
         return mistakesService.count(authentication);
     }
 
-    /** Ile kart czeka na powtórkę w trybie FLASHCARD (domyślnie: fiszki) albo TEST (pytania testowe). */
+    /** Ile pytań czeka na powtórkę w trybie FLASHCARD (domyślnie: fiszki) albo TEST (pytania testowe). */
     @GetMapping("/due-count")
     public DueCountResponse getDueCount(
             @RequestParam(defaultValue = "FLASHCARD") ReviewMode mode, Authentication authentication) {
@@ -119,7 +119,7 @@ public class ReviewController {
     }
 
     /**
-     * Ile kart trybu (FLASHCARD albo TEST) wróci na powtórkę do końca jutra, razem z tymi, które czekają już teraz.
+     * Ile pytań trybu (FLASHCARD albo TEST) wróci na powtórkę do końca jutra, razem z tymi, które czekają już teraz.
      * Do podsumowania sesji ("Jutro wróci N powtórek").
      */
     @GetMapping("/due-tomorrow")
@@ -128,7 +128,7 @@ public class ReviewController {
         return new DueCountResponse(queueService.countDueByEndOfTomorrow(mode, authentication));
     }
 
-    /** Ocena fiszki. W odpowiedzi: czy to była pierwsza ocena tej fiszki (karta zaczęła się uczyć właśnie teraz). */
+    /** Ocena fiszki. W odpowiedzi: czy to była pierwsza ocena tej fiszki (zaczęła się uczyć właśnie teraz). */
     @PostMapping
     public ReviewResultResponse submitReview(
             @Valid @RequestBody SubmitReviewRequest request, Authentication authentication) {

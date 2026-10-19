@@ -9,7 +9,7 @@ import pl.tutlaw.backend.user.User;
 import java.time.LocalDateTime;
 
 /**
- * Zapisany własny test: konfiguracja z chwili ułożenia (zakres, rodzaj pytań, liczba, filtr pochodzenia). Pytania i
+ * Zapisany własny test: konfiguracja z chwili ułożenia (zakres, rodzaj pytań, liczba, filtr źródeł). Pytania i
  * odpowiedzi leżą w {@link CustomTestSessionQuestion}. Test bez {@code finishedAt} jest nieukończony.
  */
 @Entity
@@ -41,17 +41,20 @@ public class CustomTestSession {
     @Column(name = "scope_label", nullable = false, length = 300)
     private String scopeLabel;
 
-    /** Numery wybranych rodzajów, oddzielone przecinkami (puste: nie wybrano rodzajów). */
-    @Column(name = "category_ids", nullable = false, length = 2000)
-    private String categoryIds = "";
+    /** Numery wybranych dziedzin, oddzielone przecinkami (puste: nie wybrano dziedzin). */
+    @Column(name = "field_ids", nullable = false, length = 2000)
+    private String fieldIds = "";
 
     /** Numery wybranych aktów prawnych, oddzielone przecinkami (puste: nie wybrano aktów). */
-    @Column(name = "subject_ids", nullable = false, length = 2000)
-    private String subjectIds = "";
+    @Column(name = "act_ids", nullable = false, length = 2000)
+    private String actIds = "";
 
-    /** Filtr pochodzenia w chwili układania testu: kody oddzielone przecinkami albo null (wszystkie). */
-    @Column(length = 200)
-    private String origins;
+    /**
+     * Filtr źródeł w chwili układania testu: kody grup (OWN_SHEETS, OTHER_SHEETS, AUTHORED) oddzielone przecinkami
+     * albo null (wszystkie). Zob. {@code SourceFilter#serialize}.
+     */
+    @Column(name = "source_groups", length = 100)
+    private String sourceGroups;
 
     /** O ile pytań prosił użytkownik. */
     @Column(name = "requested_count", nullable = false)

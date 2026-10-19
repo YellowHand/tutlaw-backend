@@ -3,42 +3,39 @@ package pl.tutlaw.backend.review;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.CorrectOption;
-import pl.tutlaw.backend.card.QuestionOrigin;
-import pl.tutlaw.backend.category.Category;
-import pl.tutlaw.backend.category.CategoryRepository;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
+import pl.tutlaw.backend.legal.LegalAct;
+import pl.tutlaw.backend.legal.LegalActRepository;
+import pl.tutlaw.backend.legal.LegalField;
+import pl.tutlaw.backend.legal.LegalFieldRepository;
+import pl.tutlaw.backend.pool.Pool;
+import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.question.CorrectOption;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.CustomTestRequest;
 import pl.tutlaw.backend.review.dto.CustomTestSelectionResponse;
 import pl.tutlaw.backend.review.dto.CustomTestSessionDetailResponse;
 import pl.tutlaw.backend.review.dto.CustomTestSessionSummaryResponse;
-import pl.tutlaw.backend.settings.OriginFilterService;
-import pl.tutlaw.backend.source.Source;
-import pl.tutlaw.backend.subject.Subject;
-import pl.tutlaw.backend.subject.SubjectRepository;
+import pl.tutlaw.backend.source.SourceKind;
 import pl.tutlaw.backend.testsupport.FakeRepos;
 import pl.tutlaw.backend.testsupport.MutableClock;
+import pl.tutlaw.backend.testsupport.Pools;
+import pl.tutlaw.backend.testsupport.QuestionRefs;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.EnumSet;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -47,16 +44,16 @@ class CustomTestSessionServiceTest {
 
     private final MutableClock clock = MutableClock.at("2026-10-12T10:00:00Z");
     private final List<CustomTestSession> sessions = new ArrayList<>();
-    private final List<CustomTestSessionQuestion> questions = new ArrayList<>();
-    private final Map<Long, Card> cards = new java.util.HashMap<>();
+    private final List<CustomTestSessionQuestion> rows = new ArrayList<>();
+    private final Map<Long, Question> questions = new HashMap<>();
     private final Authentication authentication = mock(Authentication.class);
     private final CustomTestService selector = mock(CustomTestService.class);
-    private final OriginFilterService originFilter = mock(OriginFilterService.class);
     private final CurrentUserResolver resolver = mock(CurrentUserResolver.class);
-    private final CategoryRepository categories = mock(CategoryRepository.class);
-    private final SubjectRepository subjects = mock(SubjectRepository.class);
-    private final CardRepository cardRepository = mock(CardRepository.class);
+    private final LegalFieldRepository fields = mock(LegalFieldRepository.class);
+    private final LegalActRepository acts = mock(LegalActRepository.class);
+    private final QuestionRepository questionRepository = mock(QuestionRepository.class);
 
+    private Pool pool = Pools.all();
     private CustomTestSessionService service;
     private User jan;
     private User ola;
@@ -66,19 +63,18 @@ class CustomTestSessionServiceTest {
         jan = user(5L);
         ola = user(6L);
         when(resolver.resolve(authentication)).thenReturn(jan);
-        when(originFilter.activeFor(5L)).thenReturn(EnumSet.allOf(QuestionOrigin.class));
         for (long id = 1; id <= 12; id++) {
-            cards.put(id, card(id));
+            questions.put(id, question(id));
         }
-        when(cardRepository.findAllById(org.mockito.ArgumentMatchers.<Iterable<Long>>any())).thenAnswer(inv -> {
-            List<Card> found = new ArrayList<>();
+        when(questionRepository.findAllById(org.mockito.ArgumentMatchers.<Iterable<Long>>any())).thenAnswer(inv -> {
+            List<Question> found = new ArrayList<>();
             for (Long id : (Iterable<Long>) inv.getArgument(0)) {
-                if (cards.containsKey(id)) found.add(cards.get(id));
+                if (questions.containsKey(id)) found.add(questions.get(id));
             }
             return found;
         });
-        service = new CustomTestSessionService(selector, sessionRepo(), questionRepo(), cardRepository,
-                categories, subjects, originFilter, resolver, clock);
+        service = new CustomTestSessionService(selector, sessionRepo(), questionRepo(), questionRepository,
+                fields, acts, Pools.holding(() -> pool), resolver, clock);
     }
 
     private static User user(long id) {
@@ -87,21 +83,17 @@ class CustomTestSessionServiceTest {
         return u;
     }
 
-    private static Card card(long id) {
-        Card c = new Card();
-        c.setId(id);
-        c.setFront("Pytanie " + id);
-        c.setOptionA("a" + id);
-        c.setOptionB("b" + id);
-        c.setOptionC("c" + id);
-        c.setCorrectOption(CorrectOption.B);
-        c.setExplanation("Bo " + id);
-        c.setOrigin(QuestionOrigin.NOTARY);
-        c.setExamYear(2023);
-        Source source = new Source();
-        source.setName("Źródło");
-        c.setSource(source);
-        return c;
+    private static Question question(long id) {
+        Question q = QuestionRefs.question(id, 1, 1, QuestionRefs.OWN_SHEET);
+        q.setBody("Pytanie " + id);
+        q.setOptionA("a" + id);
+        q.setOptionB("b" + id);
+        q.setOptionC("c" + id);
+        q.setCorrectOption(CorrectOption.B);
+        q.setExplanation("Bo " + id);
+        q.setLegalBasis("art. " + id + " k.c.");
+        q.getSource().setName("Egzamin notarialny 2021");
+        return q;
     }
 
     private CustomTestSessionRepository sessionRepo() {
@@ -139,7 +131,7 @@ class CustomTestSessionServiceTest {
                 case "save": {
                     CustomTestSessionQuestion q = (CustomTestSessionQuestion) args[0];
                     if (q.getId() == null) q.setId(ids.getAndIncrement());
-                    if (!questions.contains(q)) questions.add(q);
+                    if (!rows.contains(q)) rows.add(q);
                     return q;
                 }
                 case "saveAll": {
@@ -147,23 +139,23 @@ class CustomTestSessionServiceTest {
                     for (Object o : (Iterable<?>) args[0]) {
                         CustomTestSessionQuestion q = (CustomTestSessionQuestion) o;
                         if (q.getId() == null) q.setId(ids.getAndIncrement());
-                        questions.add(q);
+                        rows.add(q);
                         saved.add(q);
                     }
                     return saved;
                 }
                 case "findBySessionIds":
-                    return questions.stream()
+                    return rows.stream()
                             .filter(q -> ((java.util.Collection<?>) args[0]).contains(q.getSession().getId())).toList();
                 case "findDetailed":
-                    return questions.stream().filter(q -> q.getSession().getId().equals(args[0]))
+                    return rows.stream().filter(q -> q.getSession().getId().equals(args[0]))
                             .sorted((a, b) -> Integer.compare(a.getPosition(), b.getPosition())).toList();
-                case "findBySessionIdAndCardId":
-                    return questions.stream()
-                            .filter(q -> q.getSession().getId().equals(args[0]) && q.getCard().getId().equals(args[1]))
+                case "findBySessionIdAndQuestionId":
+                    return rows.stream()
+                            .filter(q -> q.getSession().getId().equals(args[0]) && q.getQuestion().getId().equals(args[1]))
                             .findFirst();
                 case "countBySessionIdAndAnsweredAtIsNull":
-                    return questions.stream()
+                    return rows.stream()
                             .filter(q -> q.getSession().getId().equals(args[0]) && !q.isAnswered()).count();
                 default:
                     throw new UnsupportedOperationException("CustomTestSessionQuestionRepository." + method);
@@ -171,35 +163,41 @@ class CustomTestSessionServiceTest {
         });
     }
 
-    private Long startTest(List<Long> cardIds, CustomTestRequest request) {
+    private Long startTest(List<Long> questionIds, CustomTestRequest request) {
         when(selector.select(request, authentication))
-                .thenReturn(new CustomTestSelectionResponse(cardIds, 40, request.questionCount(), null));
+                .thenReturn(new CustomTestSelectionResponse(questionIds, 40, request.questionCount(), null));
         return service.draw(request, authentication).sessionId();
     }
 
-    private Long startTest(List<Long> cardIds) {
-        return startTest(cardIds, new CustomTestRequest(null, null, CustomTestKind.ALL, 10));
+    private Long startTest(List<Long> questionIds) {
+        return startTest(questionIds, new CustomTestRequest(null, null, CustomTestKind.ALL, 10));
     }
 
-    private void answer(Long sessionId, long cardId, CorrectOption selected, boolean correct, boolean guessed, Double time) {
-        service.recordAnswer(5L, sessionId, cardId, selected, correct, guessed, time);
+    private void answer(Long sessionId, long questionId, CorrectOption selected, boolean correct, boolean guessed, Double time) {
+        service.recordAnswer(5L, sessionId, questionId, selected, correct, guessed, time);
+    }
+
+    private static LegalField field(long id, String name) {
+        LegalField f = QuestionRefs.field(id);
+        f.setName(name);
+        return f;
+    }
+
+    private static LegalAct act(long id, String name) {
+        LegalAct a = QuestionRefs.act(id, 1);
+        a.setName(name);
+        return a;
     }
 
     // ---------------------------------------------------------------- zapis przy ułożeniu testu
 
     @Test
     void drawSavesTheConfigurationAndTheQuestionsInOrder() {
-        Category karne = new Category();
-        karne.setId(2L);
-        karne.setName("Prawo karne");
-        Subject kk = new Subject();
-        kk.setId(9L);
-        kk.setName("Kodeks cywilny");
-        when(categories.findAllById(List.of(2L))).thenReturn(List.of(karne));
-        when(subjects.findAllById(List.of(9L))).thenReturn(List.of(kk));
-        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY, QuestionOrigin.AUTHORED));
+        when(fields.findAllById(List.of(2L))).thenReturn(List.of(field(2L, "Prawo karne i proces karny")));
+        when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks cywilny")));
+        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
 
-        CustomTestRequest request = new CustomTestRequest(List.of(2L), java.util.Arrays.asList(9L, 9L, null),
+        CustomTestRequest request = new CustomTestRequest(List.of(2L), Arrays.asList(9L, 9L, null),
                 CustomTestKind.MISTAKES, 20);
         Long id = startTest(List.of(7L, 3L, 11L), request);
 
@@ -207,28 +205,28 @@ class CustomTestSessionServiceTest {
         CustomTestSession saved = sessions.get(0);
         assertThat(saved.getUser()).isSameAs(jan);
         assertThat(saved.getKind()).isEqualTo(CustomTestKind.MISTAKES);
-        assertThat(saved.getScopeLabel()).isEqualTo("Prawo karne i Kodeks cywilny");
-        assertThat(saved.getCategoryIds()).isEqualTo("2");
-        assertThat(saved.getSubjectIds()).isEqualTo("9");
-        assertThat(saved.getOrigins()).isEqualTo("AUTHORED,NOTARY");
+        assertThat(saved.getScopeLabel()).isEqualTo("Prawo karne i proces karny i Kodeks cywilny");
+        assertThat(saved.getFieldIds()).isEqualTo("2");
+        assertThat(saved.getActIds()).isEqualTo("9");
+        assertThat(saved.getSourceGroups()).isEqualTo("OWN_SHEETS,AUTHORED");
         assertThat(saved.getRequestedCount()).isEqualTo(20);
         assertThat(saved.getAvailableCount()).isEqualTo(40);
         assertThat(saved.getStartedAt()).isNotNull();
         assertThat(saved.isFinished()).isFalse();
-        assertThat(questions).extracting(q -> q.getCard().getId()).containsExactly(7L, 3L, 11L);
-        assertThat(questions).extracting(CustomTestSessionQuestion::getPosition).containsExactly(1, 2, 3);
-        assertThat(questions).noneMatch(CustomTestSessionQuestion::isAnswered);
+        assertThat(rows).extracting(q -> q.getQuestion().getId()).containsExactly(7L, 3L, 11L);
+        assertThat(rows).extracting(CustomTestSessionQuestion::getPosition).containsExactly(1, 2, 3);
+        assertThat(rows).noneMatch(CustomTestSessionQuestion::isAnswered);
     }
 
     @Test
-    void aTestOverTheWholeMaterialAndAllOriginsIsStoredWithoutRestrictions() {
+    void aTestOverTheWholePoolAndAllSourcesIsStoredWithoutRestrictions() {
         startTest(List.of(1L, 2L));
 
         CustomTestSession saved = sessions.get(0);
-        assertThat(saved.getScopeLabel()).isEqualTo("Cały materiał");
-        assertThat(saved.getCategoryIds()).isEmpty();
-        assertThat(saved.getSubjectIds()).isEmpty();
-        assertThat(saved.getOrigins()).isNull();
+        assertThat(saved.getScopeLabel()).isEqualTo("Cała pula");
+        assertThat(saved.getFieldIds()).isEmpty();
+        assertThat(saved.getActIds()).isEmpty();
+        assertThat(saved.getSourceGroups()).isNull();
     }
 
     @Test
@@ -239,17 +237,25 @@ class CustomTestSessionServiceTest {
         assertThatThrownBy(() -> service.draw(request, authentication)).isInstanceOf(IllegalArgumentException.class);
 
         assertThat(sessions).isEmpty();
-        assertThat(questions).isEmpty();
+        assertThat(rows).isEmpty();
     }
 
     @Test
     void unknownSelectedItemsFallBackToAGeneralLabel() {
         CustomTestRequest request = new CustomTestRequest(List.of(77L), null, CustomTestKind.ALL, 10);
-        when(categories.findAllById(List.of(77L))).thenReturn(List.of());
+        when(fields.findAllById(List.of(77L))).thenReturn(List.of());
 
         startTest(List.of(1L), request);
 
         assertThat(sessions.get(0).getScopeLabel()).isEqualTo("Wybrane działy");
+    }
+
+    @Test
+    void questionsThatNoLongerExistAreSkippedAndPositionsStayContinuous() {
+        startTest(List.of(1L, 999L, 2L));
+
+        assertThat(rows).extracting(q -> q.getQuestion().getId()).containsExactly(1L, 2L);
+        assertThat(rows).extracting(CustomTestSessionQuestion::getPosition).containsExactly(1, 2);
     }
 
     // ---------------------------------------------------------------- odpowiedzi
@@ -267,11 +273,11 @@ class CustomTestSessionServiceTest {
         CustomTestSession saved = sessions.get(0);
         assertThat(saved.isFinished()).isTrue();
         assertThat(saved.getFinishedAt()).isAfter(saved.getStartedAt());
-        CustomTestSessionQuestion second = questions.get(1);
+        CustomTestSessionQuestion second = rows.get(1);
         assertThat(second.getSelectedOption()).isEqualTo(CorrectOption.A);
         assertThat(second.getWasCorrect()).isFalse();
         assertThat(second.getTimeSpentSeconds()).isEqualTo(12.0);
-        assertThat(questions.get(2).isWasGuessed()).isTrue();
+        assertThat(rows.get(2).isWasGuessed()).isTrue();
     }
 
     @Test
@@ -296,7 +302,7 @@ class CustomTestSessionServiceTest {
         // druga runda ("Powtórz teraz") albo ponowione żądanie
         answer(id, 1, CorrectOption.B, true, false, 3.0);
 
-        CustomTestSessionQuestion first = questions.get(0);
+        CustomTestSessionQuestion first = rows.get(0);
         assertThat(first.getSelectedOption()).isEqualTo(CorrectOption.A);
         assertThat(first.getWasCorrect()).isFalse();
         assertThat(first.getTimeSpentSeconds()).isEqualTo(5.0);
@@ -311,7 +317,7 @@ class CustomTestSessionServiceTest {
         answer(id, 8, CorrectOption.B, true, false, 1.0);         // pytanie spoza testu
         service.recordAnswer(6L, id, 1L, CorrectOption.B, true, false, 1.0); // test innego użytkownika
 
-        assertThat(questions).noneMatch(CustomTestSessionQuestion::isAnswered);
+        assertThat(rows).noneMatch(CustomTestSessionQuestion::isAnswered);
         assertThat(sessions.get(0).isFinished()).isFalse();
     }
 
@@ -336,7 +342,25 @@ class CustomTestSessionServiceTest {
         assertThat(summary.timeSeconds()).isEqualTo(10.0 + 30.0 + 120.0);
         assertThat(summary.kind()).isEqualTo(CustomTestKind.ALL);
         assertThat(summary.requestedCount()).isEqualTo(10);
-        assertThat(summary.origins()).containsExactlyInAnyOrderElementsOf(EnumSet.allOf(QuestionOrigin.class));
+        assertThat(summary.sourceGroups()).containsExactly(
+                SourceFilter.OWN_SHEETS, SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
+        assertThat(summary.fieldIds()).isEmpty();
+        assertThat(summary.actIds()).isEmpty();
+    }
+
+    @Test
+    void theListShowsTheSavedScopeSoTheTestCanBeBuiltAgain() {
+        when(fields.findAllById(List.of(2L, 4L))).thenReturn(List.of(field(2L, "Podatki i opłaty"), field(4L, "Prawo pracy")));
+        when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks pracy")));
+        pool = Pools.of(new SourceFilter(false, true, false), 1, 2);
+
+        startTest(List.of(1L), new CustomTestRequest(List.of(2L, 4L), List.of(9L), CustomTestKind.DUE, 10));
+
+        CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
+        assertThat(summary.fieldIds()).containsExactly(2L, 4L);
+        assertThat(summary.actIds()).containsExactly(9L);
+        assertThat(summary.sourceGroups()).containsExactly(SourceFilter.OTHER_SHEETS);
+        assertThat(summary.kind()).isEqualTo(CustomTestKind.DUE);
     }
 
     @Test
@@ -347,7 +371,7 @@ class CustomTestSessionServiceTest {
         CustomTestSession foreign = new CustomTestSession();
         foreign.setId(500L);
         foreign.setUser(ola);
-        foreign.setStartedAt(java.time.LocalDateTime.now(clock));
+        foreign.setStartedAt(LocalDateTime.now(clock));
         foreign.setKind(CustomTestKind.ALL);
         foreign.setScopeLabel("Cudzy");
         sessions.add(foreign);
@@ -374,8 +398,8 @@ class CustomTestSessionServiceTest {
         assertThat(detail.questions()).hasSize(2);
         CustomTestSessionDetailResponse.Question first = detail.questions().get(0);
         assertThat(first.position()).isEqualTo(1);
-        assertThat(first.cardId()).isEqualTo(4L);
-        assertThat(first.front()).isEqualTo("Pytanie 4");
+        assertThat(first.questionId()).isEqualTo(4L);
+        assertThat(first.body()).isEqualTo("Pytanie 4");
         assertThat(first.optionA()).isEqualTo("a4");
         assertThat(first.correctOption()).isEqualTo(CorrectOption.B);
         assertThat(first.selectedOption()).isEqualTo(CorrectOption.A);
@@ -383,8 +407,11 @@ class CustomTestSessionServiceTest {
         assertThat(first.guessed()).isTrue();
         assertThat(first.timeSeconds()).isEqualTo(9.5);
         assertThat(first.explanation()).isEqualTo("Bo 4");
-        assertThat(first.sourceName()).isEqualTo("Źródło");
-        assertThat(first.origin()).isEqualTo(QuestionOrigin.NOTARY);
+        assertThat(first.legalBasis()).isEqualTo("art. 4 k.c.");
+        assertThat(first.actName()).isEqualTo("Akt 1");
+        assertThat(first.sourceName()).isEqualTo("Egzamin notarialny 2021");
+        assertThat(first.sourceKind()).isEqualTo(SourceKind.EXAM_SHEET);
+        assertThat(first.examYear()).isEqualTo(2021);
         CustomTestSessionDetailResponse.Question second = detail.questions().get(1);
         assertThat(second.selectedOption()).isNull();
         assertThat(second.correct()).isNull();
@@ -426,48 +453,14 @@ class CustomTestSessionServiceTest {
     }
 
     @Test
-    void originsAreStoredAsNullWhenAllAreActive() {
-        assertThat(CustomTestSessionService.serializeOrigins(EnumSet.allOf(QuestionOrigin.class))).isNull();
-        assertThat(CustomTestSessionService.serializeOrigins(EnumSet.of(QuestionOrigin.NOTARY)))
-                .isEqualTo("NOTARY");
-        assertThat(OriginFilterService.parse(
-                CustomTestSessionService.serializeOrigins(EnumSet.of(QuestionOrigin.BAILIFF, QuestionOrigin.AUTHORED))))
-                .containsExactlyInAnyOrder(QuestionOrigin.BAILIFF, QuestionOrigin.AUTHORED);
-    }
-
-    // --- Strażnik mapowania encji ---
-    // Po Etapie 31 aplikacja nie wstała, bo pole enum zapisane jako tekst z length = 1 (selected_option) Hibernate mapuje
-    // na CHAR(1), a kolumna jest VARCHAR(1); przy ddl-auto: validate kończy się to błędem "wrong column type". Testy
-    // jednostkowe nie startują Hibernate, więc pilnujemy tego wzorca, czytając źródła encji.
-
-    private static final Pattern ENUM_STRING_WITH_LENGTH_ONE = Pattern.compile(
-            "@Enumerated\\(\\s*EnumType\\.STRING\\s*\\)\\s*@Column\\([^)]*\\blength\\s*=\\s*1\\b[^)]*\\)", Pattern.DOTALL);
-
-    @Test
-    void noEntityMapsAnEnumAsTextWithLengthOne() throws IOException {
-        Path sources = Path.of("src", "main", "java");
-        assumeTrue(Files.isDirectory(sources), "uruchomiono poza katalogiem projektu");
-
-        List<String> offenders = new ArrayList<>();
-        try (Stream<Path> files = Files.walk(sources)) {
-            for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
-                if (ENUM_STRING_WITH_LENGTH_ONE.matcher(Files.readString(file)).find()) {
-                    offenders.add(sources.relativize(file).toString());
-                }
-            }
-        }
-
-        assertThat(offenders)
-                .as("enum jako tekst z length = 1 jest mapowany na CHAR(1), a kolumny w bazie są VARCHAR(1)")
-                .isEmpty();
-    }
-
-    @Test
-    void theEnumLengthOneGuardRecognisesTheOffendingPattern() {
-        String bad = "@Enumerated(EnumType.STRING)\n@Column(name = \"selected_option\", length = 1)\nprivate CorrectOption x;";
-        String good = "@Enumerated(EnumType.STRING)\n@Column(name = \"selected_option\")\nprivate CorrectOption x;";
-
-        assertThat(ENUM_STRING_WITH_LENGTH_ONE.matcher(bad).find()).isTrue();
-        assertThat(ENUM_STRING_WITH_LENGTH_ONE.matcher(good).find()).isFalse();
+    void sourceGroupsAreStoredAsNullWhenAllAreActive_andReadBackInAFixedOrder() {
+        assertThat(SourceFilter.ALL.serialize()).isNull();
+        assertThat(CustomTestSessionService.sourceGroupsOf(null))
+                .containsExactly(SourceFilter.OWN_SHEETS, SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
+        assertThat(CustomTestSessionService.sourceGroupsOf(new SourceFilter(false, true, true).serialize()))
+                .containsExactly(SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
+        // uszkodzony zapis nie ukrywa materiału
+        assertThat(CustomTestSessionService.sourceGroupsOf("COS,INNEGO"))
+                .containsExactly(SourceFilter.OWN_SHEETS, SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
     }
 }

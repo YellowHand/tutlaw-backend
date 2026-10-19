@@ -13,23 +13,23 @@ class ReportRulesTest {
 
     @Test
     void wrongAnswerNeedsNoComment() {
-        assertThat(ReportRules.problem(CardReportReason.WRONG_ANSWER, null)).isNull();
-        assertThat(ReportRules.problem(CardReportReason.OUTDATED, "   ")).isNull();
-        assertThat(ReportRules.problem(CardReportReason.UNCLEAR, "")).isNull();
+        assertThat(ReportRules.problem(QuestionReportReason.WRONG_ANSWER, null)).isNull();
+        assertThat(ReportRules.problem(QuestionReportReason.OUTDATED, "   ")).isNull();
+        assertThat(ReportRules.problem(QuestionReportReason.UNCLEAR, "")).isNull();
     }
 
     @Test
     void otherRequiresADescription() {
-        assertThat(ReportRules.problem(CardReportReason.OTHER, null)).isNotNull();
-        assertThat(ReportRules.problem(CardReportReason.OTHER, "   ")).isNotNull();
-        assertThat(ReportRules.problem(CardReportReason.OTHER, "Brakuje przecinka")).isNull();
+        assertThat(ReportRules.problem(QuestionReportReason.OTHER, null)).isNotNull();
+        assertThat(ReportRules.problem(QuestionReportReason.OTHER, "   ")).isNotNull();
+        assertThat(ReportRules.problem(QuestionReportReason.OTHER, "Brakuje przecinka")).isNull();
     }
 
     @Test
     void commentIsLimitedTo1000Characters() {
-        assertThat(ReportRules.problem(CardReportReason.OTHER, "a".repeat(1000))).isNull();
-        assertThat(ReportRules.problem(CardReportReason.OTHER, "a".repeat(1001))).isNotNull();
-        assertThat(ReportRules.problem(CardReportReason.OTHER, "  " + "a".repeat(1000) + "  ")).isNull();
+        assertThat(ReportRules.problem(QuestionReportReason.OTHER, "a".repeat(1000))).isNull();
+        assertThat(ReportRules.problem(QuestionReportReason.OTHER, "a".repeat(1001))).isNotNull();
+        assertThat(ReportRules.problem(QuestionReportReason.OTHER, "  " + "a".repeat(1000) + "  ")).isNull();
     }
 
     @Test

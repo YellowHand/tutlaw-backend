@@ -17,53 +17,45 @@ import java.util.List;
 public class StatisticsController {
 
     private final StatisticsService statisticsService;
-    private final OriginStatisticsService originStatisticsService;
+    private final SourceStatisticsService sourceStatisticsService;
     private final LearningSummaryService learningSummaryService;
 
-    /** Przegląd nauki. {@code mode}: FLASHCARD (tylko fiszki), TEST (tylko pytania testowe), bez trybu: cały materiał. */
+    /** Przegląd nauki. {@code mode}: FLASHCARD (tylko fiszki), TEST (tylko testy), bez trybu: oba razem. */
     @GetMapping("/overview")
     public OverviewResponse getOverview(
-            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) Long actId,
             @RequestParam(required = false) ReviewMode mode,
             Authentication authentication) {
-        return statisticsService.getOverview(subjectId, mode, authentication);
+        return statisticsService.getOverview(actId, mode, authentication);
     }
 
-    @GetMapping("/weak-cards")
-    public List<WeakCardResponse> getWeakCards(
-            @RequestParam(required = false) Long subjectId,
+    @GetMapping("/weak-questions")
+    public List<WeakQuestionResponse> getWeakQuestions(
+            @RequestParam(required = false) Long actId,
+            @RequestParam(required = false) ReviewMode mode,
             @RequestParam(defaultValue = "10") int limit,
             Authentication authentication
     ) {
-        return statisticsService.getWeakCards(subjectId, limit, authentication);
+        return statisticsService.getWeakQuestions(actId, mode, limit, authentication);
     }
 
-    @GetMapping("/chapters")
-    public List<ChapterMasteryResponse> getChapterMastery(
-            @RequestParam Long sourceId,
+    /** Opanowanie aktów prawnych z puli użytkownika. */
+    @GetMapping("/acts")
+    public List<ActMasteryResponse> getActMastery(
             @RequestParam(required = false) ReviewMode mode,
             Authentication authentication) {
-        return statisticsService.getMasteryBySource(sourceId, mode, authentication);
+        return statisticsService.getMasteryByAct(mode, authentication);
     }
-
-    @GetMapping("/sources")
-    public List<SourceProgressResponse> getSourceProgress(
-            @RequestParam Long subjectId,
-            @RequestParam(required = false) ReviewMode mode,
-            Authentication authentication) {
-        return statisticsService.getSourceProgress(subjectId, mode, authentication);
-    }
-
 
     @GetMapping("/tests")
     public TestStatsResponse getTestStats(Authentication authentication) {
         return statisticsService.getTestStats(authentication);
     }
 
-    /** Statystyki Testów według pochodzenia pytań i roku egzaminu (wszystkie pochodzenia, bez filtra z Testów). */
-    @GetMapping("/origins")
-    public OriginStatsResponse getOriginStats(Authentication authentication) {
-        return originStatisticsService.getOriginStats(authentication);
+    /** Statystyki Testów według źródła pytań i roku egzaminu (cała pula ścieżki, bez filtra z Testów). */
+    @GetMapping("/sources")
+    public SourceStatsResponse getSourceStats(Authentication authentication) {
+        return sourceStatisticsService.getSourceStats(authentication);
     }
 
     /** "Podsumowanie nauki": liczba odpowiedzi, egzaminów i własnych testów, czas nauki i średni czas odpowiedzi. */

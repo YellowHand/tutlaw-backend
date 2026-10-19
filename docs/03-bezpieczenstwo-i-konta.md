@@ -202,7 +202,7 @@ musi być inne niż obecne. Po zmianie:
 
 - wszystkie dotychczasowe sesje przestają działać (`tokens_valid_from` i unieważnienie tokenów odświeżających), ale odpowiedź zawiera świeżą parę tokenów,
 - otwarte linki do resetu hasła są unieważniane,
-- na adres uczelniany idzie powiadomienie „Hasło do Twojego konta w Tutlaw zostało zmienione” z linkiem do ustawienia
+- na adres uczelniany idzie powiadomienie „Hasło do Twojego konta w Gradus iuris zostało zmienione” z linkiem do ustawienia
   hasła od nowa, gdyby to nie był właściciel.
 
 Zgadywanie obecnego hasła podlega **temu samemu limitowi co logowanie**.
@@ -212,14 +212,15 @@ Zgadywanie obecnego hasła podlega **temu samemu limitowi co logowanie**.
 | Rola | Co może |
 |------|---------|
 | `STUDENT` (domyślna) | Uczyć się, rozwiązywać testy i egzaminy, zmieniać ustawienia, zgłaszać błędy, zarządzać własnym kontem |
-| `ADMIN` | Wszystko jak `STUDENT` oraz dodawanie treści: kategorii, przedmiotów, źródeł, rozdziałów, tagów i kart (także import zbiorczy), ukrywanie kart i ustawianie terminów egzaminów aplikacji (`PUT /api/exam-terms/{origin}`) |
+| `ADMIN` | Wszystko jak `STUDENT` oraz trzy operacje: ukrycie pytania (`PUT /api/questions/{id}/hidden`), ukrycie samej fiszki (`PUT /api/questions/{id}/flashcard-hidden`) i ustawienie terminu egzaminu ścieżki (`PUT /api/exam-terms/{trackId}`). Treści (akty prawne, pytania) administrator wczytuje skryptami SQL, nie przez API |
 
 Uprawnienia wymusza adnotacja `@PreAuthorize("hasRole('ADMIN')")` na metodach kontrolerów. Zwykły użytkownik
 dostaje wtedy **403**.
 
-Dlaczego odczyt kart (`GET /api/chapters/{id}/cards`, `GET /api/sources/{id}/cards`) jest tylko dla administratora:
-odpowiedź zawiera poprawną opcję i wyjaśnienie. Uczeń dostaje karty wyłącznie przez kolejki nauki, które pilnują, co
-już ma odblokowane, i **nie zawierają poprawnej odpowiedzi** (ta wraca dopiero po udzieleniu odpowiedzi).
+Dlaczego nie ma endpointu do przeglądania pytań z poprawnymi odpowiedziami: odpowiedź zawierałaby poprawną opcję i
+wyjaśnienie. Użytkownik dostaje pytania wyłącznie przez kolejki nauki, egzamin i własne testy, które pilnują, co jest w
+jego puli, i **nie zawierają poprawnej odpowiedzi** (ta wraca dopiero po udzieleniu odpowiedzi; w egzaminie po jego
+zakończeniu).
 
 **Jak zrobić administratora:** w aplikacji nie ma ekranu do nadawania ról; robi się to w bazie (patrz
 [02](02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja)).
@@ -264,11 +265,13 @@ Z limitu logowania korzystają też zmiana hasła i usunięcie konta (błędne h
 ## Eksport danych i usuwanie konta (RODO)
 
 **`GET /api/users/me/export`** zwraca jeden plik JSON z **wszystkimi danymi**, które serwis trzyma o użytkowniku:
-konto (bez hasła i tokenów), postęp rozdziałów, stan każdej karty, pełną historię odpowiedzi, wysłane zgłoszenia,
-podsumowania egzaminów, zapisane własne testy, czas nauki dzień po dniu, ręczne dodania do fiszek i ustawienia nauki.
+konto (bez hasła i tokenów), stan nauki każdego pytania (osobno w trybie Testy i Fiszki), pełną historię odpowiedzi,
+wysłane zgłoszenia, podsumowania egzaminów, zapisane własne testy, czas nauki dzień po dniu, ręczne dodania do fiszek i
+ustawienia nauki (wybrana ścieżka, zawężenie puli do aktów, filtr źródeł, limity). Dokładny kształt pliku:
+[API: konto zalogowanego](api/02-konto.md).
 
 **`DELETE /api/users/me`** (z hasłem w treści żądania) usuwa konto **razem z całą historią nauki**. Kasowanie
-powiązanych danych robi sama baza (`ON DELETE CASCADE`, migracja V11). Złe hasło daje 400 i konto zostaje nietknięte.
+powiązanych danych robi sama baza (`ON DELETE CASCADE`, patrz [02](02-baza-danych.md#usuwanie-i-kaskady)). Złe hasło daje 400 i konto zostaje nietknięte.
 Znikają też zapisane własne testy, czas nauki i tokeny odświeżające. Po usunięciu zwracane jest `204 No Content`.
 
 ## Co jest zabezpieczone, a co jeszcze nie

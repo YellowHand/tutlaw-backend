@@ -9,8 +9,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CustomTestScopeLabelTest {
 
     @Test
-    void noSelectionMeansEverything() {
-        assertThat(CustomTestScopeLabel.describe(List.of())).isEqualTo("Cały materiał");
+    void noSelectionMeansTheWholePool() {
+        assertThat(CustomTestScopeLabel.describe(List.of())).isEqualTo("Cała pula");
     }
 
     @Test

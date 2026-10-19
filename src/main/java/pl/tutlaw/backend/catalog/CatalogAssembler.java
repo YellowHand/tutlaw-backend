@@ -1,16 +1,21 @@
 package pl.tutlaw.backend.catalog;
 
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse;
-import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.CategoryNode;
+import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.ActNode;
+import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.FieldNode;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.SourceNode;
-import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.SubjectNode;
 import pl.tutlaw.backend.common.PolishSort;
-import pl.tutlaw.backend.source.SourceType;
+import pl.tutlaw.backend.legal.LegalActKind;
+import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.pool.SourceGroups;
+import pl.tutlaw.backend.source.SourceKind;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -18,79 +23,96 @@ import java.util.stream.Collectors;
  */
 final class CatalogAssembler {
 
-    record CategoryRow(Long id, String name, String slug, String itemsLabel, int sortOrder) {
+    record FieldRow(Long id, String name, String slug, int sortOrder) {
     }
 
-    record SubjectRow(Long id, Long categoryId, String name, String slug) {
+    record ActRow(Long id, Long fieldId, String name, String shortName, String slug, LegalActKind kind, int sortOrder) {
     }
 
-    record SourceRow(Long id, Long subjectId, String name, SourceType sourceType) {
+    record SourceRow(Long id, String name, SourceKind kind, Integer examYear) {
     }
 
     private CatalogAssembler() {
     }
 
     /**
-     * @param totalBySource    wszystkie pytania testowe w źródle
-     * @param readableBySource pytania dostępne teraz dla użytkownika
-     * @param solvedBySource   pytania dostępne i rozwiązane co najmniej raz w teście
+     * @param fields         wszystkie dziedziny
+     * @param actsInPool     tylko akty z puli użytkownika
+     * @param sources        źródła dozwolone filtrem źródeł
+     * @param ownSheetIds    arkusze wybranej ścieżki
+     * @param totalByAct     pytania w akcie (z dozwolonych źródeł)
+     * @param solvedByAct    z nich rozwiązane co najmniej raz w teście
+     * @param totalBySource  pytania w źródle (z aktów puli)
+     * @param solvedBySource z nich rozwiązane co najmniej raz w teście
      */
     static TestCatalogResponse assemble(
-            List<CategoryRow> categories,
-            List<SubjectRow> subjects,
+            boolean narrowed,
+            List<FieldRow> fields,
+            List<ActRow> actsInPool,
             List<SourceRow> sources,
+            Set<Long> ownSheetIds,
+            Map<Long, Long> totalByAct,
+            Map<Long, Long> solvedByAct,
             Map<Long, Long> totalBySource,
-            Map<Long, Long> readableBySource,
             Map<Long, Long> solvedBySource
     ) {
-        Map<Long, List<SourceRow>> sourcesBySubject = sources.stream()
-                .collect(Collectors.groupingBy(SourceRow::subjectId));
-        Map<Long, List<SubjectRow>> subjectsByCategory = subjects.stream()
-                .collect(Collectors.groupingBy(SubjectRow::categoryId));
+        Map<Long, List<ActRow>> actsByField = actsInPool.stream().collect(Collectors.groupingBy(ActRow::fieldId));
 
-        List<CategoryNode> result = new ArrayList<>();
-        for (CategoryRow category : categories.stream()
-                .sorted(Comparator.comparingInt(CategoryRow::sortOrder)
-                        .thenComparing(CategoryRow::name, PolishSort.byName()))
+        List<FieldNode> fieldNodes = new ArrayList<>();
+        for (FieldRow field : fields.stream()
+                .sorted(Comparator.comparingInt(FieldRow::sortOrder).thenComparing(FieldRow::name, PolishSort.byName()))
                 .toList()) {
-
-            List<SubjectNode> subjectNodes = new ArrayList<>();
-            for (SubjectRow subject : subjectsByCategory.getOrDefault(category.id(), List.of()).stream()
-                    .sorted(Comparator.comparing(SubjectRow::name, PolishSort.byName()))
-                    .toList()) {
-
-                List<SourceNode> sourceNodes = sourcesBySubject.getOrDefault(subject.id(), List.of()).stream()
-                        .sorted(Comparator.comparing(SourceRow::id))
-                        .map(source -> sourceNode(source, totalBySource, readableBySource, solvedBySource))
-                        .toList();
-
-                subjectNodes.add(new SubjectNode(
-                        subject.id(), subject.name(), subject.slug(),
-                        sum(sourceNodes, SourceNode::questionCount),
-                        sum(sourceNodes, SourceNode::solvedCount),
-                        sum(sourceNodes, SourceNode::lockedCount),
-                        sourceNodes));
-            }
-
-            result.add(new CategoryNode(
-                    category.id(), category.name(), category.slug(), category.itemsLabel(), category.sortOrder(),
-                    sum(subjectNodes, SubjectNode::questionCount),
-                    sum(subjectNodes, SubjectNode::solvedCount),
-                    sum(subjectNodes, SubjectNode::lockedCount),
-                    subjectNodes));
+            List<ActNode> actNodes = actsByField.getOrDefault(field.id(), List.of()).stream()
+                    .sorted(Comparator.comparingInt(ActRow::sortOrder).thenComparing(ActRow::name, PolishSort.byName()))
+                    .map(act -> actNode(act, totalByAct, solvedByAct))
+                    .toList();
+            fieldNodes.add(new FieldNode(
+                    field.id(), field.name(), field.slug(),
+                    sum(actNodes, ActNode::questionCount), sum(actNodes, ActNode::solvedCount), actNodes));
         }
-        return new TestCatalogResponse(result);
+
+        List<SourceNode> sourceNodes = new ArrayList<>();
+        for (SourceRow source : sources.stream().sorted(sourceOrder(ownSheetIds)).toList()) {
+            int total = totalBySource.getOrDefault(source.id(), 0L).intValue();
+            if (total == 0) {
+                continue; // źródło bez pytań w puli użytkownika niczego mu nie daje
+            }
+            int solved = Math.min(solvedBySource.getOrDefault(source.id(), 0L).intValue(), total);
+            sourceNodes.add(new SourceNode(
+                    source.id(), source.name(), source.kind(), groupOf(source, ownSheetIds), source.examYear(), total, solved));
+        }
+        return new TestCatalogResponse(narrowed, fieldNodes, sourceNodes);
     }
 
-    private static SourceNode sourceNode(
-            SourceRow source, Map<Long, Long> total, Map<Long, Long> readable, Map<Long, Long> solved) {
-        int totalCount = total.getOrDefault(source.id(), 0L).intValue();
-        int available = Math.min(readable.getOrDefault(source.id(), 0L).intValue(), totalCount);
-        int solvedCount = Math.min(solved.getOrDefault(source.id(), 0L).intValue(), available);
-        return new SourceNode(source.id(), source.name(), source.sourceType(), available, solvedCount, totalCount - available);
+    /** Grupa filtra źródeł, do której należy źródło. */
+    static String groupOf(SourceRow source, Set<Long> ownSheetIds) {
+        return SourceGroups.of(source.kind(), source.id(), ownSheetIds);
     }
 
-    private static <T> int sum(List<T> nodes, java.util.function.ToIntFunction<T> value) {
+    /** Własne arkusze, potem arkusze innych ścieżek, na końcu pytania autorskie; w grupie od najnowszego roku. */
+    private static Comparator<SourceRow> sourceOrder(Set<Long> ownSheetIds) {
+        return Comparator
+                .comparingInt((SourceRow s) -> rank(groupOf(s, ownSheetIds)))
+                .thenComparing((SourceRow s) -> s.examYear() == null ? 0 : -s.examYear())
+                .thenComparing(SourceRow::name, PolishSort.byName())
+                .thenComparing(SourceRow::id);
+    }
+
+    private static int rank(String group) {
+        return switch (group) {
+            case SourceFilter.OWN_SHEETS -> 0;
+            case SourceFilter.OTHER_SHEETS -> 1;
+            default -> 2;
+        };
+    }
+
+    private static ActNode actNode(ActRow act, Map<Long, Long> total, Map<Long, Long> solved) {
+        int totalCount = total.getOrDefault(act.id(), 0L).intValue();
+        int solvedCount = Math.min(solved.getOrDefault(act.id(), 0L).intValue(), totalCount);
+        return new ActNode(act.id(), act.name(), act.shortName(), act.slug(), act.kind(), totalCount, solvedCount);
+    }
+
+    private static <T> int sum(List<T> nodes, ToIntFunction<T> value) {
         int total = 0;
         for (T node : nodes) {
             total += value.applyAsInt(node);

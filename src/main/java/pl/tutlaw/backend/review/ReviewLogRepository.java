@@ -4,9 +4,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import pl.tutlaw.backend.card.OriginYearCount;
-import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.common.GroupCount;
+import pl.tutlaw.backend.pool.PoolJpql;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -150,122 +149,109 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
     );
 
     /**
-     * Liczba prawdziwych powtórek (odpowiedzi na kartę widzianą wcześniej, po co najmniej {@code minElapsedDays}
-     * dniach) z oceną co najmniej {@code minRating}. Podstawa wskaźnika zapamiętywania:
+     * Liczba prawdziwych powtórek (odpowiedzi na pytanie widziane wcześniej w tym trybie, po co najmniej
+     * {@code minElapsedDays} dniach) z oceną co najmniej {@code minRating}. Podstawa wskaźnika zapamiętywania:
      * z minRating = 1 to wszystkie takie powtórki, z minRating = 2 tylko udane.
-     * Pierwsze zobaczenie karty i powtórki tego samego dnia nie mówią nic o zapamiętywaniu, więc nie wchodzą.
+     * Pierwsze zobaczenie pytania i powtórki tego samego dnia nie mówią nic o zapamiętywaniu, więc nie wchodzą.
      */
     @Query("""
             SELECT COUNT(r) FROM ReviewLog r
             WHERE r.user.id = :userId
+            AND r.mode = :mode
             AND r.reviewedAt >= :since
             AND r.elapsedDays >= :minElapsedDays
             AND r.rating >= :minRating
-            AND ((r.card.correctOption IS NULL AND :withFlashcards = true)
-                 OR (r.card.correctOption IS NOT NULL AND :withTests = true))
             """)
     long countRecalls(
             @Param("userId") Long userId,
+            @Param("mode") ReviewMode mode,
             @Param("since") LocalDateTime since,
             @Param("minElapsedDays") double minElapsedDays,
-            @Param("minRating") int minRating,
-            @Param("withFlashcards") boolean withFlashcards,
-            @Param("withTests") boolean withTests
+            @Param("minRating") int minRating
     );
 
+    /** To samo, ograniczone do jednego aktu prawnego. */
     @Query("""
             SELECT COUNT(r) FROM ReviewLog r
             WHERE r.user.id = :userId
-            AND r.card.source.subject.id = :subjectId
+            AND r.mode = :mode
+            AND r.question.legalAct.id = :actId
             AND r.reviewedAt >= :since
             AND r.elapsedDays >= :minElapsedDays
             AND r.rating >= :minRating
-            AND ((r.card.correctOption IS NULL AND :withFlashcards = true)
-                 OR (r.card.correctOption IS NOT NULL AND :withTests = true))
             """)
-    long countRecallsInSubject(
+    long countRecallsInAct(
             @Param("userId") Long userId,
-            @Param("subjectId") Long subjectId,
+            @Param("mode") ReviewMode mode,
+            @Param("actId") Long actId,
             @Param("since") LocalDateTime since,
             @Param("minElapsedDays") double minElapsedDays,
-            @Param("minRating") int minRating,
-            @Param("withFlashcards") boolean withFlashcards,
-            @Param("withTests") boolean withTests
+            @Param("minRating") int minRating
     );
 
     /**
-     * Pytania testowe, które użytkownik pomylił, choć NIE zaznaczył „Nie jestem pewien" (pewny błąd).
-     * Błąd takiego pytania odblokowuje powiązaną z nim fiszkę (zob. CardScopes#isUnlocked). Same numery, bez duplikatów.
+     * Pytania, które użytkownik pomylił w teście, choć NIE zaznaczył „Nie jestem pewien" (pewny błąd).
+     * Taki błąd odblokowuje fiszkę pytania (zob. QuestionScopes#isUnlocked). Same numery, bez duplikatów.
      */
     @Query("""
-            SELECT DISTINCT r.card.id FROM ReviewLog r
+            SELECT DISTINCT r.question.id FROM ReviewLog r
             WHERE r.user.id = :userId
             AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
             AND r.wasCorrect = false AND r.wasGuessed = false
             """)
-    List<Long> findConfidentMistakeCardIds(@Param("userId") Long userId);
+    List<Long> findConfidentMistakeQuestionIds(@Param("userId") Long userId);
 
-    /** Ile razy użytkownik pomylił to pytanie testowe bez zaznaczenia „Nie jestem pewien". */
+    /** Ile razy użytkownik pomylił to pytanie w teście bez zaznaczenia „Nie jestem pewien". */
     @Query("""
             SELECT COUNT(r) FROM ReviewLog r
-            WHERE r.user.id = :userId AND r.card.id = :cardId
+            WHERE r.user.id = :userId AND r.question.id = :questionId
             AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
             AND r.wasCorrect = false AND r.wasGuessed = false
             """)
-    long countConfidentMistakes(@Param("userId") Long userId, @Param("cardId") Long cardId);
+    long countConfidentMistakes(@Param("userId") Long userId, @Param("questionId") Long questionId);
 
     /**
-     * Ile różnych pytań użytkownik rozwiązał co najmniej raz w teście, w każdym źródle (groupId = id źródła).
-     * Liczą się tylko pytania, do których ma teraz dostęp, żeby wynik nie przekraczał liczby dostępnych pytań.
+     * Ile różnych pytań użytkownik rozwiązał co najmniej raz w teście, w każdym akcie prawnym (groupId = numer aktu).
+     * Liczą się tylko pytania z puli ({@code actIds}, {@code sourceIds}), żeby wynik nie przekraczał liczby pytań
+     * dostępnych w katalogu.
      */
     @Query("""
-            SELECT r.card.source.id AS groupId, COUNT(DISTINCT r.card.id) AS total
+            SELECT r.question.legalAct.id AS groupId, COUNT(DISTINCT r.question.id) AS total
             FROM ReviewLog r
             WHERE r.user.id = :userId
             AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
-            AND r.card.hidden = false
-            AND (
-                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
-                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
-                    SELECT p.chapter.id FROM ChapterProgress p
-                    WHERE p.user.id = :userId AND p.read = true
-                ))
-            )
-            GROUP BY r.card.source.id
+            AND\s""" + PoolJpql.LOG + """
+            
+            GROUP BY r.question.legalAct.id
             """)
-    List<GroupCount> countSolvedTestQuestionsBySource(@Param("userId") Long userId);
-
-    /**
-     * Jak {@link #countSolvedTestQuestionsBySource}, ale tylko pytania z wybranych pochodzeń (katalog Testów
-     * z filtrem pochodzenia).
-     */
-    @Query("""
-            SELECT r.card.source.id AS groupId, COUNT(DISTINCT r.card.id) AS total
-            FROM ReviewLog r
-            WHERE r.user.id = :userId
-            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
-            AND r.card.hidden = false
-            AND r.card.origin IN :origins
-            AND (
-                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
-                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
-                    SELECT p.chapter.id FROM ChapterProgress p
-                    WHERE p.user.id = :userId AND p.read = true
-                ))
-            )
-            GROUP BY r.card.source.id
-            """)
-    List<GroupCount> countSolvedTestQuestionsBySourceInOrigins(
+    List<GroupCount> countSolvedTestQuestionsByAct(
             @Param("userId") Long userId,
-            @Param("origins") Collection<QuestionOrigin> origins
+            @Param("actIds") Collection<Long> actIds,
+            @Param("sourceIds") Collection<Long> sourceIds
+    );
+
+    /** To samo, ale pogrupowane po źródle (arkuszu): groupId = numer źródła. */
+    @Query("""
+            SELECT r.question.source.id AS groupId, COUNT(DISTINCT r.question.id) AS total
+            FROM ReviewLog r
+            WHERE r.user.id = :userId
+            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
+            AND\s""" + PoolJpql.LOG + """
+            
+            GROUP BY r.question.source.id
+            """)
+    List<GroupCount> countSolvedTestQuestionsBySource(
+            @Param("userId") Long userId,
+            @Param("actIds") Collection<Long> actIds,
+            @Param("sourceIds") Collection<Long> sourceIds
     );
 
     /**
      * Odpowiedzi użytkownika w testach od podanego momentu, od najnowszej. Z tego wylicza się, w których pytaniach
-     * ostatnia odpowiedź była błędna ("Powtórz moje błędy"), bez zapytania korelowanego na każdą kartę.
+     * ostatnia odpowiedź była błędna ("Powtórz moje błędy"), bez zapytania korelowanego na każde pytanie.
      */
     @Query("""
-            SELECT r.card.id AS cardId, r.wasCorrect AS wasCorrect, r.reviewedAt AS reviewedAt
+            SELECT r.question.id AS questionId, r.wasCorrect AS wasCorrect, r.reviewedAt AS reviewedAt
             FROM ReviewLog r
             WHERE r.user.id = :userId
             AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
@@ -280,7 +266,7 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
 
     /** Cała historia odpowiedzi użytkownika, do eksportu jego danych. */
     @Query("""
-            SELECT r.card.id AS cardId, r.reviewedAt AS reviewedAt, r.mode AS mode, r.rating AS rating,
+            SELECT r.question.id AS questionId, r.reviewedAt AS reviewedAt, r.mode AS mode, r.rating AS rating,
                    r.wasCorrect AS wasCorrect, r.wasGuessed AS wasGuessed
             FROM ReviewLog r
             WHERE r.user.id = :userId
@@ -289,7 +275,7 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
     List<ExportedReview> findExportRows(@Param("userId") Long userId);
 
     interface TestAnswerRow {
-        Long getCardId();
+        Long getQuestionId();
 
         Boolean getWasCorrect();
 
@@ -297,7 +283,7 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
     }
 
     interface ExportedReview {
-        Long getCardId();
+        Long getQuestionId();
 
         LocalDateTime getReviewedAt();
 
@@ -310,32 +296,9 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
         Boolean getWasGuessed();
     }
 
-    /**
-     * Ile różnych dostępnych pytań użytkownik rozwiązał co najmniej raz w teście, w każdym pochodzeniu i roku egzaminu.
-     * Ta sama definicja co {@link #countSolvedTestQuestionsBySource}, tylko pogrupowana inaczej.
-     */
-    @Query("""
-            SELECT r.card.origin AS origin, r.card.examYear AS examYear, COUNT(DISTINCT r.card.id) AS total
-            FROM ReviewLog r
-            WHERE r.user.id = :userId
-            AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
-            AND r.card.hidden = false
-            AND (
-                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
-                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
-                    SELECT p.chapter.id FROM ChapterProgress p
-                    WHERE p.user.id = :userId AND p.read = true
-                ))
-            )
-            GROUP BY r.card.origin, r.card.examYear
-            """)
-    List<OriginYearCount> countSolvedTestQuestionsByOriginYear(@Param("userId") Long userId);
-
-    /** Odpowiedzi w testach w jednym pochodzeniu i roku: wszystkie, poprawne i pewne błędy (bez „Nie jestem pewien"). */
-    interface OriginYearAnswers {
-        QuestionOrigin getOrigin();
-
-        Integer getExamYear();
+    /** Odpowiedzi w testach w jednym źródle (arkuszu): wszystkie, poprawne i pewne błędy (bez „Nie jestem pewien"). */
+    interface SourceAnswers {
+        Long getSourceId();
 
         Long getAnswers();
 
@@ -345,12 +308,11 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
     }
 
     /**
-     * Odpowiedzi w testach od podanego momentu, pogrupowane po pochodzeniu i roku egzaminu pytania. Liczą się tylko
-     * pytania dostępne teraz dla użytkownika (nieukryte, z puli płaskiej albo z przeczytanego rozdziału), tak jak
-     * w liczbie pytań i rozwiązanych.
+     * Odpowiedzi w testach od podanego momentu, pogrupowane po źródle (arkuszu) pytania. Liczą się tylko pytania
+     * z puli, tak jak w liczbie pytań i rozwiązanych.
      */
     @Query("""
-            SELECT r.card.origin AS origin, r.card.examYear AS examYear,
+            SELECT r.question.source.id AS sourceId,
                    COUNT(r) AS answers,
                    SUM(CASE WHEN r.wasCorrect = true THEN 1 ELSE 0 END) AS correct,
                    SUM(CASE WHEN r.wasCorrect = false AND r.wasGuessed = false THEN 1 ELSE 0 END) AS confidentMistakes
@@ -358,18 +320,14 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
             WHERE r.user.id = :userId
             AND r.mode = pl.tutlaw.backend.review.ReviewMode.TEST
             AND r.reviewedAt >= :since
-            AND r.card.hidden = false
-            AND (
-                r.card.source.sourceType = pl.tutlaw.backend.source.SourceType.FLAT_POOL
-                OR (r.card.chapter IS NOT NULL AND r.card.chapter.id IN (
-                    SELECT p.chapter.id FROM ChapterProgress p
-                    WHERE p.user.id = :userId AND p.read = true
-                ))
-            )
-            GROUP BY r.card.origin, r.card.examYear
+            AND\s""" + PoolJpql.LOG + """
+            
+            GROUP BY r.question.source.id
             """)
-    List<OriginYearAnswers> countTestAnswersByOriginYear(
+    List<SourceAnswers> countTestAnswersBySource(
             @Param("userId") Long userId,
-            @Param("since") LocalDateTime since
+            @Param("since") LocalDateTime since,
+            @Param("actIds") Collection<Long> actIds,
+            @Param("sourceIds") Collection<Long> sourceIds
     );
 }

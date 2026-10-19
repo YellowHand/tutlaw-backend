@@ -8,10 +8,11 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
+import pl.tutlaw.backend.testsupport.Pools;
+import pl.tutlaw.backend.testsupport.QuestionRefs;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -31,7 +32,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class PracticeQueueServiceTest {
 
-    @Mock private CardRepository cardRepository;
+    @Mock private QuestionRepository questionRepository;
     @Mock private CurrentUserResolver currentUserResolver;
     private final Authentication authentication = mock(Authentication.class);
 
@@ -39,58 +40,54 @@ class PracticeQueueServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PracticeQueueService(cardRepository, currentUserResolver);
+        service = new PracticeQueueService(questionRepository, currentUserResolver, Pools.holding(Pools::all));
         User user = new User();
         user.setId(5L);
         // Walidacja listy odbywa się przed ustaleniem użytkownika, więc nie każdy test z niego korzysta.
         lenient().when(currentUserResolver.resolve(authentication)).thenReturn(user);
     }
 
-    private static Card card(long id) {
-        Card card = new Card();
-        card.setId(id);
-        card.setFront("Pytanie " + id);
-        card.setCorrectOption(CorrectOption.A);
-        card.setOptionA("a");
-        card.setOptionB("b");
-        card.setOptionC("c");
-        return card;
+    private static Question question(long id) {
+        Question question = QuestionRefs.question(id);
+        question.setBody("Pytanie " + id);
+        return question;
     }
 
-    private void available(Card... cards) {
-        when(cardRepository.findPracticeTestCards(ArgumentMatchers.<Collection<Long>>any(), eq(5L)))
-                .thenReturn(List.of(cards));
+    private void available(Question... questions) {
+        when(questionRepository.findPracticeQuestions(
+                ArgumentMatchers.<Collection<Long>>any(), eq(5L), ArgumentMatchers.<Collection<Long>>any()))
+                .thenReturn(List.of(questions));
     }
 
     @Test
     void returnsTheQuestionsInTheRequestedOrder() {
         // repozytorium zwraca w dowolnej kolejności
-        available(card(1), card(2), card(3));
+        available(question(1), question(2), question(3));
 
         List<TestQueueItemResponse> queue = service.queue(List.of(3L, 1L, 2L), authentication);
 
-        assertThat(queue).extracting(TestQueueItemResponse::cardId).containsExactly(3L, 1L, 2L);
+        assertThat(queue).extracting(TestQueueItemResponse::questionId).containsExactly(3L, 1L, 2L);
     }
 
     @Test
     void silentlySkipsQuestionsThatAreNoLongerAvailable() {
-        available(card(1), card(3)); // 2: zawieszone, niedostępne albo bez formatu testowego
+        available(question(1), question(3)); // 2: zawieszone, ukryte albo spoza aktów użytkownika
 
         List<TestQueueItemResponse> queue = service.queue(List.of(1L, 2L, 3L), authentication);
 
-        assertThat(queue).extracting(TestQueueItemResponse::cardId).containsExactly(1L, 3L);
+        assertThat(queue).extracting(TestQueueItemResponse::questionId).containsExactly(1L, 3L);
     }
 
     @Test
     void duplicatedIdsAreAskedAboutAndReturnedOnce() {
-        available(card(1), card(2));
+        available(question(1), question(2));
 
         List<TestQueueItemResponse> queue = service.queue(List.of(1L, 2L, 1L, 2L), authentication);
 
-        assertThat(queue).extracting(TestQueueItemResponse::cardId).containsExactly(1L, 2L);
+        assertThat(queue).extracting(TestQueueItemResponse::questionId).containsExactly(1L, 2L);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<Long>> captor = ArgumentCaptor.forClass(Collection.class);
-        verify(cardRepository).findPracticeTestCards(captor.capture(), eq(5L));
+        verify(questionRepository).findPracticeQuestions(captor.capture(), eq(5L), ArgumentMatchers.<Collection<Long>>any());
         assertThat(captor.getValue()).hasSize(2);
     }
 
@@ -98,8 +95,8 @@ class PracticeQueueServiceTest {
     void anEmptyListIsABadRequest() {
         assertThatThrownBy(() -> service.queue(List.of(), authentication)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.queue(null, authentication)).isInstanceOf(IllegalArgumentException.class);
-        verify(cardRepository, never()).findPracticeTestCards(
-                ArgumentMatchers.<Collection<Long>>any(), ArgumentMatchers.<Long>any());
+        verify(questionRepository, never()).findPracticeQuestions(
+                ArgumentMatchers.<Collection<Long>>any(), ArgumentMatchers.<Long>any(), ArgumentMatchers.<Collection<Long>>any());
     }
 
     @Test
@@ -117,12 +114,12 @@ class PracticeQueueServiceTest {
     @Test
     void exactlyTheMaximumIsAccepted() {
         List<Long> ids = new ArrayList<>();
-        List<Card> cards = new ArrayList<>();
+        List<Question> questions = new ArrayList<>();
         for (long id = 1; id <= 200; id++) {
             ids.add(id);
-            cards.add(card(id));
+            questions.add(question(id));
         }
-        available(cards.toArray(new Card[0]));
+        available(questions.toArray(new Question[0]));
 
         assertThat(service.queue(ids, authentication)).hasSize(200);
     }

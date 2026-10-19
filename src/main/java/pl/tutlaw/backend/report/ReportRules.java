@@ -18,7 +18,7 @@ final class ReportRules {
     }
 
     /** Opis błędu po polsku albo null, gdy zgłoszenie jest poprawne. */
-    static String problem(CardReportReason reason, String comment) {
+    static String problem(QuestionReportReason reason, String comment) {
         if (reason == null) {
             return "Wybierz powód zgłoszenia.";
         }
@@ -26,7 +26,7 @@ final class ReportRules {
         if (normalized != null && normalized.codePointCount(0, normalized.length()) > COMMENT_MAX_LENGTH) {
             return "Komentarz może mieć najwyżej " + COMMENT_MAX_LENGTH + " znaków.";
         }
-        if (reason == CardReportReason.OTHER && normalized == null) {
+        if (reason == QuestionReportReason.OTHER && normalized == null) {
             return "Opisz krótko, co jest nie tak.";
         }
         return null;

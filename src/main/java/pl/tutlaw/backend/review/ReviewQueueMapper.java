@@ -1,39 +1,45 @@
 package pl.tutlaw.backend.review;
 
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.review.dto.ReviewQueueItemResponse;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.review.dto.FlashcardQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 
 public class ReviewQueueMapper {
 
-    /** {@code lapses} to liczba dotychczasowych błędów (0 dla nowej karty). */
-    public static ReviewQueueItemResponse toResponse(Card card, int lapses, boolean leech) {
-        return new ReviewQueueItemResponse(
-                card.getId(),
-                card.getFront(),
-                card.getBack(),
-                card.getPageNumber(),
-                card.isVerbatimQuote(),
-                card.getSource() != null ? card.getSource().getName() : null,
-                card.getLegalBasis(),
-                card.getValidAsOf(),
+    /**
+     * Fiszka pytania: przód to treść pytania, tył to tekst poprawnej odpowiedzi.
+     * {@code lapses} to liczba dotychczasowych błędów w fiszce (0 dla nowej).
+     */
+    public static FlashcardQueueItemResponse toFlashcard(Question question, int lapses, boolean leech) {
+        return new FlashcardQueueItemResponse(
+                question.getId(),
+                question.getBody(),
+                question.correctOptionText(),
+                question.getExplanation(),
+                question.getLegalBasis(),
+                question.getValidAsOf(),
+                question.getLegalAct().getName(),
+                question.getLegalAct().getShortName(),
+                question.getSource().getName(),
+                question.getSource().getKind(),
+                question.getSource().getExamYear(),
                 lapses,
-                leech,
-                card.getOrigin(),
-                card.getExamYear()
+                leech
         );
     }
 
-    public static TestQueueItemResponse toTestResponse(Card card) {
+    public static TestQueueItemResponse toTest(Question question) {
         return new TestQueueItemResponse(
-                card.getId(),
-                card.getFront(),
-                card.getOptionA(),
-                card.getOptionB(),
-                card.getOptionC(),
-                card.getSource() != null ? card.getSource().getName() : null,
-                card.getOrigin(),
-                card.getExamYear()
+                question.getId(),
+                question.getBody(),
+                question.getOptionA(),
+                question.getOptionB(),
+                question.getOptionC(),
+                question.getLegalAct().getName(),
+                question.getLegalAct().getShortName(),
+                question.getSource().getName(),
+                question.getSource().getKind(),
+                question.getSource().getExamYear()
         );
     }
 }

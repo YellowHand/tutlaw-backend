@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.settings.dto.ExamTermResponse;
 import pl.tutlaw.backend.settings.dto.UpdateExamTermRequest;
 
@@ -28,9 +27,9 @@ public class ExamTermController {
         return service.list();
     }
 
-    @PutMapping("/{origin}")
+    @PutMapping("/{trackId}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ExamTermResponse update(@PathVariable QuestionOrigin origin, @Valid @RequestBody UpdateExamTermRequest request) {
-        return service.update(origin, request);
+    public ExamTermResponse update(@PathVariable Long trackId, @Valid @RequestBody UpdateExamTermRequest request) {
+        return service.update(trackId, request);
     }
 }

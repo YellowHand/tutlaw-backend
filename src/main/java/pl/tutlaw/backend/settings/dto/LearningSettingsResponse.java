@@ -1,7 +1,7 @@
 package pl.tutlaw.backend.settings.dto;
 
-import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.settings.Theme;
+import pl.tutlaw.backend.track.dto.TrackSummary;
 
 import java.time.LocalDate;
 
@@ -13,25 +13,23 @@ import java.time.LocalDate;
  *                           automatycznym jest wyliczony z planu do egzaminu (nie mniej niż domyślny, nie więcej niż sufit)
  * @param newTestQuestionsAuto {@code true}, gdy użytkownik nie ustawił własnego limitu i obowiązuje limit automatyczny
  * @param theme      wygląd aplikacji wybrany przez użytkownika (domyślnie ciemny)
- * @param examOrigin aplikacja wybrana przez użytkownika; {@code null}, gdy jeszcze nie wybrał albo jest studentem
- * @param startChoiceMade {@code true}, gdy użytkownik zrobił wybór w oknie startowym (aplikacja albo "Jestem studentem");
- *                   przy {@code false} aplikacja pokazuje okno startowe
- * @param examDate   termin egzaminu tej aplikacji (ustawia go administrator); tylko do odczytu, {@code null}, gdy
- *                   aplikacji nie wybrano albo termin nieogłoszony
+ * @param track      ścieżka wybrana przez użytkownika (aplikacja albo Student); {@code null}, gdy jeszcze nie wybrał:
+ *                   aplikacja pokazuje wtedy okno startowe
+ * @param examDate   termin egzaminu wybranej aplikacji (ustawia go administrator); tylko do odczytu, {@code null}, gdy
+ *                   ścieżki nie wybrano, to Student albo termin nieogłoszony
  * @param examPassed termin egzaminu wybranej aplikacji jest już w przeszłości (ustawienia egzaminacyjne wtedy nie działają)
  * @param plan       {@code null}, gdy nie ma terminu egzaminu albo już minął
  */
 public record LearningSettingsResponse(
-        int newCardsPerDay,
+        int newFlashcardsPerDay,
         int newTestQuestionsPerDay,
         boolean newTestQuestionsAuto,
         int maxReviewsPerDay,
         double desiredRetention,
-        QuestionOrigin examOrigin,
+        TrackSummary track,
         LocalDate examDate,
         boolean shuffleOptions,
         Theme theme,
-        boolean startChoiceMade,
         Long daysToExam,
         boolean examPassed,
         double effectiveRetention,
@@ -40,7 +38,7 @@ public record LearningSettingsResponse(
         Plan plan
 ) {
 
-    public record Defaults(int newCardsPerDay, int newTestQuestionsPerDay, int maxReviewsPerDay, double desiredRetention) {
+    public record Defaults(int newFlashcardsPerDay, int newTestQuestionsPerDay, int maxReviewsPerDay, double desiredRetention) {
     }
 
     /**
@@ -53,17 +51,14 @@ public record LearningSettingsResponse(
      * @param suggestedTestQuestionsPerDay cel na dziś: {@code requiredTestQuestionsPerDay}, ale nie więcej niż sufit.
      *                                    Liczony od stanu z początku dnia (nie spada w ciągu dnia),
      *                                    {@code 0} w ostatnich dwóch tygodniach
-     * @param suggestedFlashcardsPerDay    to samo dla fiszek (kart bez opcji A/B/C)
      * @param newTestQuestionsToday       ile nowych pytań testowych użytkownik zaczął dzisiaj (do porównania z celem dnia)
      */
     public record Plan(
             long newTestQuestionsLeft,
-            long newFlashcardsLeft,
             long planningDays,
             long requiredTestQuestionsPerDay,
             long maxTestQuestionsPerDay,
             long suggestedTestQuestionsPerDay,
-            long suggestedFlashcardsPerDay,
             long newTestQuestionsToday
     ) {
     }

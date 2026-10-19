@@ -22,7 +22,7 @@ class QueueRulesTest {
 
         // 3 ma najmniejszą szansę (0,50). Potem trzy karty po 0,80: najpierw starszy termin (1 i 2, remis rozstrzyga id), potem 5.
         // Karta 4 ma najwyższą szansę (0,85), więc mimo najstarszego terminu jest ostatnia.
-        assertThat(ordered.stream().map(QueueRules.DueItem::cardId).toList()).containsExactly(3L, 1L, 2L, 5L, 4L);
+        assertThat(ordered.stream().map(QueueRules.DueItem::questionId).toList()).containsExactly(3L, 1L, 2L, 5L, 4L);
     }
 
     @Test

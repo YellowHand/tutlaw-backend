@@ -1,6 +1,6 @@
 spring:
   application:
-    name: tutlaw-backend
+    name: gradus-iuris-backend
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/tutlaw}
     username: ${SPRING_DATASOURCE_USERNAME:tutlaw_user}
@@ -35,7 +35,7 @@ app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   fsrs:
     request-retention: 0.9
-    new-cards-per-day: 20
+    new-flashcards-per-day: 20
     new-test-questions-per-day: 40
     # Ile zaległych powtórek dziennie trafia do sesji (osobno fiszki i testy); reszta czeka na kolejne dni.
     max-reviews-per-day: 100

@@ -14,7 +14,7 @@ public class TestCatalogController {
 
     private final TestCatalogService testCatalogService;
 
-    /** Rodzaj → przedmiot/akt prawny → źródło, z licznikami pytań dla zalogowanego użytkownika. */
+    /** Dziedzina → akt prawny oraz źródła (arkusze i pytania autorskie), z licznikami pytań dla zalogowanego użytkownika. */
     @GetMapping("/catalog")
     public TestCatalogResponse getCatalog(Authentication authentication) {
         return testCatalogService.getCatalog(authentication);

@@ -1,6 +1,5 @@
 package pl.tutlaw.backend.user.dto;
 
-import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.settings.Theme;
 
 import java.time.Instant;
@@ -12,10 +11,9 @@ import java.util.List;
 public record AccountExportResponse(
         Instant exportedAt,
         Account account,
-        List<ChapterProgressItem> chapterProgress,
-        List<CardStateItem> cardStates,
+        List<QuestionStateItem> questionStates,
         List<ReviewItem> reviewLogs,
-        List<ReportItem> cardReports,
+        List<ReportItem> questionReports,
         List<ExamEntry> examAttempts,
         List<FlashcardAdditionItem> flashcardAdditions,
         List<CustomTestItem> customTests,
@@ -32,10 +30,10 @@ public record AccountExportResponse(
             LocalDateTime termsAcceptedAt
     ) {}
 
-    public record ChapterProgressItem(Long chapterId, String chapterTitle, boolean read, LocalDateTime readAt) {}
-
-    public record CardStateItem(
-            Long cardId,
+    /** Stan nauki pytania w jednym z trybów (TEST albo FLASHCARD). */
+    public record QuestionStateItem(
+            Long questionId,
+            String mode,
             String question,
             String state,
             int reps,
@@ -49,7 +47,7 @@ public record AccountExportResponse(
 
     /** Zgłoszenia błędów w pytaniach wysłane przez użytkownika. */
     public record ReportItem(
-            Long cardId,
+            Long questionId,
             String question,
             String reason,
             String comment,
@@ -58,7 +56,7 @@ public record AccountExportResponse(
     ) {}
 
     public record ReviewItem(
-            Long cardId,
+            Long questionId,
             LocalDateTime reviewedAt,
             String mode,
             int rating,
@@ -107,19 +105,19 @@ public record AccountExportResponse(
      * Cały obiekt jest {@code null}, gdy użytkownik niczego nie ustawiał.
      */
     public record LearningSettings(
-            Integer newCardsPerDay,
+            Integer newFlashcardsPerDay,
             Integer newTestQuestionsPerDay,
             Integer maxReviewsPerDay,
             Double desiredRetention,
-            /** Aplikacja, do której użytkownik się przygotowuje (data egzaminu bierze się z terminu aplikacji, nie jest zapisana na koncie). */
-            QuestionOrigin examOrigin,
+            /** Ścieżka, do której użytkownik się przygotowuje (data egzaminu bierze się z terminu aplikacji, nie jest zapisana na koncie). */
+            String track,
             /** Wygląd aplikacji: DARK (ciemny) albo LIGHT (jasny). */
             Theme theme,
             boolean shuffleOptions,
-            /** Filtr pochodzenia pytań w Testach: kody oddzielone przecinkami albo null (wszystkie). */
-            String testOrigins,
-            /** Czy w oknie startowym dokonano wyboru (aplikacja albo "Jestem studentem"). */
-            boolean startChoiceMade,
+            /** Filtr źródeł pytań w Testach: kody grup oddzielone przecinkami albo null (wszystkie). */
+            String sourceFilter,
+            /** Numery aktów prawnych, do których użytkownik zawęził pulę (puste: bez zawężenia). */
+            List<Long> poolActIds,
             /** Stałe ukrycie podpowiedzi skrótów klawiszowych w testach, w fiszkach i ukrycie licznika czasu pytania. */
             boolean hintHiddenTest,
             boolean hintHiddenFlashcard,

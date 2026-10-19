@@ -3,12 +3,12 @@
 [← Spis treści](README.md)
 
 To najważniejszy plik dokumentacji. Wyjaśnia, **jak aplikacja decyduje, co pokazać dziś i kiedy to pokazać znowu**.
-Kod, o którym tu mowa, leży głównie w pakietach `review`, `review.fsrs`, `flashcard`, `settings` i `card`.
+Kod, o którym tu mowa, leży głównie w pakietach `pool`, `review`, `review.fsrs`, `flashcard`, `settings` i `question`.
 
 ## Spis
 
-1. [Dwa światy: Testy i Fiszki](#dwa-światy-testy-i-fiszki)
-2. [Skąd karta trafia do nauki (dostępność)](#skąd-karta-trafia-do-nauki-dostępność)
+1. [Dwa tryby: Testy i Fiszki](#dwa-tryby-testy-i-fiszki)
+2. [Pula pytań użytkownika](#pula-pytań-użytkownika)
 3. [Odpowiedź w teście krok po kroku](#odpowiedź-w-teście-krok-po-kroku)
 4. [Fiszki z pytań i odblokowywanie](#fiszki-z-pytań-i-odblokowywanie)
 5. [FSRS-6 po ludzku](#fsrs-6-po-ludzku)
@@ -18,56 +18,70 @@ Kod, o którym tu mowa, leży głównie w pakietach `review`, `review.fsrs`, `fl
 9. [Trudne pytania i zawieszanie](#trudne-pytania-i-zawieszanie)
 10. [Dodatkowe sesje: „Powtórz moje błędy” i „Przerób błędy”](#dodatkowe-sesje-powtórz-moje-błędy-i-przerób-błędy)
 11. [Egzamin próbny](#egzamin-próbny)
-12. [Filtr pochodzenia pytań](#filtr-pochodzenia-pytań)
+12. [Filtr źródeł pytań](#filtr-źródeł-pytań)
 13. [Zabezpieczenia spójności](#zabezpieczenia-spójności)
 
 ---
 
-## Dwa światy: Testy i Fiszki
+## Dwa tryby: Testy i Fiszki
 
-Aplikacja ma dwa osobne tryby nauki. Technicznie są to ten sam mechanizm powtórek, ale z osobnymi kartami, limitami i
-statystykami (kolumna `mode` w `review_logs`: `FLASHCARD` albo `TEST`).
+Aplikacja ma dwa tryby nauki **tego samego pytania**. Pytanie jest jedno (tabela `questions`); fiszka to nie osobny
+rekord ani kopia, tylko drugi tryb nauki: stan nauki pytania ma osobny wiersz w trybie `TEST` i w trybie `FLASHCARD`
+(`user_question_states`), z **własnym harmonogramem FSRS** (stabilność, trudność, termin) i własnym licznikiem błędów.
+Odpowiedź w teście nie przesuwa terminu fiszki i odwrotnie. Kolumna `mode` w `review_logs` też mówi, w którym trybie
+padła odpowiedź.
 
 | | **Testy** | **Fiszki** |
 |---|-----------|------------|
-| Karta | Pytanie ABC: trzy odpowiedzi, **dokładnie jedna poprawna** (`correct_option`) | Przód i odwrót (`front`, `back`), bez opcji |
+| Co widzisz | Treść pytania i trzy odpowiedzi ABC, **dokładnie jedna poprawna** (`correct_option`) | Przód: treść pytania. Tył: poprawna odpowiedź z wyjaśnieniem i podstawą prawną |
 | Jak odpowiadasz | Wybierasz A, B albo C; opcjonalnie zaznaczasz „Nie jestem pewien” | Odwracasz fiszkę i sam oceniasz: Nie pamiętam / Trudne / Znam / Łatwe |
 | Endpoint odpowiedzi | `POST /api/review/test-answer` | `POST /api/review` |
 | Ocena pamięci (1–4) | Wyznacza serwer z reguły (patrz niżej) | Wybierasz Ty |
+| Które pytania | Wszystkie z puli | Tylko z **odblokowaną fiszką** (pewny błąd albo ręczne dodanie) |
 | Limit nowych dziennie | 40 pytań (domyślnie; automatyczny, idzie za planem) | 20 fiszek (domyślnie) |
 
-Karta jest **albo** pytaniem testowym, **albo** fiszką. Próba odpowiedzi na pytanie testowe jako fiszkę (albo
-odwrotnie) kończy się błędem 400. Nie da się „obejść” testu przez fiszkę.
+Ręcznie napisanych fiszek nie ma: każda fiszka pochodzi z pytania. Treść jest jedna, więc poprawka pytania poprawia
+jednocześnie test i fiszkę.
 
-## Skąd karta trafia do nauki (dostępność)
+## Pula pytań użytkownika
 
-Karta trafia do kolejki nauki, gdy spełnia **wszystkie** warunki:
+Pula to pytania, które użytkownik może rozwiązywać. Wylicza ją w jednym miejscu `PoolService`; nikt inny nie decyduje o
+dostępie do pytań. Zasada jest **regułą**, a nie ręcznym przypisaniem pytań do ludzi:
+
+1. **Ścieżka** (`user_settings.track_id`): pytania z jej **własnych arkuszy ALBO z aktów prawnych z jej listy**
+   (`track_acts`). Pytania autorskie i pytania z arkuszy innych ścieżek trafiają do puli przez wspólne akty.
+   Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
+2. **Student**: akty wszystkich przedmiotów (`course_acts`). Przedmioty dzielą akty na kursy; zagadnienia spoza prawa
+   (paremie, logika) to akty rodzaju `TOPIC`, a ich pytania są zwykłymi pytaniami.
+3. **Zawężenie do aktów** (`user_pool_acts`): użytkownik może trwale zawęzić pulę do wybranych aktów (przy Studencie: do
+   wybranych przedmiotów). Brak wpisów = cała pula ścieżki. Zawężenie **nie dotyczy egzaminu próbnego**.
+4. **Filtr źródeł** (`user_settings.include_*`): trzy grupy `OWN_SHEETS` (arkusze wybranej ścieżki), `OTHER_SHEETS`
+   (arkusze innych ścieżek), `AUTHORED` (pytania autorskie); co najmniej jedna musi być włączona. Filtr dotyczy
+   pytań testowych (patrz [Filtr źródeł pytań](#filtr-źródeł-pytań)).
+
+Każdy użytkownik widzi **wszystkie dziedziny**, ale w każdej tylko **akty ze swojej puli**. Zmiana ścieżki czyści
+zawężenie i przywraca filtr źródeł.
 
 ```mermaid
 flowchart TD
-    A["Karta"] --> B{"hidden = false?<br/>(nieukryta przez administratora)"}
-    B -- "nie" --> X["Nie pokazuje się nikomu"]
-    B -- "tak" --> C{"Źródło FLAT_POOL<br/>albo rozdział przeczytany<br/>przez tego użytkownika?"}
-    C -- "nie" --> Y["Zablokowana do czasu przeczytania rozdziału"]
-    C -- "tak" --> D{"Zawieszona przez użytkownika?"}
-    D -- "tak" --> Z["Nie wraca do kolejek,<br/>postęp zostaje"]
-    D -- "nie" --> E{"Pytanie testowe?"}
-    E -- "tak" --> F{"Pochodzenie mieści się<br/>w filtrze użytkownika?"}
-    F -- "nie" --> W["Pominięta w Testach"]
-    F -- "tak" --> OK["Dostępna w Testach"]
-    E -- "nie (fiszka)" --> G{"Powiązana z pytaniem<br/>(linked_test_card_id)?"}
-    G -- "nie" --> OK2["Dostępna w Fiszkach"]
-    G -- "tak" --> H{"Odblokowana?<br/>(pewny błąd w tym pytaniu<br/>albo ręczne 'Dodaj do fiszek')"}
-    H -- "tak" --> OK2
-    H -- "nie" --> V["Ukryta, dopóki się nie odblokuje"]
+    Q["Pytanie"] --> H{"hidden = false?<br/>(nieukryte przez administratora)"}
+    H -- "nie" --> X["Nie pokazuje się nikomu"]
+    H -- "tak" --> A{"Akt pytania w aktach puli?<br/>(ścieżka: własne arkusze albo lista aktów;<br/>po zawężeniu: tylko wybrane akty)"}
+    A -- "nie" --> Y["Poza pulą użytkownika"]
+    A -- "tak" --> M{"Tryb nauki"}
+    M -- "Testy" --> F{"Źródło dozwolone<br/>przez filtr źródeł?"}
+    F -- "nie" --> W["Pominięte w Testach"]
+    F -- "tak" --> S{"Zawieszone w tym trybie?"}
+    M -- "Fiszki" --> U{"Fiszka odblokowana i nieukryta?<br/>(pewny błąd albo ręczne 'Dodaj do fiszek';<br/>flashcard_hidden = false)"}
+    U -- "nie" --> V["Nie ma jej w Fiszkach"]
+    U -- "tak" --> S
+    S -- "tak" --> Z["Nie wraca do kolejek,<br/>postęp zostaje"]
+    S -- "nie" --> OK["Dostępne w kolejce tego trybu"]
 ```
 
-Za „przeczytane rozdziały” odpowiada `PUT /api/chapters/{id}/progress` (tabela `user_chapter_progress`). Reguła
-dostępności jest zapisana w zapytaniach `CardRepository.findReadableRefs...` i `countReadableById`.
-
-Gdy użytkownik zna numer karty z nieprzeczytanego rozdziału podręcznika, odpowiedź na nią kończy się tak samo, jak dla
-nieistniejącej (404), więc nie da się „odpowiadać na zapas” na pytania z rozdziałów, których jeszcze nie odblokował.
-Ukrycie karty **nie** blokuje odpowiedzi w sesji, którą użytkownik już ma otwartą (nowe sesje jej nie zawierają).
+Ukrycie pytania **nie** blokuje odpowiedzi w sesji, którą użytkownik już ma otwartą (nowe sesje go nie zawierają).
+Pytania z poza puli nie są tajne: odpowiedź na pytanie o znanym numerze jest przyjmowana, ale aplikacja nigdy nie
+pokazuje pytań spoza puli w kolejkach, katalogu ani statystykach.
 
 ## Odpowiedź w teście krok po kroku
 
@@ -86,8 +100,8 @@ szczęśliwego trafienia.
 
 ```mermaid
 flowchart TD
-    S["POST /api/review/test-answer<br/>cardId, selectedOption, guessed, timeSpentSeconds"] --> K{"Karta dostępna<br/>i jest pytaniem testowym?"}
-    K -- "nie" --> E["404 / 400"]
+    S["POST /api/review/test-answer<br/>questionId, selectedOption, guessed, timeSpentSeconds"] --> K{"Pytanie istnieje?"}
+    K -- "nie" --> E["404"]
     K -- "tak" --> P{"Poprawna opcja?"}
     P -- "tak, pewna" --> G["ocena GOOD"]
     P -- "tak, ale 'nie jestem pewien'" --> A1["ocena AGAIN"]
@@ -99,38 +113,40 @@ flowchart TD
     A1 --> F
     A2 --> F
     F --> I["odstęp = f(stabilność, retencja)<br/>→ rozrzut (fuzz) → przycięcie do egzaminu"]
-    I --> D["due_date = termin kolejnej powtórki"]
-    D --> W["zapis: user_card_state + review_logs<br/>(jedna transakcja)"]
-    W --> R["odpowiedź: correct, correctOption,<br/>explanation, legalBasis, validAsOf,<br/>lapses, leech, flashcardUnlocked, flashcard"]
+    I --> D["due_date = termin kolejnej powtórki w trybie TEST"]
+    D --> W["zapis: user_question_states + review_logs<br/>(jedna transakcja)"]
+    W --> R["odpowiedź: correct, correctOption,<br/>explanation, legalBasis, validAsOf,<br/>lapses, leech, flashcardUnlocked, flashcard, newQuestion"]
 ```
 
 Odpowiedź serwera zawiera m.in. poprawną opcję, wyjaśnienie, podstawę prawną, aktualną liczbę błędów, informację czy
 pytanie jest już „trudne” (`leech`), czy ta odpowiedź **właśnie** odblokowała fiszkę (`flashcardUnlocked`, tylko przy
 pierwszym pewnym błędzie w tym pytaniu) oraz stan fiszki (`flashcard`).
 
-Fiszki oceniasz sam (`POST /api/review`, pole `rating` od 1 do 4). „Nie pamiętam” (1) zwiększa licznik błędów.
+Fiszki oceniasz sam (`POST /api/review`, pole `rating` od 1 do 4). „Nie pamiętam” (1) zwiększa licznik błędów
+w trybie fiszek.
 
 ## Fiszki z pytań i odblokowywanie
 
-Każde pytanie testowe ma w bazie **automatycznie utworzoną fiszkę** (wyzwalacze, opis w
-[02](02-baza-danych.md#wyzwalacze-fiszka-z-każdego-pytania-migracja-v18)): przód to treść pytania, tył to poprawna
-odpowiedź i wyjaśnienie.
+Każde pytanie może być fiszką (to tryb nauki tego samego pytania, nie osobny rekord; opis w
+[02](02-baza-danych.md#fiszki-tryb-pytania-odblokowywanie)): przód to treść pytania, tył to poprawna odpowiedź i
+wyjaśnienie. Administrator może ukryć samą fiszkę pytania (`flashcard_hidden`), wtedy pytanie zostaje tylko w testach.
 
-Użytkownik **nie widzi** tej fiszki od razu. Pojawia się ona w jego Fiszkach dopiero, gdy:
+Użytkownik **nie widzi** fiszki od razu. Pojawia się ona w jego Fiszkach dopiero, gdy:
 
 1. **pomylił to pytanie w teście bez zaznaczenia „Nie jestem pewien”** (pewny błąd), albo
 2. **sam ją dodał** przyciskiem „Dodaj do fiszek” (`POST /api/questions/{id}/flashcard`).
 
 Idea: pewny błąd to utrwalone błędne przekonanie, więc warto je przepracować także w formie fiszki. Pomyłka, o której
-użytkownik wiedział („nie jestem pewien”), nie wymaga fiszki.
+użytkownik wiedział („nie jestem pewien”), nie wymaga fiszki. Fiszki **nie podlegają filtrowi źródeł** (wynikają z
+błędów w testach), ale podlegają zawężeniu do aktów.
 
 Stany fiszki pytania (`FlashcardStatus`) widziane z punktu widzenia użytkownika:
 
 | Stan | Znaczenie | Czy można zmienić |
 |------|-----------|-------------------|
-| `UNAVAILABLE` | Pytanie nie ma widocznej fiszki (np. została ukryta) | — |
+| `UNAVAILABLE` | Fiszka pytania jest ukryta przez administratora | — |
 | `AVAILABLE` | Fiszki nie ma jeszcze w Fiszkach | „Dodaj do fiszek” |
-| `ADDED_MANUALLY` | Użytkownik sam ją dodał | „Usuń z fiszek” (kasuje też harmonogram tej fiszki) |
+| `ADDED_MANUALLY` | Użytkownik sam ją dodał | „Usuń z fiszek” (kasuje też harmonogram fiszki, nie ruszając testu) |
 | `ADDED_BY_MISTAKE` | Trafiła przez pewny błąd | **Nie da się cofnąć** |
 
 Kto ma pewny błąd w pytaniu, ma fiszkę niezależnie od ręcznego dodania, więc „Usuń z fiszek” nie ma wpływu na fiszkę
@@ -142,13 +158,13 @@ odblokowaną przez błąd.
 **21 parametrów** (w0–w20). Implementacja jest w `review/fsrs/FsrsEngine.java`, a jej wyniki są sprawdzane testem
 `FsrsEngineTest` względem referencyjnej biblioteki `py-fsrs`.
 
-Algorytm dla każdej karty u każdego użytkownika pamięta dwie liczby (kolumny `stability` i `difficulty` w
-`user_card_state`):
+Algorytm dla każdego pytania u każdego użytkownika, osobno w każdym trybie, pamięta dwie liczby (kolumny `stability` i
+`difficulty` w `user_question_states`):
 
 | Pojęcie | Co znaczy | Zakres |
 |---------|-----------|--------|
-| **Stabilność** (S) | Po ilu dniach szansa przypomnienia sobie karty spada do **90%**. Im wyższa, tym trwalej pamiętasz | od 0,001 dnia w górę |
-| **Trudność** (D) | Jak trudna jest ta karta dla Ciebie | 1–10 |
+| **Stabilność** (S) | Po ilu dniach szansa przypomnienia sobie pytania spada do **90%**. Im wyższa, tym trwalej pamiętasz | od 0,001 dnia w górę |
+| **Trudność** (D) | Jak trudne jest to pytanie dla Ciebie | 1–10 |
 | **Przypominalność** (R, *retrievability*) | Szansa, że **teraz** sobie przypomnisz | 0–100% |
 
 **Krzywa zapominania.** Im więcej dni minęło od ostatniej powtórki (t), tym niższa szansa przypomnienia:
@@ -158,7 +174,7 @@ R(t, S) = (1 + F · t / S) ^ (−w20),    gdzie F = 0,9^(−1 / w20) − 1
 ```
 
 Wzór jest tak dobrany, że **R(S, S) = 90%**: po upływie czasu równego stabilności masz dokładnie 90% szans.
-Dla karty o stabilności 2,3065 dnia:
+Dla pytania o stabilności 2,3065 dnia:
 
 | Minęło dni | 0 | 1 | 2,31 | 5 | 10 | 30 |
 |------------|---|---|------|---|----|----|
@@ -174,7 +190,7 @@ odstęp = (S / F) · ( retencja^(−1 / w20) − 1 )
 Przy retencji 90% odstęp jest równy stabilności. Wyższa retencja skraca odstępy (np. dla S = 10: przy 90% odstęp
 10 dni, przy 95% tylko 4 dni). Odstęp jest ograniczony do 36 500 dni (100 lat).
 
-**Pierwsza odpowiedź na kartę** (`firstReview`) ustawia stabilność wprost z parametrów w0–w3, zależnie od oceny:
+**Pierwsza odpowiedź na pytanie w danym trybie** (`firstReview`) ustawia stabilność wprost z parametrów w0–w3, zależnie od oceny:
 
 | Ocena | Stabilność startowa | Trudność startowa | Odstęp przy retencji 90% |
 |-------|--------------------|--------------------|---------------------------|
@@ -187,14 +203,14 @@ Przy retencji 90% odstęp jest równy stabilności. Wyższa retencja skraca odst
 
 - **Minęła co najmniej doba** i ocena inna niż „Nie pamiętam”: stabilność **rośnie**. Wzrost jest tym większy,
   im niższa była przypominalność w chwili odpowiedzi (udane przypomnienie „na ostatnią chwilę” wzmacnia pamięć
-  najbardziej), im łatwiejsza karta, a „Trudne” daje karę (w15), „Łatwe” premię (w16).
+  najbardziej), im łatwiejsze pytanie, a „Trudne” daje karę (w15), „Łatwe” premię (w16).
 - **Minęła co najmniej doba** i ocena „Nie pamiętam” (zapomniałeś): stabilność **spada** do nowej, niższej wartości
   (wzór z w11–w14), ale nigdy nie wyżej niż po „krótkim” wzorze.
 - **Minęło mniej niż doba** (powtórka tego samego dnia): osobny wzór krótkoterminowy (w17–w19).
 - **Trudność** zmienia się po każdej odpowiedzi: „Nie pamiętam” podnosi ją, „Łatwe” obniża, a w7 ściąga ją z
   powrotem ku wartości środkowej.
 
-Stan karty (`state`) pomaga tylko w prezentacji: `NEW` (jeszcze nieodpowiadana), `LEARNING` (pierwsza odpowiedź to
+Stan nauki (`state`) pomaga tylko w prezentacji: `NEW` (jeszcze nieodpowiadana), `LEARNING` (pierwsza odpowiedź to
 „Nie pamiętam”), `REVIEW` (ostatnia ocena inna niż „Nie pamiętam”), `RELEARNING` (zapomniana po wcześniejszej nauce).
 
 **Domyślne parametry** (`FsrsWeights.defaults()`), wspólne dla wszystkich użytkowników:
@@ -235,46 +251,46 @@ Po obliczeniu nowej stabilności serwer wyznacza **dokładny termin** w kilku kr
 
 1. **Odstęp w dniach** = wzór FSRS dla stabilności i **efektywnej retencji** użytkownika (w 30 ostatnich dniach przed
    egzaminem co najmniej 95%, patrz niżej).
-2. **Rozrzut terminów (fuzz)** — `SchedulingRules.fuzz`. Żeby karty uczone tego samego dnia nie wracały wszystkie
+2. **Rozrzut terminów (fuzz)** — `SchedulingRules.fuzz`. Żeby pytania uczone tego samego dnia nie wracały wszystkie
    naraz, odstęp od 2,5 dnia jest losowo przesuwany o kilka dni (jak w Anki). Dla odstępów poniżej 2,5 dnia bez
    zmian. Przykłady zakresów: 3 dni → 2–4; 10 dni → 8–12; 30 dni → 27–33; 100 dni → 93–107. Wynik nigdy nie jest
    krótszy niż 2 dni.
-3. **Przycięcie do egzaminu** — `capForExam`: jeśli wybrana aplikacja ma ogłoszony termin egzaminu, odstęp nie może go przekroczyć (karta ma
+3. **Przycięcie do egzaminu** — `capForExam`: jeśli wybrana aplikacja ma ogłoszony termin egzaminu, odstęp nie może go przekroczyć (pytanie ma
    wrócić najpóźniej dzień przed egzaminem).
 4. **Zamiana odstępu na termin** — `ReviewPolicy.computeDueDate`:
-   - odstęp **krótszy niż doba** (np. „Nie pamiętam” przy nowej karcie, ok. 5 godzin): termin = teraz + ten czas;
+   - odstęp **krótszy niż doba** (np. „Nie pamiętam” przy nowym pytaniu, ok. 5 godzin): termin = teraz + ten czas;
    - odstęp **od doby wzwyż**: zaokrąglenie do pełnych dni i ustawienie na **początek dnia** (00:00). Dzięki temu
-     karta „na jutro” jest do zrobienia od północy, a nie dopiero o tej godzinie, o której uczyłeś się dziś.
+     pytanie „na jutro” jest do zrobienia od północy, a nie dopiero o tej godzinie, o której uczyłeś się dziś.
 
 ## Kolejka na dziś i limity dzienne
 
 Kolejki budują `ReviewQueueService` (fiszki i testy) oraz `QueueRules`.
 
-**Skład sesji:** najpierw **zaległe** powtórki, potem **nowe** karty.
+**Skład sesji:** najpierw **zaległe** powtórki, potem **nowe** pytania.
 
 ```mermaid
 flowchart LR
-    A["Dostępne karty zakresu<br/>(źródło / przedmiot / kategoria / całość)"] --> B["Podział"]
+    A["Pytania z puli w zakresie<br/>(źródło / akt prawny / dziedzina / cała pula)"] --> B["Podział"]
     B --> C["Zaległe:<br/>due_date ≤ teraz,<br/>niezawieszone"]
-    B --> D["Nowe:<br/>brak wiersza w user_card_state"]
+    B --> D["Nowe:<br/>brak wiersza w user_question_states<br/>(w tym trybie)"]
     C --> E["Sortowanie: najniższa szansa<br/>przypomnienia R na początku"]
     E --> F["Ucięcie do dziennego limitu<br/>zaległych (domyślnie 100)"]
-    D --> G["Kolejność rozdziałów, potem id"]
+    D --> G["Kolejność po id<br/>(w Testach losowa)"]
     G --> H["Ucięcie do dziennego limitu<br/>nowych (20 fiszek / 40 pytań)"]
     F --> Q["Sesja"]
     H --> Q
 ```
 
-- **Zaległe** są układane od kart, które najpewniej już zapomniałeś (najniższa przypominalność R; przy remisie starszy
+- **Zaległe** są układane od pytań, które najpewniej już zapomniałeś (najniższa przypominalność R; przy remisie starszy
   termin, potem niższe id). To zapobiega „ścianie zaległości” po przerwie w nauce: robisz najpilniejsze, reszta czeka.
-- **Nowe** karty wchodzą w kolejności rozdziałów (`order_index`), a w obrębie rozdziału według `id`. Dla Testów
-  zarówno zaległe, jak i nowe są dodatkowo **losowo mieszane** (zaległe osobno od nowych; zaległe na początku).
-- **Zawieszone** karty mają stan, więc nie są „nowe”, ale nie wracają do kolejki.
+- **Nowe** pytania wchodzą w kolejności `id`. Dla Testów zarówno zaległe, jak i nowe są dodatkowo **losowo mieszane**
+  (zaległe osobno od nowych; zaległe na początku).
+- **Zawieszone** pytania mają stan, więc nie są „nowe”, ale nie wracają do kolejki (zawieszenie jest osobne w każdym trybie).
 
 ### Limity dzienne
 
 Domyślne wartości są w `application.yml` (sekcja `app.fsrs`), a każdy użytkownik może je zmienić w ustawieniach
-(`PUT /api/me/settings`).
+(`PUT /api/me/settings`). Limity liczą się **osobno dla trybów** (testy i fiszki).
 
 | Limit | Domyślnie | Zakres w ustawieniach | Co liczy się do limitu |
 |-------|-----------|-----------------------|------------------------|
@@ -283,34 +299,34 @@ Domyślne wartości są w `application.yml` (sekcja `app.fsrs`), a każdy użytk
 | Zaległe powtórki dziennie | 100 | 10–1000 | Odpowiedzi dziś po co najmniej 1 dniu od poprzedniej (`elapsed_days ≥ 1`), osobno dla fiszek i testów |
 | Docelowa retencja | 90% | 70–97% | — |
 
-„Dziś” oznacza dobę w strefie `Europe/Warsaw` (północ do północy). Powtórki tej samej karty w ciągu jednego dnia (np.
+„Dziś” oznacza dobę w strefie `Europe/Warsaw` (północ do północy). Powtórki tego samego pytania w ciągu jednego dnia (np.
 „Nie pamiętam” wraca po kilku godzinach) **nie** zużywają limitu zaległych.
 
 **Zwiększanie limitu na życzenie** (przyciski typu „Powtórz jeszcze”, „Ucz się dalej”): parametry
 `extraNewCards` i `extraDueReviews` w zapytaniu o kolejkę.
 
-- `extraNewCards=N` — dokładnie N nowych kart (niezależnie od limitu dziennego), ale nie więcej niż dostępnych.
-  `extraNewCards=0` — sesja **bez nowych** kart (same zaległe; tak działa „Powtórz zaległe” w Testach).
+- `extraNewCards=N` — dokładnie N nowych pytań (niezależnie od limitu dziennego), ale nie więcej niż dostępnych.
+  `extraNewCards=0` — sesja **bez nowych** pytań (same zaległe; tak działa „Powtórz zaległe” w Testach).
 - `extraDueReviews=N` — dokładnie N zaległych (niezależnie od limitu), N przycięte do 0–200.
 
-`GET /api/review/queue/backlog` mówi, ile kart ma minięty termin (`dueNow`), ile z nich **nie zmieści się dziś** w
+`GET /api/review/queue/backlog` mówi, ile pytań ma minięty termin (`dueNow`), ile z nich **nie zmieści się dziś** w
 sesji (`deferred`), jaki jest limit (`dailyLimit`) i ile zaległych zrobiono już dziś (`doneToday`).
 
 ## Tryb egzaminacyjny i plan nowych pytań
 
-Użytkownik nie wpisuje własnej daty. **Wybiera aplikację**, do której się przygotowuje (`PUT /api/me/exam`), a datę
+Użytkownik nie wpisuje własnej daty. **Wybiera ścieżkę**, do której się przygotowuje (`PUT /api/me/track`), a datę
 egzaminu ustawia administrator osobno dla każdej aplikacji (tabela `exam_terms`). Gdy wybrana aplikacja ma ogłoszony
 termin, włączają się trzy mechanizmy (`SchedulingRules`, `LearningSettingsService`). Aplikacja bez terminu
-(„termin nieogłoszony”) i brak wyboru oznaczają zwykłą naukę bez trybu egzaminacyjnego i bez planu.
+(„termin nieogłoszony”), ścieżka Student i brak wyboru oznaczają zwykłą naukę bez trybu egzaminacyjnego i bez planu.
 
-Wybór aplikacji ustawia też filtr pochodzenia pytań w Testach: wybrana aplikacja i pytania autorskie. Dzieje się to w
-momencie wyboru, a potem filtr zmienia się osobno (`PUT /api/me/origin-filter`).
+Zmiana ścieżki czyści zawężenie puli do aktów i przywraca filtr źródeł (wszystkie trzy grupy włączone), bo oba dotyczyły
+poprzedniej ścieżki.
 
 | Mechanizm | Reguła |
 |-----------|--------|
 | **Wyższa retencja przed egzaminem** | W ostatnich **30 dniach** przed egzaminem retencja do liczenia terminów wynosi co najmniej **95%** (`EXAM_RETENTION`). Odstępy się skracają, więc materiał wraca częściej |
-| **Odstęp nie wykracza poza egzamin** | Odstęp jest przycinany tak, by karta wróciła najpóźniej dzień przed egzaminem (co najmniej 1 dzień) |
-| **Plan nowych pytań** | Ostatnie **14 dni** (`EXAM_REVIEW_RESERVE_DAYS`) są zarezerwowane na same powtórki: pytanie zaczęte później nie zdążyłoby dostać trzech poprawnych odpowiedzi, czyli stać się „opanowane”. Dni do planowania nowych = dni do egzaminu − 14. W rezerwie (14 dni i mniej) nowego się już nie planuje: `planningDays` i cel dnia wynoszą 0. Aplikacja liczy, ile nowych pytań i fiszek dziennie trzeba zacząć, żeby zdążyć |
+| **Odstęp nie wykracza poza egzamin** | Odstęp jest przycinany tak, by pytanie wróciło najpóźniej dzień przed egzaminem (co najmniej 1 dzień) |
+| **Plan nowych pytań** | Ostatnie **14 dni** (`EXAM_REVIEW_RESERVE_DAYS`) są zarezerwowane na same powtórki: pytanie zaczęte później nie zdążyłoby dostać trzech poprawnych odpowiedzi, czyli stać się „opanowane”. Dni do planowania nowych = dni do egzaminu − 14. W rezerwie (14 dni i mniej) nowego się już nie planuje: `planningDays` i cel dnia wynoszą 0. Aplikacja liczy, ile nowych pytań dziennie trzeba zacząć, żeby zdążyć (fiszek się nie planuje: powstają z pomyłek, więc ich liczby nie da się przewidzieć) |
 
 Przykład planu: zostało 300 nowych pytań, a do egzaminu 44 dni. Dni do planowania: 44 − 14 = 30. Cel na dziś:
 300 / 30 = **10 nowych pytań dziennie** (zaokrąglone w górę).
@@ -334,23 +350,23 @@ wprost i nie ma sufitu 100. Gdy trzeba więcej, niż pozwala sufit (`plan.requir
 `plan.maxTestQuestionsPerDay`), wszystkich nowych pytań nie da się zacząć na czas, a frontend mówi to wprost.
 
 Po egzaminie (termin aplikacji w przeszłości) ustawienia egzaminacyjne przestają działać (`examPassed = true`), a odstępy wracają
-do zwykłych. Plan widać w odpowiedzi `GET /api/me/settings` (pole `plan`). Do planu liczą się tylko pytania z
-pochodzeń wybranych w filtrze.
+do zwykłych. Plan widać w odpowiedzi `GET /api/me/settings` (pole `plan`). Do planu liczą się tylko pytania z puli
+użytkownika (jego akty po zawężeniu i źródła z filtra), których jeszcze nie ruszył w teście.
 
 ## Trudne pytania i zawieszanie
 
-**Trudne pytanie (ang. *leech*):** karta, w której użytkownik pomylił się już **8 razy** lub więcej
+**Trudne pytanie (ang. *leech*):** pytanie, w którym użytkownik pomylił się już **8 razy** lub więcej w danym trybie
 (`app.review.leech-threshold`, domyślnie 8; `lapses ≥ próg`). Dalsze powtarzanie jej w tej samej formie rzadko pomaga,
 więc aplikacja **podpowiada**, żeby ją zawiesić albo zgłosić (może być źle sformułowana). **Niczego nie zawiesza
 sama.**
 
-**Zawieszenie** (`PUT /api/me/suspended-cards/{cardId}`): karta znika z kolejek i liczników powtórek tego użytkownika,
+**Zawieszenie** (`PUT /api/me/suspended-questions/{questionId}?mode=`): pytanie znika z kolejek i liczników powtórek tego użytkownika w tym trybie,
 ale **nie traci postępu** (stabilność, termin, historia zostają). Tylko dla tego jednego użytkownika. Po przywróceniu
-(`DELETE`) karta wraca zgodnie z dotychczasowym terminem: jeśli jest zaległa, pojawi się wśród najsłabiej
-zapamiętanych. Zawiesić można tylko kartę, na którą użytkownik już odpowiadał (tylko taka ma stan); dla pozostałych
+(`DELETE`) pytanie wraca zgodnie z dotychczasowym terminem: jeśli jest zaległa, pojawi się wśród najsłabiej
+zapamiętanych. Zawiesić można tylko pytanie, na które użytkownik już odpowiadał w tym trybie (tylko takie ma stan); dla pozostałych
 odpowiedź jest jak dla nieistniejącej (404). Operacje są idempotentne.
 
-`GET /api/me/difficult-cards` zwraca dwie listy (po maks. 200): zawieszone (od ostatnio zawieszonych) i trudne, które
+`GET /api/me/difficult-questions` zwraca dwie listy (po maks. 200): zawieszone (od ostatnio zawieszonych) i trudne, które
 nadal są w nauce (od największej liczby błędów).
 
 ## Dodatkowe sesje: „Powtórz moje błędy” i „Przerób błędy”
@@ -360,14 +376,14 @@ Obie sesje (i „Własny test” poniżej) to zwykłe sesje testowe: odpowiedzi 
 
 - **„Powtórz moje błędy”** (`/api/review/mistakes-queue`, `/mistakes-count`): pytania, w których **ostatnia**
   odpowiedź w teście z ostatnich **30 dni** była błędna. Pytanie, na które później odpowiedziano dobrze, znika z listy.
-  Maksymalnie **50** pytań w sesji, w losowej kolejności; zawieszone, niedostępne i spoza filtra pochodzenia odpadają.
-- **„Przerób błędy teraz”** (`/api/review/practice-queue?cardIds=...`): sesja z podanych pytań (np. błędnych po
-  egzaminie próbnym), w podanej kolejności, maksymalnie 200. Pytania niedostępne są po cichu pomijane.
+  Maksymalnie **50** pytań w sesji, w losowej kolejności; zawieszone, spoza puli i spoza filtra źródeł odpadają.
+- **„Przerób błędy teraz”** (`/api/review/practice-queue?questionIds=...`): sesja z podanych pytań (np. błędnych po
+  egzaminie próbnym), w podanej kolejności, maksymalnie 200. Pytania spoza puli, ukryte i zawieszone są po cichu pomijane.
 
 ## Własny test
 
-Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera dowolne **rodzaje i akty
-prawne** (zakres to ich suma, bez powtórzeń), **które pytania** mają w niej być (wszystkie, nowe, z błędną ostatnią
+Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera dowolne **dziedziny i akty
+prawne** (zakres to ich suma, bez powtórzeń; bez wyboru cała pula), **które pytania** mają w niej być (wszystkie, nowe, z błędną ostatnią
 odpowiedzią, zaległe) i **liczbę pytań**: **10, 20, 50, 100 albo 150** (własnej liczby ani wyboru lat egzaminu nie ma).
 Gdy w zakresie jest mniej niż 10 pytań, jedyny wybór to wszystkie z nich. Podgląd „Dostępnych: N” dla każdego rodzaju
 daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
@@ -376,14 +392,14 @@ daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
   (`/practice-queue`), więc odpowiedzi mają ocenę pamięci i terminy, a pomyłki trafiają do „Moich błędów”.
   Nie ma progu zaliczenia ani raportu „zdał / nie zdał”.
 - **Zapisany jako sesja („Moje testy”).** Losowanie od razu zapisuje test (`CustomTestSessionService`, tabele
-  `custom_test_sessions` i `custom_test_session_questions`): zakres, rodzaj pytań, filtr pochodzenia z tej chwili i
+  `custom_test_sessions` i `custom_test_session_questions`): zakres, rodzaj pytań, filtr źródeł z tej chwili i
   wylosowane pytania w kolejności sesji. Odpowiedzi wysyłane z numerem testu (`sessionId`) dopisują się do niego; po
   odpowiedzi na ostatnie pytanie test jest ukończony, a porzucony w połowie zostaje na liście jako **nieukończony**.
   Lista (`GET /api/custom-tests/sessions`, 50 ostatnich) i szczegóły z odpowiedziami (`/{id}`) służą ekranowi „Moje
   testy”, z którego da się ułożyć test ponownie z tymi samymi ustawieniami. Powtórki, „Popraw błędy” i egzamin nie są
   zapisywane jako własne testy. Własne testy liczą się osobno od egzaminów w „Podsumowaniu nauki”.
-- **Pula**: pytania testowe dostępne dla użytkownika (pula płaska albo przeczytany rozdział), nieukryte,
-  **niezawieszone** i z wybranych pochodzeń (filtr pochodzenia).
+- **Pula**: pytania z puli użytkownika (jego akty po zawężeniu), nieukryte, **niezawieszone** w testach i ze źródeł
+  z filtra źródeł.
 - **Dobór przy ograniczonej liczbie**: `MISTAKES` bierze najświeższe błędy (jak „Moje błędy”, tylko w wybranym zakresie
   i bez limitu 50), `DUE` te o najniższej szansie przypomnienia (jak kolejka nauki), `ALL` i `NEW` losują. Kolejność w
   sesji jest zawsze losowa.
@@ -406,15 +422,15 @@ Aplikacja mierzy czas na dwa sposoby, które się nie mieszają:
 ## Egzamin próbny
 
 Egzamin próbny (`/api/exams/*`) jest **odizolowany od nauki**: nie zmienia terminów powtórek (FSRS), nie dopisuje
-niczego do dziennika odpowiedzi, nie rusza dziennych limitów ani licznika błędów kart.
+niczego do dziennika odpowiedzi, nie rusza dziennych limitów ani licznika błędów.
 
-**Format jest stały** (`ExamFormat`): zawsze **150 pytań** z całego dostępnego materiału, zaliczenie od
+**Format jest stały** (`ExamFormat`): zawsze **150 pytań** z całej puli użytkownika, zaliczenie od
 **100 punktów** (2/3 punktów). Użytkownik nie wybiera zakresu, liczby pytań ani progu, a próg ustala wyłącznie serwer.
 Egzamin z jednego działu nie ma sensu (prawdziwy egzamin jest mieszany), więc ćwiczenie z wybranego działu to
 [własny test](#własny-test), który niczego nie zalicza.
 
-1. **Start** (`POST /api/exams/start`, bez ciała): serwer losuje 150 pytań testowych dostępnych dla Ciebie,
-   niezawieszonych i z wybranych pochodzeń. Zwraca je **bez poprawnych odpowiedzi**, razem z progiem w punktach
+1. **Start** (`POST /api/exams/start`, bez ciała): serwer losuje 150 pytań z Twojej puli (**bez zawężenia do wybranych
+   aktów**: prawdziwy egzamin obejmuje wszystko), niezawieszonych w testach i ze źródeł z filtra źródeł. Zwraca je **bez poprawnych odpowiedzi**, razem z progiem w punktach
    (`passPoints`). Niczego nie zapisuje. Jeśli w materiale jest mniej niż 150 pytań, egzamin ma wszystkie, a próg maleje
    proporcjonalnie (100 z 150, w górę do całego punktu; 12 pytań to próg 8).
 2. **Rozwiązywanie** odbywa się po stronie frontendu (czas, opcjonalny limit minut, wybór odpowiedzi).
@@ -424,41 +440,39 @@ Egzamin z jednego działu nie ma sensu (prawdziwy egzamin jest mieszany), więc 
 **Punktacja** (`ExamScoring`): 1 punkt za poprawną odpowiedź, brak punktów ujemnych, brak odpowiedzi = 0. Wynik w
 procentach jest zaokrąglany do 0,1 tylko do wyświetlania. **Zaliczenie** to co najmniej `passPoints` poprawnych
 odpowiedzi (porównanie na liczbach całkowitych): 100 z 150 zalicza, 99 z 150 (66,0%) jeszcze nie.
-W raporcie pytania, które w międzyczasie zniknęły (usunięte, ukryte, niedostępne), nie są oceniane i są liczone w
+W raporcie pytania, które w międzyczasie zniknęły (usunięte z bazy), nie są oceniane i są liczone w
 `excludedCount`; próg liczy się od liczby ocenionych pytań.
 
 **Stałe proporcje działów.** Prawdziwy egzamin ma ustalone proporcje pytań z poszczególnych działów. Aplikacja ich
 jeszcze nie odtwarza: 150 pytań jest losowane z całej puli (więc proporcje wynikają z tego, ile pytań ma każdy dział w
 bazie). Gdy proporcje zostaną ustalone, trzeba tylko zmienić losowanie w `ExamService.start`.
 
-Historia obejmuje ostatnie 50 podejść. Tabela `exam_attempts` trzyma tylko podsumowania. Podejścia sprzed stałego
-formatu (własny zakres, liczba pytań i próg w procentach) zostają w historii bez zmian; rozpoznaje się je po
-`passPoints = null`.
+Historia obejmuje ostatnie 50 podejść. Tabela `exam_attempts` trzyma tylko podsumowania.
 
-## Filtr pochodzenia pytań
+## Filtr źródeł pytań
 
-Użytkownik może zawęzić Testy do wybranych pochodzeń (pytania autorskie, aplikacja adwokacka/radcowska,
-sędziowska/prokuratorska, notarialna, uzupełniająca sędziowska, komornicza). Zapis jest na koncie (kolumna
-`user_settings.test_origins`), więc działa tak samo na każdym urządzeniu.
+Użytkownik może zawęzić Testy do wybranych **grup źródeł**: własne arkusze (arkusze wybranej ścieżki), arkusze innych
+ścieżek i pytania autorskie (`OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED`). Zapis jest na koncie (kolumny
+`user_settings.include_own_sheets`, `include_other_sheets`, `include_authored`), więc działa tak samo na każdym urządzeniu.
 
-- Zawsze musi być wybrane **co najmniej jedno** pochodzenie. Brak wpisu (`NULL`) oznacza „wszystkie”; dzięki temu
-  pochodzenia dodane w przyszłości są od razu widoczne dla tych, którzy niczego nie zawężali.
-- Filtr dotyczy **wyłącznie pytań testowych**: katalogu Testów, kolejek (nowe, zaległe), „Powtórz moje błędy”, licznika
-  zaległych w Testach, planu do egzaminu i losowania egzaminu. **Fiszki i statystyki go nie uwzględniają.**
+- Zawsze musi być włączona **co najmniej jedna** grupa (baza też tego pilnuje). Domyślnie włączone są wszystkie trzy.
+- Filtr dotyczy **pytań testowych**: katalogu Testów, kolejek (nowe, zaległe), „Powtórz moje błędy”, licznika zaległych w
+  Testach, własnych testów, planu do egzaminu, statystyk testów i losowania egzaminu. **Fiszek nie dotyczy.**
+- Statystyki według źródeł (`GET /api/statistics/sources`) filtra nie uwzględniają: zawsze pokazują całą pulę ścieżki.
 - Wyjątek: ocena zakończonego egzaminu (`submit`) filtra nie stosuje, bo ocenia to, co zostało pokazane.
 
 ## Zabezpieczenia spójności
 
 ### Ochrona przed podwójnym wysłaniem
 
-Jeśli odpowiedź na tę samą kartę przyjdzie szybciej niż **1 sekundę** po poprzedniej, serwer ją ignoruje (zwraca stan
+Jeśli odpowiedź na to samo pytanie w tym samym trybie przyjdzie szybciej niż **1 sekundę** po poprzedniej, serwer ją ignoruje (zwraca stan
 bez zmian). Bez tego podwójne kliknięcie albo automatyczny ponowny strzał po błędzie sieci byłby policzony jako druga
-powtórka „tego samego dnia” i zniekształciłby stabilność karty oraz statystyki.
+powtórka „tego samego dnia” i zniekształciłby stabilność pytania oraz statystyki.
 
 ### Blokada optymistyczna
 
-Gdy dwa okna odpowiedzą na tę samą kartę równocześnie, drugi zapis dostaje **409** („Ta karta została właśnie zmieniona
-w innym oknie. Spróbuj jeszcze raz.”) zamiast po cichu nadpisać pierwszy.
+Gdy dwa okna odpowiedzą na to samo pytanie w tym samym trybie równocześnie, drugi zapis dostaje **409** („To pytanie zostało
+właśnie zmienione w innym oknie. Spróbuj jeszcze raz.”) zamiast po cichu nadpisać pierwszy.
 
 ### Jak liczone są statystyki
 
@@ -466,9 +480,9 @@ Opis endpointów jest w [API: statystyki](api/08-statystyki.md). Najważniejsze 
 
 | Wskaźnik | Definicja |
 |----------|-----------|
-| **Opanowane** | Karty o stabilności powyżej **21 dni** |
-| **Wskaźnik zapamiętywania** | Odsetek udanych (ocena ≥ 2) wśród prawdziwych powtórek z 30 dni, czyli odpowiedzi po co najmniej 1 dniu od poprzedniej. Pierwsze zobaczenie karty i powtórki tego samego dnia nie wchodzą. Brak takich powtórek to „brak danych” (`null`), a nie 0% |
+| **Opanowane** | Pytania o stabilności powyżej **21 dni** (w danym trybie) |
+| **Wskaźnik zapamiętywania** | Odsetek udanych (ocena ≥ 2) wśród prawdziwych powtórek z 30 dni, czyli odpowiedzi po co najmniej 1 dniu od poprzedniej. Pierwsze zobaczenie pytania i powtórki tego samego dnia nie wchodzą. Brak takich powtórek to „brak danych” (`null`), a nie 0% |
 | **Skuteczność w testach** | Poprawne odpowiedzi z 30 dni, niezależnie od „Nie jestem pewien” |
 | **Pewne błędy** | Błędne odpowiedzi bez „Nie jestem pewien” (utrwalone błędne przekonania) |
 | **Szczęśliwe trafienia** | Poprawne odpowiedzi z „Nie jestem pewien” (wiedza krucha) |
-| **Wszystkie karty** | Karty, które użytkownik **może teraz ćwiczyć** (pule płaskie i przeczytane rozdziały), a nie cała biblioteka |
+| **Wszystkie pytania** | Pytania, które użytkownik **może teraz ćwiczyć** w trybie (pula, zawężenie, filtr źródeł w testach, odblokowane fiszki), a nie cała biblioteka |

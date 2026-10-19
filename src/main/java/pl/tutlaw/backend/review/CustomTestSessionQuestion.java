@@ -4,8 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.question.CorrectOption;
+import pl.tutlaw.backend.question.Question;
 
 import java.time.LocalDateTime;
 
@@ -26,8 +26,8 @@ public class CustomTestSessionQuestion {
     private CustomTestSession session;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "card_id", nullable = false)
-    private Card card;
+    @JoinColumn(name = "question_id", nullable = false)
+    private Question question;
 
     /** Miejsce w sesji, od 1. */
     @Column(nullable = false)
@@ -36,7 +36,7 @@ public class CustomTestSessionQuestion {
     /**
      * Wybrana odpowiedź pod oryginalnym kluczem z bazy (odpowiedzi w teście są mieszane, więc to nie litera z ekranu).
      * Bez {@code length = 1}: Hibernate mapuje wtedy enum jako CHAR(1), a kolumna jest VARCHAR(1) (tak samo jak
-     * {@code Card.correctOption}), więc walidacja schematu przy starcie by się nie powiodła.
+     * {@code Question.correctOption}), więc walidacja schematu przy starcie by się nie powiodła.
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "selected_option")

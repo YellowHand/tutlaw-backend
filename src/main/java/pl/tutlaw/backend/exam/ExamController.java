@@ -24,7 +24,7 @@ public class ExamController {
     private final ExamService examService;
 
     /**
-     * Losuje pytania egzaminu (bez poprawnych odpowiedzi). Format jest stały (150 pytań z całego materiału), więc
+     * Losuje pytania egzaminu (bez poprawnych odpowiedzi). Format jest stały (150 pytań z całej puli), więc
      * żądanie nie ma treści. Niczego nie zapisuje.
      */
     @PostMapping("/start")

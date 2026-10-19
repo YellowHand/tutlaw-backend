@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **73 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **60 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -16,7 +16,7 @@ endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 | Format | Żądania i odpowiedzi to JSON (`Content-Type: application/json`), nazwy pól w `camelCase` |
 | Logowanie | Nagłówek `Authorization: Bearer <accessToken>` (token dostępu z `POST /api/auth/login` albo `POST /api/auth/refresh`). Bez niego wszystko poza `/api/auth/**` daje **401** |
 | Role | Endpointy oznaczone **ADMIN** wymagają roli `ADMIN`; zwykły użytkownik dostaje **403** |
-| Wyliczenia (enum) | Wartości jako napisy, np. `"A"`, `"TEST"`, `"NOTARY"`. Nieznana wartość daje 400 „Nieprawidłowy format żądania” |
+| Wyliczenia (enum) | Wartości jako napisy, np. `"A"`, `"TEST"`, `"EXAM_SHEET"`. Nieznana wartość daje 400 „Nieprawidłowy format żądania” |
 | Daty | `LocalDate`: `"2026-10-12"`. `LocalDateTime` (czas lokalny bez strefy, zwykle czas polski): `"2026-10-12T08:15:30"`. W błędach i eksporcie danych `Instant`: `"2026-10-12T06:15:30.123Z"` |
 | Puste wartości | Pola opcjonalne mogą być `null` albo pominięte |
 | Stronicowanie | `?page=0&size=50`. Strona od 0; `size` od 1 do 200 (domyślnie 50); złe wartości są przycinane, nie dają błędu |
@@ -36,8 +36,8 @@ Każdy błąd ma ten sam kształt:
   "timestamp": "2026-10-12T06:15:30.123Z",
   "status": 409,
   "error": "Conflict",
-  "message": "Taka karta już istnieje w tym źródle",
-  "path": "/api/cards"
+  "message": "Taki adres e-mail jest już zajęty",
+  "path": "/api/auth/register"
 }
 ```
 
@@ -45,10 +45,10 @@ Każdy błąd ma ten sam kształt:
 |-----|-------|------------------------|
 | **400** Bad Request | Błędne dane: walidacja pól, zły JSON, nieznana wartość enum, naruszona reguła (np. zbyt słabe hasło) | „Hasło: musi mieć od 8 do 72 znaków” |
 | **401** Unauthorized | Brak tokenu, zły lub wygasły token dostępu (30 minut), konto usunięte, sesja unieważniona zmianą hasła. Klient odpowiada na to wywołaniem `POST /api/auth/refresh` i ponawia żądanie | „Wymagane zalogowanie” |
-| **403** Forbidden | Brak uprawnień (endpoint tylko dla `ADMIN`) | — |
-| **404** Not Found | Nie ma takiego zasobu albo jest niedostępny dla użytkownika (np. karta z nieprzeczytanego rozdziału) | „Card not found” |
+| **403** Forbidden | Brak uprawnień (endpoint tylko dla `ADMIN`: ukrywanie pytań, terminy egzaminów) | — |
+| **404** Not Found | Nie ma takiego zasobu albo jest niedostępny dla użytkownika (np. nieistniejące albo ukryte pytanie) | „Question not found” |
 | **405 / 415** | Zła metoda HTTP / zły typ treści (standardowe odpowiedzi Springa) | — |
-| **409** Conflict | Duplikat, konflikt danych, równoległa zmiana tej samej karty, konto nieaktywowane, link wygasł | „Taka karta już istnieje w tym źródle” |
+| **409** Conflict | Duplikat, konflikt danych, równoległa zmiana tego samego stanu nauki, konto nieaktywowane, link wygasł | „Taki adres e-mail jest już zajęty” |
 | **429** Too Many Requests | Przekroczony limit prób; nagłówek `Retry-After` podaje sekundy | „Zbyt wiele prób. Spróbuj ponownie za 7 min” |
 | **500** Internal Server Error | Nieoczekiwany błąd; szczegóły tylko w logu serwera | „Wystąpił nieoczekiwany błąd. Spróbuj ponownie za chwilę.” |
 
@@ -81,44 +81,34 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | PUT | `/api/users/me/password` | zalogowany | Zmiana hasła, zwraca nową parę tokenów |
 | DELETE | `/api/users/me` | zalogowany | Usunięcie konta (wymaga hasła) |
 
-### Struktura materiału — [03-tresci.md](03-tresci.md)
+### Ścieżki, przedmioty, pula pytań, katalog Testów — [03-tresci.md](03-tresci.md)
 
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
-| GET | `/api/categories` | zalogowany | Kategorie z liczbą przedmiotów |
-| GET | `/api/categories/{categoryId}/subjects` | zalogowany | Przedmioty w kategorii (po polsku posortowane) |
-| POST | `/api/categories` | ADMIN | Dodanie kategorii |
-| GET | `/api/subjects` | zalogowany | Wszystkie przedmioty |
-| POST | `/api/subjects` | ADMIN | Dodanie przedmiotu |
-| GET | `/api/subjects/{subjectId}/sources` | zalogowany | Źródła przedmiotu |
-| POST | `/api/sources` | ADMIN | Dodanie źródła |
-| GET | `/api/sources/{sourceId}/chapters` | zalogowany | Rozdziały źródła ze stanem „przeczytany” |
-| POST | `/api/chapters` | ADMIN | Dodanie rozdziału |
-| GET | `/api/tags` | zalogowany | Wszystkie tagi |
-| POST | `/api/tags` | ADMIN | Dodanie tagu |
-| PUT | `/api/chapters/{chapterId}/progress` | zalogowany | Oznaczenie rozdziału jako przeczytany / nieprzeczytany |
-| GET | `/api/tests/catalog` | zalogowany | Drzewo ekranu Testów z licznikami pytań |
+| GET | `/api/tracks` | zalogowany | Sześć ścieżek: pięć aplikacji i Student |
+| GET | `/api/courses` | zalogowany | Przedmioty studenta z aktami prawnymi i liczbą pytań |
+| GET | `/api/me/pool` | zalogowany | Pula pytań użytkownika: ścieżka, dziedziny z aktami do zaznaczenia, grupy źródeł |
+| PUT | `/api/me/pool/acts` | zalogowany | Zawężenie puli do wybranych aktów prawnych (puste = bez zawężenia) |
+| PUT | `/api/me/pool/source-filter` | zalogowany | Filtr źródeł w Testach: własne arkusze, arkusze innych ścieżek, pytania autorskie |
+| GET | `/api/tests/catalog` | zalogowany | Drzewo ekranu Testów (dziedzina → akt prawny, źródła) z licznikami pytań |
 
-### Karty (administrator) — [04-karty-admin.md](04-karty-admin.md)
+### Pytania (administrator) — [04-pytania-admin.md](04-pytania-admin.md)
 
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
-| GET | `/api/chapters/{chapterId}/cards` | ADMIN | Karty rozdziału (stronicowane) |
-| GET | `/api/sources/{sourceId}/cards` | ADMIN | Karty źródła (stronicowane) |
-| POST | `/api/cards` | ADMIN | Dodanie jednej karty |
-| POST | `/api/cards/bulk` | ADMIN | Import zbiorczy kart |
-| PUT | `/api/cards/{id}/hidden` | ADMIN | Ukrycie / przywrócenie karty wszystkim |
+| PUT | `/api/questions/{id}/hidden` | ADMIN | Ukrycie / przywrócenie pytania wszystkim |
+| PUT | `/api/questions/{id}/flashcard-hidden` | ADMIN | Ukrycie / przywrócenie samej fiszki pytania |
 
 ### Nauka — [05-nauka.md](05-nauka.md)
 
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
-| GET | `/api/review/queue` | zalogowany | Kolejka fiszek na dziś |
+| GET | `/api/review/flashcard-queue` | zalogowany | Kolejka fiszek na dziś |
 | GET | `/api/review/test-queue` | zalogowany | Kolejka pytań testowych na dziś |
-| GET | `/api/review/queue/new-cards-available` | zalogowany | Ile nowych kart czeka w zakresie |
+| GET | `/api/review/queue/new-available` | zalogowany | Ile nowych pytań czeka w zakresie (w trybie fiszek albo testów) |
 | GET | `/api/review/queue/backlog` | zalogowany | Zaległości w zakresie |
-| GET | `/api/review/due-count` | zalogowany | Ile kart czeka na powtórkę (licznik na pasku) |
-| GET | `/api/review/due-tomorrow` | zalogowany | Ile kart wróci na powtórkę do końca jutra (podsumowanie sesji) |
+| GET | `/api/review/due-count` | zalogowany | Ile pytań czeka na powtórkę (licznik na pasku) |
+| GET | `/api/review/due-tomorrow` | zalogowany | Ile pytań wróci na powtórkę do końca jutra (podsumowanie sesji) |
 | GET | `/api/review/practice-queue` | zalogowany | Sesja testowa z podanych pytań |
 | GET | `/api/review/mistakes-queue` | zalogowany | Sesja „Powtórz moje błędy” |
 | GET | `/api/review/mistakes-count` | zalogowany | Ile jest błędów do powtórzenia |
@@ -133,12 +123,12 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
-| GET | `/api/me/difficult-cards` | zalogowany | Zawieszone i trudne pytania |
-| PUT | `/api/me/suspended-cards/{cardId}` | zalogowany | Zawieszenie pytania |
-| DELETE | `/api/me/suspended-cards/{cardId}` | zalogowany | Przywrócenie pytania |
+| GET | `/api/me/difficult-questions` | zalogowany | Zawieszone i trudne pytania |
+| PUT | `/api/me/suspended-questions/{questionId}` | zalogowany | Zawieszenie pytania w trybie (`?mode=TEST` albo `FLASHCARD`) |
+| DELETE | `/api/me/suspended-questions/{questionId}` | zalogowany | Przywrócenie pytania w trybie |
 | POST | `/api/questions/{questionId}/flashcard` | zalogowany | „Dodaj do fiszek” |
 | DELETE | `/api/questions/{questionId}/flashcard` | zalogowany | „Usuń z fiszek” |
-| POST | `/api/cards/{cardId}/reports` | zalogowany | Zgłoszenie błędu w pytaniu |
+| POST | `/api/questions/{questionId}/reports` | zalogowany | Zgłoszenie błędu w pytaniu |
 
 ### Egzamin próbny — [07-egzaminy.md](07-egzaminy.md)
 
@@ -153,11 +143,10 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
 | GET | `/api/statistics/overview` | zalogowany | Przegląd nauki i prognoza 7 dni |
-| GET | `/api/statistics/weak-cards` | zalogowany | Karty, które najłatwiej zapomnisz |
-| GET | `/api/statistics/chapters` | zalogowany | Opanowanie rozdziałów źródła |
-| GET | `/api/statistics/sources` | zalogowany | Postęp w źródłach przedmiotu |
+| GET | `/api/statistics/weak-questions` | zalogowany | Pytania, które najłatwiej zapomnisz |
+| GET | `/api/statistics/acts` | zalogowany | Opanowanie aktów prawnych z puli |
 | GET | `/api/statistics/tests` | zalogowany | Statystyki Testów (30 dni) |
-| GET | `/api/statistics/origins` | zalogowany | Statystyki wg aplikacji i roku |
+| GET | `/api/statistics/sources` | zalogowany | Statystyki wg źródła pytań (arkusze i lata, pytania autorskie) |
 | GET | `/api/statistics/activity` | zalogowany | Liczba odpowiedzi na dzień |
 | GET | `/api/statistics/learning-summary` | zalogowany | Podsumowanie nauki: odpowiedzi, egzaminy, własne testy, czas nauki, średni czas odpowiedzi |
 
@@ -167,15 +156,13 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 |--------|-------|--------|------|
 | GET | `/api/me/settings` | zalogowany | Ustawienia nauki |
 | PUT | `/api/me/settings` | zalogowany | Zapis ustawień nauki |
-| GET | `/api/me/origin-filter` | zalogowany | Filtr pochodzenia pytań w Testach |
-| PUT | `/api/me/origin-filter` | zalogowany | Zapis filtra pochodzenia |
-| PUT | `/api/me/exam` | zalogowany | Wybór aplikacji, do której użytkownik się przygotowuje, albo „Jestem studentem” (ustawia też filtr pochodzenia) |
+| PUT | `/api/me/track` | zalogowany | Wybór ścieżki: jedna z pięciu aplikacji albo Student (czyści zawężenie puli i filtr źródeł) |
 | PUT | `/api/me/theme` | zalogowany | Wybór wyglądu aplikacji (ciemny / jasny) |
 | GET | `/api/me/interface` | zalogowany | Ustawienia interfejsu: ukrycie podpowiedzi skrótów i licznika czasu, liczba dotychczasowych odpowiedzi |
 | PUT | `/api/me/interface` | zalogowany | Zapis ustawień interfejsu |
 | POST | `/api/me/study-time` | zalogowany | Doliczenie porcji czasu nauki (1–300 s) do dzisiejszego dnia |
-| GET | `/api/exam-terms` | zalogowany | Terminy egzaminów wszystkich aplikacji |
-| PUT | `/api/exam-terms/{origin}` | ADMIN | Ustawienie albo usunięcie terminu egzaminu aplikacji |
+| GET | `/api/exam-terms` | zalogowany | Terminy egzaminów pięciu aplikacji |
+| PUT | `/api/exam-terms/{trackId}` | ADMIN | Ustawienie albo usunięcie terminu egzaminu aplikacji |
 
 ### Poza `/api`
 

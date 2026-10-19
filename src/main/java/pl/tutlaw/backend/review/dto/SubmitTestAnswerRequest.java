@@ -1,7 +1,7 @@
 package pl.tutlaw.backend.review.dto;
 
 import jakarta.validation.constraints.NotNull;
-import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.question.CorrectOption;
 
 /**
  * @param guessed opcjonalne; true, gdy użytkownik zaznaczył, że zgadywał.
@@ -11,7 +11,7 @@ import pl.tutlaw.backend.card.CorrectOption;
  *                  na ułożenie testu). Odpowiedź trafia wtedy także do tego testu ("Moje testy").
  */
 public record SubmitTestAnswerRequest(
-        @NotNull Long cardId,
+        @NotNull Long questionId,
         @NotNull CorrectOption selectedOption,
         Double timeSpentSeconds,
         Boolean guessed,

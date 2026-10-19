@@ -3,27 +3,28 @@
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
 Wszystkie endpointy tylko do odczytu, dla zalogowanego użytkownika. Definicje wskaźników („Opanowane”, wskaźnik
-zapamiętywania, pewne błędy) są w [04](../04-nauka-testy-fiszki-fsrs.md#jak-liczone-są-statystyki).
+zapamiętywania, pewne błędy) są w [04](../04-nauka-testy-fiszki-fsrs.md#jak-liczone-są-statystyki). Liczą się pytania z
+**puli** użytkownika (akty jego ścieżki po zawężeniu); pytania ukryte przez administratora są pomijane.
 
 ## Parametr `mode`
 
-Część endpointów przyjmuje opcjonalny `mode`:
+Część endpointów przyjmuje opcjonalny `mode`. Fiszka to tryb nauki tego samego pytania, więc każdy tryb ma własny stan:
 
 | `mode` | Co jest liczone |
 |--------|------------------|
-| `FLASHCARD` | Tylko fiszki (bez pytań testowych i bez zablokowanych fiszek powiązanych z pytaniem) |
-| `TEST` | Tylko pytania testowe |
-| (brak) | Cały materiał: fiszki i pytania razem |
+| `FLASHCARD` | Stan nauki w trybie fiszek; pytania liczą się tylko, gdy ich fiszka jest **odblokowana** (pewny błąd albo ręczne dodanie) i widoczna. Bez filtra źródeł |
+| `TEST` | Stan nauki w testach, z filtrem źródeł |
+| (brak) | Oba tryby razem: to samo pytanie, które ma stan w obu trybach, liczy się dwa razy (raz jako test, raz jako fiszka) |
 
 ## `GET /api/statistics/overview`
 
-Przegląd nauki. Parametry: `subjectId` (opcjonalny, zawęża do przedmiotu), `mode`.
+Przegląd nauki. Parametry: `actId` (opcjonalny, zawęża do aktu prawnego), `mode`.
 
 ```json
 {
-  "totalCards": 820,
-  "cardsStarted": 310,
-  "matureCards": 95,
+  "totalQuestions": 820,
+  "questionsStarted": 310,
+  "matureQuestions": 95,
   "retentionRate": 88.4,
   "upcomingReviews": [
     { "date": "2026-10-12", "count": 42 },
@@ -35,51 +36,40 @@ Przegląd nauki. Parametry: `subjectId` (opcjonalny, zawęża do przedmiotu), `m
 
 | Pole | Znaczenie |
 |------|-----------|
-| `totalCards` | Karty, które użytkownik **może teraz ćwiczyć** (pule płaskie i przeczytane rozdziały) |
-| `cardsStarted` | Z nich: karty, na które odpowiedział co najmniej raz |
-| `matureCards` | Karty „Opanowane”: stabilność powyżej 21 dni |
+| `totalQuestions` | Pytania, które użytkownik **może teraz ćwiczyć** w danym trybie (w fiszkach: odblokowane fiszki) |
+| `questionsStarted` | Z nich: pytania, na które odpowiedział co najmniej raz w tym trybie |
+| `matureQuestions` | Pytania „Opanowane”: stabilność powyżej 21 dni |
 | `retentionRate` | Procent udanych powtórek z 30 dni (po co najmniej dobie od poprzedniej odpowiedzi); **`null`**, gdy nie było jeszcze prawdziwej powtórki |
-| `upcomingReviews` | Prognoza na **7 dni** (dziś i 6 następnych). Karty z minionym terminem liczą się do „dziś” |
+| `upcomingReviews` | Prognoza na **7 dni** (dziś i 6 następnych). Pytania z minionym terminem liczą się do „dziś” |
 
-## `GET /api/statistics/weak-cards`
+## `GET /api/statistics/weak-questions`
 
-Karty, które najłatwiej zapomnisz: najniższa szansa przypomnienia **w tej chwili**.
+Pytania, które najłatwiej zapomnisz: najniższa szansa przypomnienia **w tej chwili**.
 
 | Parametr | Opis |
 |----------|------|
-| `subjectId` | Opcjonalny: zawęża do przedmiotu |
-| `limit` | Ile kart, domyślnie 10, od 1 do 100 |
+| `actId` | Opcjonalny: zawęża do aktu prawnego |
+| `mode` | Opcjonalny; bez niego oba tryby, a pytanie obecne w obu pojawia się raz (z gorszym wynikiem) |
+| `limit` | Ile pytań, domyślnie 10, od 1 do 100 |
 
 ```json
-[ { "cardId": 140, "front": "Termin przedawnienia…", "lapses": 4, "currentRetrievability": 0.41,
-    "lastReviewAt": "2026-09-20T18:00:00" } ]
+[ { "questionId": 140, "body": "Termin przedawnienia…", "mode": "TEST", "lapses": 4,
+    "currentRetrievability": 0.41, "lastReviewAt": "2026-09-20T18:00:00" } ]
 ```
 
-`currentRetrievability` to liczba od 0 do 1 (szansa przypomnienia sobie karty teraz).
+`currentRetrievability` to liczba od 0 do 1 (szansa przypomnienia sobie pytania teraz).
 
-## `GET /api/statistics/chapters`
+## `GET /api/statistics/acts`
 
-Opanowanie rozdziałów jednego źródła. Parametry: `sourceId` (**wymagany**), `mode`.
+Opanowanie aktów prawnych z puli użytkownika, w kolejności dziedzin i aktów. Parametr: `mode`.
 
 ```json
-[ { "chapterId": 70, "chapterTitle": "Zasady ogólne", "totalCards": 60, "cardsStarted": 40,
-    "matureCards": 22, "masteryPercentage": 36.7 } ]
+[ { "actId": 12, "name": "Kodeks karny", "shortName": "k.k.", "fieldId": 2, "fieldName": "Prawo karne i proces karny",
+    "totalQuestions": 300, "questionsStarted": 180, "matureQuestions": 66, "masteryPercentage": 22.0 } ]
 ```
 
-`masteryPercentage` = opanowane / wszystkie karty rozdziału · 100. Liczone dla **wszystkich rozdziałów** źródła w
-kolejności rozdziałów.
-
-## `GET /api/statistics/sources`
-
-Postęp w źródłach przedmiotu. Parametry: `subjectId` (**wymagany**), `mode`.
-
-```json
-[ { "sourceId": 32, "name": "Prawo karne. Część ogólna", "sourceType": "TEXTBOOK",
-    "totalCards": 410, "cardsStarted": 120, "progressPercentage": 29.3 } ]
-```
-
-Tu mianownikiem jest **cała zawartość źródła** (także nieprzeczytane rozdziały podręcznika), bo pytanie brzmi „ile z
-całej książki już umiem”. `progressPercentage` = rozpoczęte / wszystkie · 100.
+`masteryPercentage` = opanowane / wszystkie pytania aktu · 100 (0, gdy akt nie ma pytań). Są wszystkie akty puli, także
+te, w których użytkownik jeszcze nic nie zaczął.
 
 ## `GET /api/statistics/tests`
 
@@ -100,7 +90,7 @@ Statystyki Testów (zakładka „Testy” na pulpicie). Bez parametrów.
 
 | Pole | Znaczenie |
 |------|-----------|
-| `totalQuestions` | Pytania testowe, które użytkownik może teraz rozwiązywać (liczone tak jak w katalogu Testów) |
+| `totalQuestions` | Pytania, które użytkownik może teraz rozwiązywać w testach (liczone tak jak w katalogu Testów: pula, zawężenie, filtr źródeł) |
 | `solvedQuestions` | Z nich rozwiązane co najmniej raz |
 | `answersLast30Days`, `correctLast30Days` | Odpowiedzi w testach z 30 dni i ile z nich poprawnych (niezależnie od „Nie jestem pewien”) |
 | `accuracyRate` | Procent poprawnych z 30 dni; `null` bez odpowiedzi |
@@ -108,31 +98,35 @@ Statystyki Testów (zakładka „Testy” na pulpicie). Bez parametrów.
 | `luckyGuessesLast30Days` | Poprawne odpowiedzi **z** „Nie jestem pewien” (wiedza krucha) |
 | `activity` | Liczba odpowiedzi w testach na każdy z ostatnich **28 dni** (dni bez odpowiedzi mają 0) |
 
-## `GET /api/statistics/origins`
+## `GET /api/statistics/sources`
 
-Statystyki Testów według **pochodzenia pytań** i **roku egzaminu**. Bez parametrów. Nie podlega filtrowi pochodzenia z
-Testów: zawsze pokazuje wszystkie pochodzenia.
+Statystyki Testów według **źródła pytań**: arkuszy egzaminów (z podziałem na lata) i pytań autorskich. Bez parametrów.
+Nie podlega filtrowi źródeł z Testów ani zawężeniu do aktów: zawsze pokazuje całą pulę ścieżki.
 
 ```json
 {
-  "origins": [
+  "groups": [
     {
-      "origin": "NOTARY",
+      "group": "OWN_SHEETS",
       "stats": {
         "totalQuestions": 300, "solvedQuestions": 120, "matureQuestions": 45, "dueQuestions": 18,
         "answers": 410, "correctAnswers": 320, "accuracyRate": 78.0,
         "answersLast30Days": 90, "accuracyLast30Days": 81.1, "confidentMistakesLast30Days": 9
       },
-      "years": [ { "year": 2024, "stats": { "totalQuestions": 150, "solvedQuestions": 70, "…": "…" } } ]
+      "sources": [
+        { "id": 31, "name": "Notarialna 2024", "kind": "EXAM_SHEET", "examYear": 2024,
+          "stats": { "totalQuestions": 150, "solvedQuestions": 70, "…": "…" } }
+      ]
     }
   ]
 }
 ```
 
-- Zawsze **wszystkie sześć pochodzeń** w kolejności: `AUTHORED`, `ADVOCATE_LEGAL_ADVISER`, `JUDGE_PROSECUTOR`, `NOTARY`,
-  `SUPPLEMENTARY_JUDGE`, `BAILIFF`; pochodzenia bez pytań mają same zera.
-- `years`: rozbicie na lata egzaminu od najnowszego; dla pytań autorskich puste (nie mają roku).
-- Liczby dotyczą pytań **dostępnych teraz** dla użytkownika (nieukrytych, z puli płaskiej albo z przeczytanego rozdziału).
+- Zawsze **trzy grupy** w stałej kolejności: `OWN_SHEETS` (arkusze wybranej ścieżki), `OTHER_SHEETS` (arkusze innych
+  ścieżek), `AUTHORED` (pytania autorskie); grupy bez pytań mają same zera i pustą listę `sources`.
+- `sources`: źródła grupy, arkusze od najnowszego roku; źródła bez pytań w puli są pomijane. `kind` to `EXAM_SHEET`
+  albo `AUTHORED` (pytania autorskie nie mają `examYear`).
+- Liczby dotyczą pytań **dostępnych teraz** dla użytkownika (nieukrytych, z aktów jego ścieżki).
   `matureQuestions` to stabilność powyżej 21 dni, `dueQuestions` to pytania z minionym terminem (bez zawieszonych).
   `accuracyRate` i `accuracyLast30Days` są `null` bez odpowiedzi.
 

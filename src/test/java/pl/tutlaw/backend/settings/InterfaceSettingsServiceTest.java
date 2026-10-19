@@ -110,13 +110,13 @@ class InterfaceSettingsServiceTest {
     @Test
     void updateKeepsOtherSettingsOfTheAccount() {
         UserSettings existing = new UserSettings(5L);
-        existing.setNewCardsPerDay(7);
+        existing.setNewFlashcardsPerDay(7);
         existing.setTheme(Theme.LIGHT);
         store.put(5L, existing);
 
         service.update(new UpdateInterfaceRequest(true, true, true), authentication);
 
-        assertThat(existing.getNewCardsPerDay()).isEqualTo(7);
+        assertThat(existing.getNewFlashcardsPerDay()).isEqualTo(7);
         assertThat(existing.getTheme()).isEqualTo(Theme.LIGHT);
         assertThat(existing.isHintHiddenTest()).isTrue();
     }

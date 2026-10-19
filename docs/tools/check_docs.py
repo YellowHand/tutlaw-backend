@@ -314,7 +314,7 @@ def check_numbers() -> None:
     yml = read(ROOT / "src" / "main" / "resources" / "application.yml")
     expected = {
         "request-retention": ("0.9", "05-konfiguracja-i-uruchomienie.md"),
-        "new-cards-per-day": ("20", "05-konfiguracja-i-uruchomienie.md"),
+        "new-flashcards-per-day": ("20", "05-konfiguracja-i-uruchomienie.md"),
         "new-test-questions-per-day": ("40", "05-konfiguracja-i-uruchomienie.md"),
         "max-reviews-per-day": ("100", "05-konfiguracja-i-uruchomienie.md"),
         "leech-threshold": ("8", "05-konfiguracja-i-uruchomienie.md"),

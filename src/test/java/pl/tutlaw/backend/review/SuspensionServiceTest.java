@@ -3,17 +3,20 @@ package pl.tutlaw.backend.review;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
-import pl.tutlaw.backend.review.dto.DifficultCardsResponse;
+import pl.tutlaw.backend.review.dto.DifficultQuestionsResponse;
 import pl.tutlaw.backend.testsupport.MutableClock;
+import pl.tutlaw.backend.testsupport.Pools;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,7 +36,7 @@ class SuspensionServiceTest {
     private final MutableClock clock = MutableClock.at("2026-10-12T10:00:00Z");
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 12, 12, 0);
 
-    @Mock private UserCardStateRepository stateRepository;
+    @Mock private UserQuestionStateRepository stateRepository;
     @Mock private CurrentUserResolver currentUserResolver;
     private final Authentication authentication = mock(Authentication.class);
 
@@ -41,14 +44,15 @@ class SuspensionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SuspensionService(stateRepository, currentUserResolver, new LeechPolicy(8), clock);
+        service = new SuspensionService(stateRepository, currentUserResolver, Pools.holding(Pools::all),
+                new LeechPolicy(8), clock);
         User user = new User();
         user.setId(5L);
         when(currentUserResolver.resolve(authentication)).thenReturn(user);
     }
 
-    private static UserCardState state(boolean suspended) {
-        UserCardState state = new UserCardState();
+    private static UserQuestionState state(boolean suspended) {
+        UserQuestionState state = new UserQuestionState();
         state.setReps(4);
         state.setLapses(9);
         state.setStability(12.0);
@@ -60,11 +64,13 @@ class SuspensionServiceTest {
         return state;
     }
 
-    private static UserCardStateRepository.DifficultRow row(long cardId, String front, int lapses, LocalDateTime suspendedAt) {
-        return new UserCardStateRepository.DifficultRow() {
-            public Long getCardId() { return cardId; }
-            public String getFront() { return front; }
-            public String getSourceName() { return "Egzamin"; }
+    private static UserQuestionStateRepository.DifficultRow row(
+            long questionId, ReviewMode mode, String body, int lapses, LocalDateTime suspendedAt) {
+        return new UserQuestionStateRepository.DifficultRow() {
+            public Long getQuestionId() { return questionId; }
+            public ReviewMode getMode() { return mode; }
+            public String getBody() { return body; }
+            public String getActName() { return "Kodeks cywilny"; }
             public Integer getLapses() { return lapses; }
             public LocalDateTime getSuspendedAt() { return suspendedAt; }
         };
@@ -74,10 +80,10 @@ class SuspensionServiceTest {
 
     @Test
     void suspend_setsTheFlagAndTime_andKeepsTheLearningProgress() {
-        UserCardState state = state(false);
-        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        UserQuestionState state = state(false);
+        when(stateRepository.findByUserIdAndQuestionIdAndMode(5L, 11L, ReviewMode.TEST)).thenReturn(Optional.of(state));
 
-        service.suspend(11L, authentication);
+        service.suspend(11L, ReviewMode.TEST, authentication);
 
         assertThat(state.isSuspended()).isTrue();
         assertThat(state.getSuspendedAt()).isEqualTo(NOW);
@@ -89,21 +95,32 @@ class SuspensionServiceTest {
     }
 
     @Test
-    void suspend_twice_changesNothingAndDoesNotWrite() {
-        UserCardState state = state(true);
-        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+    void suspend_isPerMode_theOtherModeOfTheSameQuestionIsUntouched() {
+        UserQuestionState test = state(false);
+        when(stateRepository.findByUserIdAndQuestionIdAndMode(5L, 11L, ReviewMode.TEST)).thenReturn(Optional.of(test));
 
-        service.suspend(11L, authentication);
+        service.suspend(11L, ReviewMode.TEST, authentication);
+
+        verify(stateRepository, never()).findByUserIdAndQuestionIdAndMode(5L, 11L, ReviewMode.FLASHCARD);
+    }
+
+    @Test
+    void suspend_twice_changesNothingAndDoesNotWrite() {
+        UserQuestionState state = state(true);
+        when(stateRepository.findByUserIdAndQuestionIdAndMode(5L, 11L, ReviewMode.FLASHCARD)).thenReturn(Optional.of(state));
+
+        service.suspend(11L, ReviewMode.FLASHCARD, authentication);
 
         assertThat(state.getSuspendedAt()).as("data pierwszego zawieszenia zostaje").isEqualTo(NOW.minusDays(3));
         verify(stateRepository, never()).save(any());
     }
 
     @Test
-    void suspend_aQuestionTheUserNeverAnswered_isTreatedAsMissing() {
-        when(stateRepository.findByUserIdAndCardId(5L, 99L)).thenReturn(Optional.empty());
+    void suspend_aQuestionTheUserNeverAnsweredInThatMode_isTreatedAsMissing() {
+        when(stateRepository.findByUserIdAndQuestionIdAndMode(5L, 99L, ReviewMode.TEST)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.suspend(99L, authentication)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.suspend(99L, ReviewMode.TEST, authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
         verify(stateRepository, never()).save(any());
     }
 
@@ -111,10 +128,10 @@ class SuspensionServiceTest {
 
     @Test
     void unsuspend_clearsTheFlag_andLeavesTheDueDateAlone() {
-        UserCardState state = state(true);
-        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        UserQuestionState state = state(true);
+        when(stateRepository.findByUserIdAndQuestionIdAndMode(5L, 11L, ReviewMode.TEST)).thenReturn(Optional.of(state));
 
-        service.unsuspend(11L, authentication);
+        service.unsuspend(11L, ReviewMode.TEST, authentication);
 
         assertThat(state.isSuspended()).isFalse();
         assertThat(state.getSuspendedAt()).isNull();
@@ -124,46 +141,64 @@ class SuspensionServiceTest {
 
     @Test
     void unsuspend_aQuestionThatIsNotSuspended_isANoOp() {
-        UserCardState state = state(false);
-        when(stateRepository.findByUserIdAndCardId(5L, 11L)).thenReturn(Optional.of(state));
+        UserQuestionState state = state(false);
+        when(stateRepository.findByUserIdAndQuestionIdAndMode(5L, 11L, ReviewMode.TEST)).thenReturn(Optional.of(state));
 
-        service.unsuspend(11L, authentication);
+        service.unsuspend(11L, ReviewMode.TEST, authentication);
 
         verify(stateRepository, never()).save(any());
     }
 
     @Test
     void unsuspend_unknownQuestion_isTreatedAsMissing() {
-        when(stateRepository.findByUserIdAndCardId(5L, 99L)).thenReturn(Optional.empty());
+        when(stateRepository.findByUserIdAndQuestionIdAndMode(5L, 99L, ReviewMode.FLASHCARD)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.unsuspend(99L, authentication)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.unsuspend(99L, ReviewMode.FLASHCARD, authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     // ---------------------------------------------------------------- lista
 
     @Test
     void list_returnsSuspendedAndDifficultQuestions_usingTheConfiguredThreshold() {
-        when(stateRepository.findSuspendedRows(eq(5L), org.mockito.ArgumentMatchers.<Pageable>any()))
-                .thenReturn(List.of(row(1, "Zawieszone?", 9, NOW.minusDays(1))));
-        when(stateRepository.findLeechRows(eq(5L), eq(8), org.mockito.ArgumentMatchers.<Pageable>any()))
-                .thenReturn(List.of(row(2, "Trudne?", 12, null), row(3, "Trochę trudne?", 8, null)));
+        when(stateRepository.findSuspendedRows(eq(5L), ArgumentMatchers.<Pageable>any()))
+                .thenReturn(List.of(row(1, ReviewMode.TEST, "Zawieszone?", 9, NOW.minusDays(1))));
+        when(stateRepository.findLeechRows(eq(5L), eq(8), ArgumentMatchers.<Collection<Long>>any(),
+                ArgumentMatchers.<Pageable>any()))
+                .thenReturn(List.of(row(2, ReviewMode.TEST, "Trudne?", 12, null),
+                        row(3, ReviewMode.FLASHCARD, "Trochę trudne?", 8, null)));
 
-        DifficultCardsResponse response = service.list(authentication);
+        DifficultQuestionsResponse response = service.list(authentication);
 
         assertThat(response.leechThreshold()).isEqualTo(8);
-        assertThat(response.suspended()).extracting(DifficultCardsResponse.Item::cardId).containsExactly(1L);
+        assertThat(response.suspended()).extracting(DifficultQuestionsResponse.Item::questionId).containsExactly(1L);
         assertThat(response.suspended().get(0).suspendedAt()).isEqualTo(NOW.minusDays(1));
-        assertThat(response.leeches()).extracting(DifficultCardsResponse.Item::cardId).containsExactly(2L, 3L);
+        assertThat(response.suspended().get(0).mode()).isEqualTo(ReviewMode.TEST);
+        assertThat(response.suspended().get(0).actName()).isEqualTo("Kodeks cywilny");
+        assertThat(response.leeches()).extracting(DifficultQuestionsResponse.Item::questionId).containsExactly(2L, 3L);
         assertThat(response.leeches().get(0).lapses()).isEqualTo(12);
         assertThat(response.leeches().get(0).suspendedAt()).isNull();
+        assertThat(response.leeches().get(1).mode()).isEqualTo(ReviewMode.FLASHCARD);
+    }
+
+    @Test
+    void list_looksForDifficultQuestionsOnlyInTheUsersPool() {
+        when(stateRepository.findSuspendedRows(eq(5L), ArgumentMatchers.<Pageable>any())).thenReturn(List.of());
+        when(stateRepository.findLeechRows(eq(5L), eq(8), ArgumentMatchers.<Collection<Long>>any(),
+                ArgumentMatchers.<Pageable>any())).thenReturn(List.of());
+
+        service.list(authentication);
+
+        verify(stateRepository).findLeechRows(eq(5L), eq(8), eq(Pools.all().actIds()), ArgumentMatchers.<Pageable>any());
     }
 
     @Test
     void list_withNothingToShow_returnsEmptyLists() {
-        when(stateRepository.findSuspendedRows(eq(5L), org.mockito.ArgumentMatchers.<Pageable>any())).thenReturn(List.of());
-        when(stateRepository.findLeechRows(eq(5L), eq(8), org.mockito.ArgumentMatchers.<Pageable>any())).thenReturn(List.of());
+        when(stateRepository.findSuspendedRows(eq(5L), ArgumentMatchers.<Pageable>any())).thenReturn(List.of());
+        when(stateRepository.findLeechRows(eq(5L), eq(8), ArgumentMatchers.<Collection<Long>>any(),
+                ArgumentMatchers.<Pageable>any())).thenReturn(List.of());
 
-        DifficultCardsResponse response = service.list(authentication);
+        DifficultQuestionsResponse response = service.list(authentication);
 
         assertThat(response.suspended()).isEmpty();
         assertThat(response.leeches()).isEmpty();

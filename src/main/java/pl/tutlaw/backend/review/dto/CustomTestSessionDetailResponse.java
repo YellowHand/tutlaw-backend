@@ -1,7 +1,7 @@
 package pl.tutlaw.backend.review.dto;
 
-import pl.tutlaw.backend.card.CorrectOption;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.question.CorrectOption;
+import pl.tutlaw.backend.source.SourceKind;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -19,8 +19,8 @@ public record CustomTestSessionDetailResponse(
      */
     public record Question(
             int position,
-            Long cardId,
-            String front,
+            Long questionId,
+            String body,
             String optionA,
             String optionB,
             String optionC,
@@ -32,8 +32,9 @@ public record CustomTestSessionDetailResponse(
             String explanation,
             String legalBasis,
             LocalDate validAsOf,
+            String actName,
             String sourceName,
-            QuestionOrigin origin,
+            SourceKind sourceKind,
             Integer examYear
     ) {
     }

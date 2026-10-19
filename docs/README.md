@@ -1,39 +1,41 @@
-# Dokumentacja backendu Tutlaw
+# Dokumentacja backendu Gradus iuris
 
-Ten katalog opisuje, jak działa serwer (backend) aplikacji **Tutlaw**: co robi, z czego się składa, jakie ma
+Ten katalog opisuje, jak działa serwer (backend) aplikacji **Gradus iuris**: co robi, z czego się składa, jakie ma
 endpointy, jak liczy powtórki i gdzie w kodzie szukać konkretnej funkcji. Wszystko jest po polsku i pisane tak, żeby
 dało się to zrozumieć bez znajomości kodu.
 
-> Stan dokumentacji: backend po **Etapie 31** (migracje bazy V1–V25). Opisuje to, co faktycznie jest w kodzie.
+> Stan dokumentacji: backend po **Etapie 32** (nowa baza: schemat `V1` i dane słownikowe `V2`). Opisuje to, co faktycznie jest w kodzie.
 > Tam, gdzie coś jest niedoskonałe albo celowo odłożone na koniec, jest to powiedziane wprost w
 > [Znanych ograniczeniach](07-znane-ograniczenia.md).
 
-## Czym jest Tutlaw (w trzech zdaniach)
+## Czym jest Gradus iuris (w trzech zdaniach)
 
-Tutlaw to darmowa aplikacja do nauki na egzaminy prawnicze (aplikacje: adwokacka, radcowska, sędziowska, prokuratorska,
-notarialna, komornicza). Uczysz się na **pytaniach ABC** (trzy odpowiedzi, dokładnie jedna poprawna) i na **fiszkach**.
-Aplikacja zapamiętuje, co naprawdę umiesz, a co tylko zgadłeś, i sama układa powtórki algorytmem **FSRS-6**.
+Gradus iuris to darmowa aplikacja do nauki na egzaminy prawnicze (pięć aplikacji: adwokacka i radcowska, sędziowska i
+prokuratorska, uzupełniająca sędziowska, notarialna, komornicza) oraz dla **studenta**. Uczysz się na **pytaniach ABC**
+(trzy odpowiedzi, dokładnie jedna poprawna), a **fiszka** to drugi tryb nauki tego samego pytania. Pytania są wspólne dla
+wszystkich ścieżek i podzielone na dziedziny i akty prawne; każdy widzi swoją pulę. Aplikacja zapamiętuje, co naprawdę
+umiesz, a co tylko zgadłeś, i sama układa powtórki algorytmem **FSRS-6**.
 
 ## Spis treści
 
 | Plik | O czym jest | Kiedy czytać |
 |------|-------------|--------------|
 | [01. Architektura](01-architektura.md) | Technologie, pakiety, warstwy, droga jednego żądania, wspólne rozwiązania | Na początek, żeby wiedzieć, gdzie co leży |
-| [02. Baza danych](02-baza-danych.md) | Wszystkie tabele, relacje, wyzwalacze, ograniczenia, historia migracji V1–V25 | Gdy chcesz zrozumieć dane albo napisać zapytanie SQL |
+| [02. Baza danych](02-baza-danych.md) | Wszystkie tabele, relacje, ograniczenia, model puli pytań, migracje V1 (schemat) i V2 (dane słownikowe) | Gdy chcesz zrozumieć dane albo napisać zapytanie SQL |
 | [03. Bezpieczeństwo i konta](03-bezpieczenstwo-i-konta.md) | Rejestracja, aktywacja, logowanie, tokeny (dostępu i odświeżające), reset hasła, role, limity prób, usuwanie konta | Gdy chcesz wiedzieć, kto co może i jak chronione są konta |
-| [04. Nauka: testy, fiszki, FSRS](04-nauka-testy-fiszki-fsrs.md) | Serce aplikacji: jak działa algorytm powtórek, kolejki, limity dzienne, tryb egzaminacyjny | Gdy chcesz zrozumieć, dlaczego pytanie wraca akurat dziś |
-| [API: przegląd](api/README.md) | Wspólne zasady API i lista wszystkich 73 endpointów | Gdy łączysz frontend z backendem |
+| [04. Nauka: testy, fiszki, FSRS](04-nauka-testy-fiszki-fsrs.md) | Serce aplikacji: jak działa algorytm powtórek, kolejki, limity dzienne, tryb egzaminacyjny | Gdy chcesz zrozumieć pulę pytań i dlaczego pytanie wraca akurat dziś |
+| [API: przegląd](api/README.md) | Wspólne zasady API i lista wszystkich 60 endpointów | Gdy łączysz frontend z backendem |
 | [API: konta i logowanie](api/01-auth.md) | `/api/auth/*` | |
 | [API: konto zalogowanego](api/02-konto.md) | `/api/me`, `/api/users/me/*` | |
-| [API: kategorie, przedmioty, źródła, rozdziały](api/03-tresci.md) | Struktura materiału, tagi, postęp rozdziałów, katalog Testów | |
-| [API: karty (administrator)](api/04-karty-admin.md) | Dodawanie, import zbiorczy, ukrywanie | |
+| [API: ścieżki, przedmioty, pula, katalog Testów](api/03-tresci.md) | `/api/tracks`, `/api/courses`, `/api/me/pool*`, `/api/tests/catalog` | |
+| [API: widoczność pytań (administrator)](api/04-pytania-admin.md) | Ukrywanie pytań i fiszek (treść wczytuje się skryptami SQL) | |
 | [API: nauka](api/05-nauka.md) | Kolejki, odpowiedzi, błędy, liczniki | |
 | [API: zawieszanie, fiszki z pytań, zgłoszenia](api/06-zawieszanie-fiszki-zgloszenia.md) | Trudne pytania, „Dodaj do fiszek”, zgłaszanie błędów | |
 | [API: egzamin próbny](api/07-egzaminy.md) | `/api/exams/*` (stały format: 150 pytań, zaliczenie od 100 punktów) | |
 | [API: statystyki](api/08-statystyki.md) | `/api/statistics/*` | |
-| [API: ustawienia](api/09-ustawienia.md) | `/api/me/settings`, `/api/me/origin-filter` | |
+| [API: ustawienia](api/09-ustawienia.md) | `/api/me/settings`, `/api/me/track`, `/api/exam-terms` | |
 | [05. Konfiguracja i uruchomienie](05-konfiguracja-i-uruchomienie.md) | Zmienne środowiskowe, baza, poczta, Swagger, testy | Gdy uruchamiasz projekt |
-| [06. Słownik](06-slownik.md) | Pojęcia z aplikacji i ich nazwy w kodzie | Gdy nie wiesz, co znaczy „leech” albo „pula płaska” |
+| [06. Słownik](06-slownik.md) | Pojęcia z aplikacji i ich nazwy w kodzie | Gdy nie wiesz, co znaczy „leech” albo „pula” |
 | [07. Znane ograniczenia](07-znane-ograniczenia.md) | Co jest odłożone na koniec, co jest niedoskonałe, czego nie sprawdzono | Przed wdrożeniem na prawdziwy serwer |
 
 ## Jak szybko znaleźć odpowiedź
@@ -41,21 +43,24 @@ Aplikacja zapamiętuje, co naprawdę umiesz, a co tylko zgadłeś, i sama układ
 - **„Co robi ten endpoint?”** → [API: przegląd](api/README.md), tabela wszystkich endpointów, potem plik grupy.
 - **„Dlaczego to pytanie wróciło dopiero za 11 dni?”** → [04](04-nauka-testy-fiszki-fsrs.md), część o odstępach.
 - **„Skąd się wzięła fiszka, której nie dodałem?”** → [04](04-nauka-testy-fiszki-fsrs.md), część o fiszkach z pytań.
-- **„Co jest w tabeli `user_card_state`?”** → [02](02-baza-danych.md).
+- **„Dlaczego użytkownik widzi właśnie te pytania?”** → [04](04-nauka-testy-fiszki-fsrs.md), część o puli pytań.
+- **„Jak wczytać nowe pytania i akty prawne?”** → [05](05-konfiguracja-i-uruchomienie.md), część o skryptach SQL.
+- **„Co jest w tabeli `user_question_states`?”** → [02](02-baza-danych.md).
 - **„Jak ustawić użytkownika jako administratora?”** → [03](03-bezpieczenstwo-i-konta.md), część o rolach.
 - **„Jak uruchomić backend lokalnie?”** → [05](05-konfiguracja-i-uruchomienie.md).
 
 ## Pliki pomocnicze w tym katalogu
 
-Poza dokumentacją w `docs/` leżą trzy skrypty SQL do ręcznego uruchamiania (nie są częścią migracji i nic nie
-uruchamia ich samo) oraz jedno narzędzie do sprawdzania dokumentacji:
+Poza dokumentacją w `docs/` leży jeden skrypt SQL do ręcznego uruchamiania (nie jest częścią migracji i nic nie
+uruchamia go samo) oraz jedno narzędzie do sprawdzania dokumentacji. Skrypty wczytujące treść (akty prawne, ścieżki,
+pytania) są w osobnym katalogu `baza/` poza repozytorium kodu (patrz [05](05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)).
 
 | Plik | Do czego |
 |------|----------|
-| `assign-subjects-to-categories.sql` | Przenoszenie przedmiotów i aktów prawnych do właściwych działów prawa (kategorii) |
-| `reset-study-progress.sql` | Kasowanie postępów nauki (stan fiszek i historia powtórek). **Nieodwracalne** |
-| `database-schema.sql` | **Historyczny** zapis pierwszego schematu bazy. Jest nieaktualny, prawdziwy schemat to migracje Flyway w `src/main/resources/db/migration` (opis w [02](02-baza-danych.md)) |
+| `reset-study-progress.sql` | Kasowanie postępów nauki (stan nauki, historia odpowiedzi, własne testy, egzaminy, czas nauki). **Nieodwracalne** |
 | `tools/check_docs.py` | Skrypt sprawdzający, czy dokumentacja zgadza się z kodem (endpointy, tabele, odnośniki). Uruchomienie: `python3 docs/tools/check_docs.py` |
+
+Prawdziwy schemat bazy to migracje Flyway w `src/main/resources/db/migration` (opis w [02](02-baza-danych.md)).
 
 ## Konwencje w tej dokumentacji
 

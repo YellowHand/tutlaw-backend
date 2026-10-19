@@ -37,10 +37,14 @@ Maven nie musi być zainstalowany: projekt ma wrapper (`./mvnw`, na Windows `mvn
    ./mvnw spring-boot:run
    ```
 
-   Przy pierwszym starcie Flyway sam wykona migracje `V1`–`V25`. Backend nasłuchuje na `http://localhost:8080`.
-5. **Sprawdzenie:** `http://localhost:8080/actuator/health` powinno pokazać `"status":"UP"`, a pod
+   Przy pierwszym starcie Flyway sam wykona migracje `V1` (schemat) i `V2` (dane słownikowe: dziedziny prawa, ścieżki,
+   terminy egzaminów, źródło „Pytania autorskie”). Backend nasłuchuje na `http://localhost:8080`.
+5. **Treść** (akty prawne i pytania) wczytuje się skryptami SQL, opis w
+   [Wczytywanie treści skryptami SQL](#wczytywanie-treści-skryptami-sql). Bez tego aplikacja działa, ale nie ma jeszcze
+   czego ćwiczyć.
+6. **Sprawdzenie:** `http://localhost:8080/actuator/health` powinno pokazać `"status":"UP"`, a pod
    `http://localhost:8080/swagger-ui.html` jest dokumentacja Swagger.
-6. **Frontend** (osobne repozytorium) łączy się z adresem z `VITE_API_BASE_URL` (lokalnie `http://localhost:8080`).
+7. **Frontend** (osobne repozytorium) łączy się z adresem z `VITE_API_BASE_URL` (lokalnie `http://localhost:8080`).
 
 ## Zmienne środowiskowe
 
@@ -88,7 +92,7 @@ Poza zmiennymi środowiskowymi plik `src/main/resources/application.yml` zawiera
 | `spring.jpa.show-sql` | `true` | Wypisuje zapytania SQL w logu (do wyłączenia przed produkcją) |
 | `spring.flyway.enabled` / `locations` | `true` / `classpath:db/migration` | Migracje przy starcie |
 | `app.fsrs.request-retention` | `0.9` | Domyślna docelowa retencja (90%) |
-| `app.fsrs.new-cards-per-day` | `20` | Domyślny dzienny limit nowych fiszek |
+| `app.fsrs.new-flashcards-per-day` | `20` | Domyślny dzienny limit nowych fiszek |
 | `app.fsrs.new-test-questions-per-day` | `40` | Domyślny dzienny limit nowych pytań testowych (i dolna granica limitu automatycznego) |
 | `app.fsrs.max-reviews-per-day` | `100` | Domyślny dzienny limit zaległych powtórek (osobno dla fiszek i testów) |
 | `app.review.leech-threshold` | `8` | Od ilu błędów pytanie uchodzi za „trudne” |
@@ -100,26 +104,44 @@ zmienili.
 
 ## Baza danych i migracje
 
-- Schemat tworzą wyłącznie migracje (`src/main/resources/db/migration`). Opis tabel: [02](02-baza-danych.md).
-- Nowa zmiana schematu = nowy plik `V26__krotki_opis.sql`. Nie edytuj wykonanych migracji.
+- Schemat tworzą wyłącznie migracje (`src/main/resources/db/migration`): `V1__init_schema.sql` (cały schemat) i
+  `V2__reference_data.sql` (dane słownikowe). Opis tabel: [02](02-baza-danych.md).
+- Dawne migracje `V1`–`V25` zostały zastąpione nowym stanem wyjściowym, więc **bazę ze starego modelu trzeba założyć od
+  nowa** (konta użytkowników też). Nie ma migracji przenoszącej dane.
+- Nowa zmiana schematu = nowy plik `V3__krotki_opis.sql`. Nie edytuj wykonanych migracji.
 - **Kopia zapasowa bazy:** `docker exec tutlaw-postgres pg_dump -U <POSTGRES_USER> <POSTGRES_DB> > kopia.sql`.
 - **Reset postępów nauki** (nieodwracalne): `docs/reset-study-progress.sql`.
 - **Pusta baza od nowa** (kasuje wszystko, także treść): `docker compose down -v` usuwa kontener i wolumen z danymi;
   po kolejnym `docker compose up -d` Flyway utworzy schemat od zera.
 
-## Pierwsze konto administratora
+## Wczytywanie treści skryptami SQL
 
-1. Zarejestruj się normalnie w aplikacji i aktywuj konto linkiem z maila (lub z logu backendu).
-2. Nadaj rolę w bazie:
+Aplikacja nie ma panelu administratora ani importu z pliku CSV lub JSON. Akty prawne, listy aktów ścieżek, arkusze i
+pytania wczytuje się **skryptami SQL**. Skrypty są w katalogu `baza/` (poza repozytorium kodu, razem z plikiem
+`INSTRUKCJA-BAZA.txt`; każdy skrypt jest też jako `.txt` do wklejenia w okno pgAdmin lub DBeaver).
 
-   ```sql
-   UPDATE users SET role = 'ADMIN' WHERE private_email = 'ty@example.com';
-   ```
+| Plik | Do czego |
+|------|----------|
+| `01-wyczysc-baze.sql` | Czyści treść i historię nauki, zostawia konta i dane słownikowe (do ponownego zaczęcia od zera) |
+| `02-katalog-aktow-i-sciezek.sql` | Akty prawne i zagadnienia w 11 dziedzinach, listy aktów pięciu ścieżek egzaminacyjnych, przedmioty ścieżki Student |
+| `03-pytania-przykladowe.sql` | Arkusze i pytania **przykładowe** do testów aplikacji (wymagają weryfikacji merytorycznej przed publikacją) |
+| `04-import-szablon.sql` | Szablon do wczytywania własnych pytań (funkcje `pg_temp.pytanie`, `pg_temp.arkusz`, `pg_temp.zrodlo`) |
+| `05-kontrola.sql` | Raport tylko do odczytu: pytania według dziedzin, aktów i arkuszy oraz pula każdej ścieżki |
 
-3. Wyloguj się i zaloguj ponownie (rola jest zapisana w tokenie).
+Pierwsze uruchomienie na świeżej bazie (kolejność ma znaczenie):
 
-Administrator dodaje treści przez API (kategorie, przedmioty, źródła, rozdziały, tagi, karty, import zbiorczy; patrz
-[API: karty](api/04-karty-admin.md)).
+```bash
+docker cp 02-katalog-aktow-i-sciezek.sql tutlaw-postgres:/tmp/
+docker cp 03-pytania-przykladowe.sql tutlaw-postgres:/tmp/
+docker exec tutlaw-postgres psql -U tutlaw_user -d tutlaw -v ON_ERROR_STOP=1 -f /tmp/02-katalog-aktow-i-sciezek.sql
+docker exec tutlaw-postgres psql -U tutlaw_user -d tutlaw -v ON_ERROR_STOP=1 -f /tmp/03-pytania-przykladowe.sql
+```
+
+Każdy skrypt działa w jednej transakcji i sam sprawdza, czy ma co robić; przy problemie zatrzymuje się z komunikatem i
+niczego nie zmienia. Szablon `04` domyślnie kończy się `ROLLBACK` i drukuje raport, więc nic nie zostaje zapisane,
+dopóki nie zmienisz go na `COMMIT`. Ukrycie pytania lub samej fiszki i zmiana terminu egzaminu to pojedyncze polecenia SQL
+(przykłady w [API: pytania, administracja](api/04-pytania-admin.md)). Struktura tabel i przydatne zapytania:
+[02](02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja).
 
 ## Testy
 

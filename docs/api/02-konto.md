@@ -35,31 +35,35 @@ przenoszenia danych). Bez hasła i tokenów.
     "createdAt": "2026-09-01T10:00:00",
     "termsAcceptedAt": "2026-09-01T10:00:00"
   },
-  "chapterProgress": [ { "chapterId": 7, "chapterTitle": "Zasady ogólne", "read": true, "readAt": "2026-09-03T18:20:00" } ],
-  "cardStates": [
-    { "cardId": 101, "question": "Treść pytania…", "state": "REVIEW", "reps": 5, "lapses": 1,
+  "questionStates": [
+    { "questionId": 101, "mode": "TEST", "question": "Treść pytania…", "state": "REVIEW", "reps": 5, "lapses": 1,
       "stability": 46.28, "difficulty": 2.1, "dueDate": "2026-11-20T00:00:00",
       "lastReviewAt": "2026-10-05T19:00:00", "suspended": false }
   ],
-  "reviewLogs": [ { "cardId": 101, "reviewedAt": "2026-10-05T19:00:00", "mode": "TEST", "rating": 3, "correct": true, "unsure": false } ],
-  "cardReports": [ { "cardId": 55, "question": "Treść…", "reason": "OUTDATED", "comment": "Przepis się zmienił", "status": "NEW", "createdAt": "2026-10-02T12:00:00" } ],
-  "examAttempts": [ { "finishedAt": "2026-10-01T20:00:00", "scope": "Cały materiał", "questionCount": 50, "answeredCount": 50,
-                      "correctCount": 41, "passThresholdPercent": 75, "passPoints": null, "passed": true, "timeLimitMinutes": 60,
-                      "durationSeconds": 2710, "timedOut": false } ],
+  "reviewLogs": [ { "questionId": 101, "reviewedAt": "2026-10-05T19:00:00", "mode": "TEST", "rating": 3, "correct": true, "unsure": false } ],
+  "questionReports": [ { "questionId": 55, "question": "Treść…", "reason": "OUTDATED", "comment": "Przepis się zmienił", "status": "NEW", "createdAt": "2026-10-02T12:00:00" } ],
+  "examAttempts": [ { "finishedAt": "2026-10-01T20:00:00", "scope": "Cała pula", "questionCount": 150, "answeredCount": 150,
+                      "correctCount": 121, "passThresholdPercent": 67, "passPoints": 100, "passed": true, "timeLimitMinutes": 180,
+                      "durationSeconds": 9710, "timedOut": false } ],
   "flashcardAdditions": [ { "questionId": 101, "question": "Treść…", "addedAt": "2026-10-03T09:00:00" } ],
   "customTests": [ { "startedAt": "2026-10-10T18:30:00", "finishedAt": "2026-10-10T18:52:00", "scope": "Prawo karne i postępowanie karne",
                      "kind": "NEW", "requestedCount": 20, "questionCount": 20, "answeredCount": 20, "correctCount": 15,
                      "guessedCount": 2, "timeSeconds": 311.5 } ],
   "studyTime": [ { "day": "2026-10-10", "seconds": 1820 } ],
-  "learningSettings": { "newCardsPerDay": null, "newTestQuestionsPerDay": 30, "maxReviewsPerDay": null,
-                        "desiredRetention": 0.92, "examOrigin": "NOTARY", "theme": "LIGHT", "shuffleOptions": true, "testOrigins": "NOTARY,AUTHORED",
-                        "startChoiceMade": true, "hintHiddenTest": false, "hintHiddenFlashcard": false, "questionTimerHidden": false }
+  "learningSettings": { "newFlashcardsPerDay": null, "newTestQuestionsPerDay": 30, "maxReviewsPerDay": null,
+                        "desiredRetention": 0.92, "track": "notarialna", "theme": "LIGHT", "shuffleOptions": true,
+                        "sourceFilter": "OWN_SHEETS,AUTHORED", "poolActIds": [12, 14],
+                        "hintHiddenTest": false, "hintHiddenFlashcard": false, "questionTimerHidden": false }
 }
 ```
 
-`customTests` to zapisane własne testy („Moje testy”) z konfiguracją i wynikiem; odpowiedzi na pojedyncze pytania są w
-`reviewLogs`. `studyTime` to czas nauki w sekundach, osobno dla każdego dnia. `learningSettings` jest `null`, jeśli
-użytkownik nigdy nie zmieniał ustawień; `null` w polu liczbowym oznacza wartość domyślną.
+`questionStates` ma osobny wiersz dla każdego trybu (`TEST` albo `FLASHCARD`) każdego pytania, które użytkownik
+ćwiczył: stan nauki testowej i fiszkowej jest liczony oddzielnie. `customTests` to zapisane własne testy („Moje testy”)
+z konfiguracją i wynikiem; odpowiedzi na pojedyncze pytania są w `reviewLogs`. `studyTime` to czas nauki w sekundach,
+osobno dla każdego dnia. W `learningSettings` pole `track` to `slug` ścieżki (np. `notarialna`, `student`),
+`sourceFilter` to grupy źródeł oddzielone przecinkami (`null` = wszystkie), a `poolActIds` to akty prawne, do których
+użytkownik zawęził pulę (pusta lista = bez zawężenia). Cały obiekt `learningSettings` jest `null`, jeśli użytkownik
+nigdy nie zmieniał ustawień; `null` w polu liczbowym oznacza wartość domyślną.
 
 ## `PUT /api/users/me/password` — zmiana hasła
 

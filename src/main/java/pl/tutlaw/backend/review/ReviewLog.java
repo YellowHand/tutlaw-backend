@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import pl.tutlaw.backend.card.Card;
+import pl.tutlaw.backend.question.Question;
 import pl.tutlaw.backend.user.User;
 
 import java.time.LocalDateTime;
@@ -25,8 +25,8 @@ public class ReviewLog {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "card_id", nullable = false)
-    private Card card;
+    @JoinColumn(name = "question_id", nullable = false)
+    private Question question;
 
     @Column(nullable = false)
     private int rating;
@@ -48,7 +48,7 @@ public class ReviewLog {
 
     /** Fiszka czy test. */
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 10)
     private ReviewMode mode = ReviewMode.FLASHCARD;
 
     /** Tylko dla testu: czy wybrana opcja była poprawna (niezależnie od oceny pamięci). */

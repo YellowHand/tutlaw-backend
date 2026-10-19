@@ -77,7 +77,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleConcurrentUpdate(OptimisticLockingFailureException ex, HttpServletRequest request) {
         return build(HttpStatus.CONFLICT,
-                "Ta karta została właśnie zmieniona w innym oknie. Spróbuj jeszcze raz.", request);
+                "To pytanie zostało właśnie zmienione w innym oknie. Spróbuj jeszcze raz.", request);
     }
 
     @ExceptionHandler(UnauthorizedException.class)

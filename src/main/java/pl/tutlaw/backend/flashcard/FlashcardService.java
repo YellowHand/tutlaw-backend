@@ -4,11 +4,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
-import pl.tutlaw.backend.review.UserCardStateRepository;
+import pl.tutlaw.backend.review.ReviewMode;
+import pl.tutlaw.backend.review.UserQuestionStateRepository;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -17,17 +18,18 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Ręczne dodawanie pytania do fiszek (po odpowiedzi w teście) i wycofywanie tego dodania.
- * Sama fiszka istnieje zawsze (tworzy ją wyzwalacz w bazie); tu decydujemy tylko, czy użytkownik ją widzi.
+ * Ręczne dodawanie pytania do fiszek (po odpowiedzi w teście) i wycofywanie tego dodania. Fiszka to tryb nauki tego
+ * samego pytania (nie osobny rekord), więc tu decydujemy tylko, czy użytkownik ją widzi: pytanie ma fiszkę, dopóki
+ * administrator jej nie ukryje ({@code flashcardHidden}).
  */
 @Service
 @RequiredArgsConstructor
 public class FlashcardService {
 
-    private final CardRepository cardRepository;
+    private final QuestionRepository questionRepository;
     private final FlashcardAdditionRepository additionRepository;
     private final ReviewLogRepository reviewLogRepository;
-    private final UserCardStateRepository stateRepository;
+    private final UserQuestionStateRepository stateRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
 
@@ -35,29 +37,35 @@ public class FlashcardService {
      * Stan fiszki pytania dla użytkownika. {@code confidentMistake} mówi, że użytkownik ma już pewny błąd w tym
      * pytaniu (wtedy fiszka jest w Fiszkach niezależnie od ręcznego dodania).
      */
-    public FlashcardStatus statusOf(Long userId, Long questionId, boolean confidentMistake) {
-        if (!cardRepository.existsByLinkedTestCardIdAndHiddenFalse(questionId)) {
+    public FlashcardStatus statusOf(Long userId, Question question, boolean confidentMistake) {
+        if (question.isFlashcardHidden()) {
             return FlashcardStatus.UNAVAILABLE;
         }
         if (confidentMistake) {
             return FlashcardStatus.ADDED_BY_MISTAKE;
         }
-        if (additionRepository.existsByUserIdAndQuestionId(userId, questionId)) {
+        if (additionRepository.existsByUserIdAndQuestionId(userId, question.getId())) {
             return FlashcardStatus.ADDED_MANUALLY;
         }
         return FlashcardStatus.AVAILABLE;
     }
 
-    /** „Dodaj do fiszek": fiszka pytania trafia do Fiszek użytkownika jako nowa karta. Powtórne dodanie nic nie psuje. */
+    /** „Dodaj do fiszek": fiszka pytania trafia do Fiszek użytkownika jako nowa. Powtórne dodanie nic nie psuje. */
     @Transactional
     public FlashcardStatus add(Long questionId, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        requireQuestionWithFlashcard(questionId, user);
+        Question question = requireQuestion(questionId);
+        if (question.isHidden()) {
+            throw new ResourceNotFoundException("Question not found");
+        }
+        if (question.isFlashcardHidden()) {
+            throw new IllegalArgumentException("Z tego pytania nie ma fiszki.");
+        }
         boolean byMistake = reviewLogRepository.countConfidentMistakes(user.getId(), questionId) > 0;
         if (!byMistake) {
             additionRepository.insertIfAbsent(user.getId(), questionId, LocalDateTime.now(clock));
         }
-        return statusOf(user.getId(), questionId, byMistake);
+        return statusOf(user.getId(), question, byMistake);
     }
 
     /**
@@ -68,33 +76,18 @@ public class FlashcardService {
     @Transactional
     public FlashcardStatus remove(Long questionId, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        cardRepository.findById(questionId)
-                .filter(card -> card.getCorrectOption() != null)
-                .orElseThrow(() -> new ResourceNotFoundException("Question not found"));
+        Question question = requireQuestion(questionId);
         boolean byMistake = reviewLogRepository.countConfidentMistakes(user.getId(), questionId) > 0;
         additionRepository.deleteByUserIdAndQuestionId(user.getId(), questionId);
         if (!byMistake) {
-            List<Long> flashcardIds = cardRepository.findIdsByLinkedTestCardId(questionId);
-            if (!flashcardIds.isEmpty()) {
-                stateRepository.deleteByUserIdAndCardIds(user.getId(), flashcardIds);
-            }
+            stateRepository.deleteByUserIdAndModeAndQuestionIds(
+                    user.getId(), ReviewMode.FLASHCARD, List.of(questionId));
         }
-        return statusOf(user.getId(), questionId, byMistake);
+        return statusOf(user.getId(), question, byMistake);
     }
 
-    /**
-     * Pytanie musi istnieć, być testowe, nieukryte i dostępne dla użytkownika (pula płaska albo przeczytany rozdział),
-     * a do tego mieć widoczną fiszkę. Dla niedostępnego odpowiadamy tak samo jak dla nieistniejącego.
-     */
-    private void requireQuestionWithFlashcard(Long questionId, User user) {
-        Card question = cardRepository.findById(questionId)
-                .filter(card -> card.getCorrectOption() != null && !card.isHidden())
+    private Question requireQuestion(Long questionId) {
+        return questionRepository.findById(questionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Question not found"));
-        if (cardRepository.countReadableById(question.getId(), user.getId()) == 0) {
-            throw new ResourceNotFoundException("Question not found");
-        }
-        if (!cardRepository.existsByLinkedTestCardIdAndHiddenFalse(questionId)) {
-            throw new IllegalArgumentException("Do tego pytania nie ma fiszki.");
-        }
     }
 }

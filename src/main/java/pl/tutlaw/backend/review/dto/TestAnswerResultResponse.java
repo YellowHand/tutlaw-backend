@@ -1,6 +1,6 @@
 package pl.tutlaw.backend.review.dto;
 
-import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.question.CorrectOption;
 import pl.tutlaw.backend.flashcard.FlashcardStatus;
 
 import java.time.LocalDate;

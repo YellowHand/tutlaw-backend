@@ -4,17 +4,22 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.CardScopes;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.pool.Pool;
+import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.pool.UserPoolActRepository;
+import pl.tutlaw.backend.question.QuestionRef;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.SchedulingRules;
-import pl.tutlaw.backend.review.UserCardStateRepository;
-import pl.tutlaw.backend.settings.dto.ChooseExamRequest;
+import pl.tutlaw.backend.review.UserQuestionStateRepository;
 import pl.tutlaw.backend.settings.dto.ChooseThemeRequest;
+import pl.tutlaw.backend.settings.dto.ChooseTrackRequest;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
 import pl.tutlaw.backend.settings.dto.UpdateLearningSettingsRequest;
+import pl.tutlaw.backend.track.Track;
+import pl.tutlaw.backend.track.TrackRepository;
+import pl.tutlaw.backend.track.dto.TrackSummary;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -22,15 +27,15 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- * Ustawienia nauki użytkownika: odczyt (z wartościami domyślnymi), zapis, wybór aplikacji, do której się przygotowuje,
- * wybór wyglądu aplikacji (ciemny/jasny), dzienny limit nowych pytań i plan nowych pytań do egzaminu. Data egzaminu nie jest ustawieniem użytkownika: bierze się z terminu wybranej
- * aplikacji ({@link ExamTerm}), który ustawia administrator.
+ * Ustawienia nauki użytkownika: odczyt (z wartościami domyślnymi), zapis, wybór ścieżki (aplikacji albo Studenta),
+ * wybór wyglądu aplikacji (ciemny/jasny), dzienny limit nowych pytań i plan nowych pytań do egzaminu. Data egzaminu
+ * nie jest ustawieniem użytkownika: bierze się z terminu wybranej aplikacji ({@link ExamTerm}), który ustawia
+ * administrator.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,10 +46,13 @@ public class LearningSettingsService {
     private final UserSettingsRepository repository;
     private final LearningDefaults defaults;
     private final CurrentUserResolver currentUserResolver;
-    private final CardRepository cardRepository;
-    private final UserCardStateRepository stateRepository;
+    private final QuestionRepository questionRepository;
+    private final UserQuestionStateRepository stateRepository;
     private final ExamTermRepository examTerms;
     private final ReviewLogRepository reviewLogs;
+    private final TrackRepository trackRepository;
+    private final PoolService poolService;
+    private final UserPoolActRepository poolActRepository;
     private final Clock clock;
 
     /** Obowiązujące ustawienia (z domyślnymi tam, gdzie użytkownik niczego nie ustawił). Używane przy każdej odpowiedzi i budowie kolejki. */
@@ -54,12 +62,12 @@ public class LearningSettingsService {
         return resolve(stored, examDateOf(stored), LocalDate.now(clock));
     }
 
-    /** Termin egzaminu aplikacji wybranej przez użytkownika; {@code null}, gdy nie wybrał albo termin nieogłoszony. */
+    /** Termin egzaminu aplikacji wybranej przez użytkownika; {@code null}, gdy nie wybrał, to Student albo termin nieogłoszony. */
     private LocalDate examDateOf(UserSettings stored) {
-        if (stored == null || stored.getExamOrigin() == null) {
+        if (stored == null || stored.getTrackId() == null) {
             return null;
         }
-        return examTerms.findById(stored.getExamOrigin()).map(ExamTerm::getExamDate).orElse(null);
+        return examTerms.findById(stored.getTrackId()).map(ExamTerm::getExamDate).orElse(null);
     }
 
     @Transactional(readOnly = true)
@@ -70,30 +78,25 @@ public class LearningSettingsService {
     }
 
     /**
-     * Wybór aplikacji, do której użytkownik się przygotowuje. Od tej chwili jego egzaminem jest termin tej aplikacji, a
-     * filtr pytań w Testach zostaje ustawiony na nią i na pytania autorskie (jednorazowo: później filtr zmienia się
-     * osobno i nie wpływa na wybrany egzamin). Student ({@code student = true}) wybiera "bez aplikacji": nie ma
-     * wtedy terminu egzaminu ani planu, a filtr pytań obejmuje wszystko. W obu przypadkach okno startowe jest zamknięte.
+     * Wybór ścieżki: jednej z aplikacji albo Studenta. Od tej chwili pulą pytań jest pula tej ścieżki, a egzaminem termin
+     * aplikacji (Student nie ma terminu ani planu). Zmiana ścieżki czyści zawężenie do aktów i przywraca filtr źródeł
+     * (wszystkie trzy grupy), bo oba dotyczyły poprzedniej ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia.
      */
     @Transactional
-    public LearningSettingsResponse chooseExam(ChooseExamRequest request, Authentication authentication) {
+    public LearningSettingsResponse chooseTrack(ChooseTrackRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        QuestionOrigin origin = request.origin();
-        boolean student = request.isStudent();
-        if (!student && (origin == null || !origin.isExamApplication())) {
-            throw new IllegalArgumentException("Wybierz aplikację, do której się przygotowujesz (pytania autorskie nie mają egzaminu).");
-        }
+        Track track = trackRepository.findById(request.trackId())
+                .orElseThrow(() -> new IllegalArgumentException("Nie ma takiej ścieżki."));
 
         UserSettings settings = repository.findById(user.getId()).orElseGet(() -> new UserSettings(user.getId()));
-        if (student) {
-            // Student: bez aplikacji, terminu egzaminu i zawężenia pytań (wszystkie pochodzenia).
-            settings.setExamOrigin(null);
-            settings.setTestOrigins(null);
-        } else {
-            settings.setExamOrigin(origin);
-            settings.setTestOrigins(OriginFilterService.serialize(EnumSet.of(origin, QuestionOrigin.AUTHORED)));
+        boolean changed = !track.getId().equals(settings.getTrackId());
+        settings.setTrackId(track.getId());
+        if (changed) {
+            settings.setIncludeOwnSheets(true);
+            settings.setIncludeOtherSheets(true);
+            settings.setIncludeAuthored(true);
+            poolActRepository.deleteByUserId(user.getId());
         }
-        settings.setStartChoiceMade(true);
         settings.setUpdatedAt(LocalDateTime.now(clock));
         repository.save(settings);
 
@@ -130,7 +133,7 @@ public class LearningSettingsService {
         if (!e.newTestQuestionsAuto() || e.daysToExam() == null || SchedulingRules.planningDays(e.daysToExam()) == 0) {
             return e.newTestQuestionsPerDay();
         }
-        NewCounts counts = countNew(userId, OriginFilterService.parse(stored == null ? null : stored.getTestOrigins()));
+        NewCounts counts = countNew(userId);
         long required = SchedulingRules.suggestedPerDay(counts.newTests() + counts.startedToday(), e.daysToExam());
         return SchedulingRules.autoNewQuestionsLimit(e.newTestQuestionsPerDay(), required);
     }
@@ -142,7 +145,7 @@ public class LearningSettingsService {
         validate(request);
 
         UserSettings settings = repository.findById(user.getId()).orElseGet(() -> new UserSettings(user.getId()));
-        settings.setNewCardsPerDay(request.newCardsPerDay());
+        settings.setNewFlashcardsPerDay(request.newFlashcardsPerDay());
         settings.setNewTestQuestionsPerDay(request.newTestQuestionsPerDay());
         settings.setMaxReviewsPerDay(request.maxReviewsPerDay());
         settings.setDesiredRetention(request.desiredRetention());
@@ -155,15 +158,15 @@ public class LearningSettingsService {
 
     /** Czysta część: składa obowiązujące wartości z zapisanych i domyślnych. */
     EffectiveSettings resolve(UserSettings stored, LocalDate examDate, LocalDate today) {
-        int newCards = stored != null && stored.getNewCardsPerDay() != null
-                ? stored.getNewCardsPerDay() : defaults.newCardsPerDay();
+        int newFlashcards = stored != null && stored.getNewFlashcardsPerDay() != null
+                ? stored.getNewFlashcardsPerDay() : defaults.newFlashcardsPerDay();
         boolean newTestsAuto = stored == null || stored.getNewTestQuestionsPerDay() == null;
         int newTests = newTestsAuto ? defaults.newTestQuestionsPerDay() : stored.getNewTestQuestionsPerDay();
         int maxReviews = stored != null && stored.getMaxReviewsPerDay() != null
                 ? stored.getMaxReviewsPerDay() : defaults.maxReviewsPerDay();
         double retention = stored != null && stored.getDesiredRetention() != null
                 ? stored.getDesiredRetention() : defaults.retention();
-        QuestionOrigin examOrigin = stored != null ? stored.getExamOrigin() : null;
+        Long trackId = stored != null ? stored.getTrackId() : null;
         boolean shuffle = stored == null || stored.isShuffleOptions();
 
         Long daysToExam = null;
@@ -175,15 +178,15 @@ public class LearningSettingsService {
         }
 
         return new EffectiveSettings(
-                newCards, newTests, maxReviews,
+                newFlashcards, newTests, maxReviews,
                 retention, SchedulingRules.effectiveRetention(retention, daysToExam),
-                examOrigin, examDate, daysToExam, shuffle, newTestsAuto);
+                trackId, examDate, daysToExam, shuffle, newTestsAuto);
     }
 
     private LearningSettingsResponse describe(Long userId, UserSettings stored, LocalDate today) {
         EffectiveSettings e = resolve(stored, examDateOf(stored), today);
         LearningSettingsResponse.Plan plan = e.daysToExam() == null
-                ? null : buildPlan(userId, e.daysToExam(), OriginFilterService.parse(stored == null ? null : stored.getTestOrigins()));
+                ? null : buildPlan(userId, e.daysToExam());
 
         // Limit w mocy: własny, a bez niego automatyczny, czyli wyliczony z planu (nie mniej niż domyślny, nie więcej niż sufit).
         int newTestsInForce = e.newTestQuestionsAuto()
@@ -191,64 +194,54 @@ public class LearningSettingsService {
                         e.newTestQuestionsPerDay(), plan == null ? 0 : plan.requiredTestQuestionsPerDay())
                 : e.newTestQuestionsPerDay();
         Theme theme = stored == null ? Theme.DARK : stored.getTheme();
-        boolean startChoiceMade = stored != null && stored.isStartChoiceMade();
+        TrackSummary track = e.trackId() == null
+                ? null : trackRepository.findById(e.trackId()).map(TrackSummary::of).orElse(null);
 
         return new LearningSettingsResponse(
-                e.newCardsPerDay(), newTestsInForce, e.newTestQuestionsAuto(), e.maxReviewsPerDay(), e.desiredRetention(),
-                e.examOrigin(), e.examDate(), e.shuffleOptions(), theme, startChoiceMade, e.daysToExam(), e.examPassed(),
+                e.newFlashcardsPerDay(), newTestsInForce, e.newTestQuestionsAuto(), e.maxReviewsPerDay(), e.desiredRetention(),
+                track, e.examDate(), e.shuffleOptions(), theme, e.daysToExam(), e.examPassed(),
                 e.effectiveRetention(), e.retentionBoosted(),
                 new LearningSettingsResponse.Defaults(
-                        defaults.newCardsPerDay(), defaults.newTestQuestionsPerDay(),
+                        defaults.newFlashcardsPerDay(), defaults.newTestQuestionsPerDay(),
                         defaults.maxReviewsPerDay(), defaults.retention()),
                 plan);
     }
 
     /**
-     * Ile nowych pytań i fiszek zostało do rozpoczęcia i ile dziennie trzeba, żeby zdążyć przed rezerwą na powtórki.
-     * „Nowe" to dostępne dla użytkownika karty, których jeszcze nie ruszył. Pytania testowe i zwykłe fiszki
-     * liczymy osobno, bo mają osobne dzienne limity. Pytania liczą się tylko z wybranych pochodzeń (filtr w Testach).
+     * Ile nowych pytań testowych zostało do rozpoczęcia i ile dziennie trzeba, żeby zdążyć przed rezerwą na powtórki.
+     * „Nowe" to pytania z puli użytkownika (jego akty i filtr źródeł w Testach), których jeszcze nie ruszył w teście.
+     * Fiszek się nie planuje: powstają z pomyłek, więc ich liczby nie da się przewidzieć.
      *
      * <p>Cel dnia dla pytań liczymy od stanu z początku dnia (do „zostało" dodajemy to, co użytkownik zaczął dzisiaj),
      * więc nie maleje w miarę nauki w ciągu dnia i da się go porównać z liczbą pytań zaczętych dzisiaj.
      */
-    private LearningSettingsResponse.Plan buildPlan(Long userId, long daysToExam, Set<QuestionOrigin> testOrigins) {
-        NewCounts counts = countNew(userId, testOrigins);
+    private LearningSettingsResponse.Plan buildPlan(Long userId, long daysToExam) {
+        NewCounts counts = countNew(userId);
         long requiredTests = SchedulingRules.suggestedPerDay(counts.newTests() + counts.startedToday(), daysToExam);
 
         return new LearningSettingsResponse.Plan(
-                counts.newTests(), counts.newFlashcards(), SchedulingRules.planningDays(daysToExam),
+                counts.newTests(), SchedulingRules.planningDays(daysToExam),
                 requiredTests, SchedulingRules.MAX_AUTO_NEW_PER_DAY,
                 Math.min(requiredTests, SchedulingRules.MAX_AUTO_NEW_PER_DAY),
-                SchedulingRules.suggestedPerDay(counts.newFlashcards(), daysToExam),
                 counts.startedToday());
     }
 
-    /** Ile jest nowych (nietkniętych) pytań testowych z wybranych pochodzeń i nowych fiszek oraz ile pytań użytkownik zaczął dziś. */
-    private NewCounts countNew(Long userId, Set<QuestionOrigin> testOrigins) {
-        List<CardRepository.CardRef> readable = CardScopes.readableRefs(cardRepository, null, null, null, userId);
+    /** Ile jest nowych (nietkniętych w teście) pytań z puli użytkownika oraz ile pytań zaczął dziś. */
+    private NewCounts countNew(Long userId) {
+        Pool pool = poolService.forUser(userId);
+        List<QuestionRef> inPool = questionRepository.findRefsInPool(pool.actIds(), pool.sourceIds());
         Set<Long> started = new HashSet<>();
-        for (UserCardStateRepository.CardDue row : stateRepository.findCardDueByUserId(userId)) {
-            started.add(row.getCardId());
+        for (UserQuestionStateRepository.QuestionDue row : stateRepository.findScheduleByUserIdAndMode(userId, ReviewMode.TEST)) {
+            started.add(row.getQuestionId());
         }
-
-        long newTests = 0;
-        long newFlashcards = 0;
-        for (CardRepository.CardRef card : readable) {
-            if (started.contains(card.getId())) continue;
-            if (CardScopes.isTest(card)) {
-                // Pytania spoza filtra pochodzenia nie pojawią się w Testach, więc nie liczą się do planu.
-                if (CardScopes.matchesOrigins(card, testOrigins)) newTests++;
-            } else {
-                newFlashcards++;
-            }
-        }
+        long newTests = inPool.stream().filter(ref -> !started.contains(ref.getId())).count();
 
         LocalDateTime startOfDay = LocalDate.now(clock).atStartOfDay();
         long startedToday = reviewLogs.countFirstReviewsBetween(userId, ReviewMode.TEST, startOfDay, startOfDay.plusDays(1));
-        return new NewCounts(newTests, newFlashcards, startedToday);
+        return new NewCounts(newTests, startedToday);
     }
 
-    private record NewCounts(long newTests, long newFlashcards, long startedToday) {
+    private record NewCounts(long newTests, long startedToday) {
     }
 
     private static void validate(UpdateLearningSettingsRequest request) {

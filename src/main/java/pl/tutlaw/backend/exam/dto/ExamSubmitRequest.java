@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import pl.tutlaw.backend.card.CorrectOption;
+import pl.tutlaw.backend.question.CorrectOption;
 
 import java.util.List;
 
@@ -33,7 +33,7 @@ public record ExamSubmitRequest(
 
     /** @param selectedOption null = pytanie bez odpowiedzi */
     public record Answer(
-            @NotNull(message = "brak numeru pytania") Long cardId,
+            @NotNull(message = "brak numeru pytania") Long questionId,
             CorrectOption selectedOption
     ) {
     }

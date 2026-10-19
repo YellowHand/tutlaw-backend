@@ -1,6 +1,6 @@
-# Tutlaw: backend
+# Gradus iuris: backend
 
-Serwer (REST API) aplikacji **Tutlaw**, darmowej aplikacji do nauki na egzaminy prawnicze. Uczysz się na pytaniach ABC
+Serwer (REST API) aplikacji **Gradus iuris**, darmowej aplikacji do nauki na egzaminy prawnicze. Uczysz się na pytaniach ABC
 (trzy odpowiedzi, jedna poprawna) i na fiszkach, a aplikacja sama układa powtórki algorytmem FSRS-6.
 
 Java 17 · Spring Boot 4.1.1 · PostgreSQL 16 · Flyway · Spring Security (JWT)

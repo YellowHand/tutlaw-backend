@@ -4,28 +4,36 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.CorrectOption;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.pool.Pool;
+import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.pool.UserPoolActRepository;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
-import pl.tutlaw.backend.review.UserCardStateRepository;
-import pl.tutlaw.backend.settings.dto.ChooseExamRequest;
+import pl.tutlaw.backend.review.UserQuestionStateRepository;
 import pl.tutlaw.backend.settings.dto.ChooseThemeRequest;
+import pl.tutlaw.backend.settings.dto.ChooseTrackRequest;
 import pl.tutlaw.backend.settings.dto.LearningSettingsResponse;
 import pl.tutlaw.backend.settings.dto.UpdateLearningSettingsRequest;
-import pl.tutlaw.backend.testsupport.CardRefs;
 import pl.tutlaw.backend.testsupport.MutableClock;
+import pl.tutlaw.backend.testsupport.Pools;
+import pl.tutlaw.backend.testsupport.QuestionRefs;
+import pl.tutlaw.backend.track.Track;
+import pl.tutlaw.backend.track.TrackKind;
+import pl.tutlaw.backend.track.TrackRepository;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.EnumSet;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -45,20 +53,29 @@ class LearningSettingsServiceTest {
     private final MutableClock clock = MutableClock.at("2026-10-12T10:00:00Z");
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 12);
 
+    private static final long NOTARIALNA = 4L;
+    private static final long KOMORNICZA = 5L;
+    private static final long STUDENT = 6L;
+
     @Mock private UserSettingsRepository repository;
-    @Mock private CardRepository cardRepository;
-    @Mock private UserCardStateRepository stateRepository;
+    @Mock private QuestionRepository questionRepository;
+    @Mock private UserQuestionStateRepository stateRepository;
     @Mock private ExamTermRepository examTerms;
     @Mock private ReviewLogRepository reviewLogs;
+    @Mock private TrackRepository trackRepository;
+    @Mock private UserPoolActRepository poolActRepository;
     @Mock private CurrentUserResolver currentUserResolver;
     private final Authentication authentication = mock(Authentication.class);
 
+    private Pool pool = Pools.all();
     private LearningSettingsService service;
 
     @BeforeEach
     void setUp() {
         LearningDefaults defaults = new LearningDefaults(20, 40, 200, 0.9);
-        service = new LearningSettingsService(repository, defaults, currentUserResolver, cardRepository, stateRepository, examTerms, reviewLogs, clock);
+        PoolService poolService = Pools.holding(() -> pool);
+        service = new LearningSettingsService(repository, defaults, currentUserResolver, questionRepository,
+                stateRepository, examTerms, reviewLogs, trackRepository, poolService, poolActRepository, clock);
     }
 
     private User user() {
@@ -67,23 +84,41 @@ class LearningSettingsServiceTest {
         return user;
     }
 
-    private static UpdateLearningSettingsRequest request(Integer cards, Integer tests, Integer reviews, Double retention, Boolean shuffle) {
-        return new UpdateLearningSettingsRequest(cards, tests, reviews, retention, shuffle);
+    private void loggedIn() {
+        when(currentUserResolver.resolve(authentication)).thenReturn(user());
     }
 
-    /** Użytkownik z wybraną aplikacją (bez żadnych stubów — dla testów wołających {@code resolve} wprost). */
+    private static UpdateLearningSettingsRequest request(Integer flashcards, Integer tests, Integer reviews, Double retention, Boolean shuffle) {
+        return new UpdateLearningSettingsRequest(flashcards, tests, reviews, retention, shuffle);
+    }
+
+    private static Track track(long id, String slug, String name, TrackKind kind) {
+        Track track = new Track();
+        track.setId(id);
+        track.setSlug(slug);
+        track.setName(name);
+        track.setShortName(name);
+        track.setKind(kind);
+        return track;
+    }
+
+    private void trackExists(long id, String slug, String name, TrackKind kind) {
+        when(trackRepository.findById(id)).thenReturn(Optional.of(track(id, slug, name, kind)));
+    }
+
+    /** Użytkownik z wybraną aplikacją notarialną (bez żadnych stubów, dla testów wołających {@code resolve} wprost). */
     private UserSettings chosen() {
         UserSettings stored = new UserSettings(5L);
-        stored.setExamOrigin(QuestionOrigin.NOTARY);
+        stored.setTrackId(NOTARIALNA);
         return stored;
     }
 
     /** Użytkownik z wybraną aplikacją, której termin to {@code examDate} (null = termin nieogłoszony). */
     private UserSettings withExam(LocalDate examDate) {
         UserSettings stored = chosen();
-        ExamTerm term = new ExamTerm(QuestionOrigin.NOTARY);
+        ExamTerm term = new ExamTerm(NOTARIALNA);
         term.setExamDate(examDate);
-        when(examTerms.findById(QuestionOrigin.NOTARY)).thenReturn(Optional.of(term));
+        when(examTerms.findById(NOTARIALNA)).thenReturn(Optional.of(term));
         return stored;
     }
 
@@ -95,11 +130,12 @@ class LearningSettingsServiceTest {
 
         EffectiveSettings e = service.effectiveFor(5L);
 
-        assertThat(e.newCardsPerDay()).isEqualTo(20);
+        assertThat(e.newFlashcardsPerDay()).isEqualTo(20);
         assertThat(e.newTestQuestionsPerDay()).isEqualTo(40);
         assertThat(e.maxReviewsPerDay()).isEqualTo(200);
         assertThat(e.desiredRetention()).isEqualTo(0.9);
         assertThat(e.effectiveRetention()).isEqualTo(0.9);
+        assertThat(e.trackId()).isNull();
         assertThat(e.examDate()).isNull();
         assertThat(e.daysToExam()).isNull();
         assertThat(e.shuffleOptions()).isTrue();
@@ -110,14 +146,14 @@ class LearningSettingsServiceTest {
     @Test
     void effective_storedValuesOverrideDefaults_nullFieldsFallBack() {
         UserSettings stored = new UserSettings(5L);
-        stored.setNewCardsPerDay(5);
+        stored.setNewFlashcardsPerDay(5);
         stored.setMaxReviewsPerDay(80);
         stored.setShuffleOptions(false);
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
 
         EffectiveSettings e = service.effectiveFor(5L);
 
-        assertThat(e.newCardsPerDay()).isEqualTo(5);
+        assertThat(e.newFlashcardsPerDay()).isEqualTo(5);
         assertThat(e.newTestQuestionsPerDay()).isEqualTo(40);
         assertThat(e.maxReviewsPerDay()).isEqualTo(80);
         assertThat(e.shuffleOptions()).isFalse();
@@ -140,11 +176,9 @@ class LearningSettingsServiceTest {
 
     @Test
     void effective_examInTwoWeeks_raisesRetention() {
-        UserSettings stored = chosen();
+        EffectiveSettings e = service.resolve(chosen(), TODAY.plusDays(14), TODAY);
 
-        EffectiveSettings e = service.resolve(stored, TODAY.plusDays(14), TODAY);
-
-        assertThat(e.examOrigin()).isEqualTo(QuestionOrigin.NOTARY);
+        assertThat(e.trackId()).isEqualTo(NOTARIALNA);
         assertThat(e.daysToExam()).isEqualTo(14L);
         assertThat(e.desiredRetention()).isEqualTo(0.9);
         assertThat(e.effectiveRetention()).isEqualTo(0.95);
@@ -181,7 +215,7 @@ class LearningSettingsServiceTest {
 
         EffectiveSettings e = service.effectiveFor(5L);
 
-        assertThat(e.examOrigin()).isEqualTo(QuestionOrigin.NOTARY);
+        assertThat(e.trackId()).isEqualTo(NOTARIALNA);
         assertThat(e.examDate()).isNull();
         assertThat(e.daysToExam()).isNull();
         assertThat(e.examPassed()).isFalse();
@@ -199,12 +233,27 @@ class LearningSettingsServiceTest {
     }
 
     @Test
-    void effective_withoutChosenApplication_doesNotLookUpTerms() {
+    void effective_theStudentTrackHasNoTerm_soNoExamModeEver() {
+        UserSettings stored = new UserSettings(5L);
+        stored.setTrackId(STUDENT);
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        when(examTerms.findById(STUDENT)).thenReturn(Optional.empty());
+
+        EffectiveSettings e = service.effectiveFor(5L);
+
+        assertThat(e.trackId()).isEqualTo(STUDENT);
+        assertThat(e.examDate()).isNull();
+        assertThat(e.daysToExam()).isNull();
+        assertThat(e.retentionBoosted()).isFalse();
+    }
+
+    @Test
+    void effective_withoutChosenTrack_doesNotLookUpTerms() {
         when(repository.findById(5L)).thenReturn(Optional.of(new UserSettings(5L)));
 
         EffectiveSettings e = service.effectiveFor(5L);
 
-        assertThat(e.examOrigin()).isNull();
+        assertThat(e.trackId()).isNull();
         assertThat(e.examDate()).isNull();
         verify(examTerms, never()).findById(any());
     }
@@ -213,7 +262,7 @@ class LearningSettingsServiceTest {
 
     @Test
     void update_storesAllFieldsAndReturnsThem() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
 
         LearningSettingsResponse response = service.update(request(10, 60, 150, 0.85, false), authentication);
@@ -222,7 +271,7 @@ class LearningSettingsServiceTest {
         verify(repository).save(captor.capture());
         UserSettings saved = captor.getValue();
         assertThat(saved.getUserId()).isEqualTo(5L);
-        assertThat(saved.getNewCardsPerDay()).isEqualTo(10);
+        assertThat(saved.getNewFlashcardsPerDay()).isEqualTo(10);
         assertThat(saved.getNewTestQuestionsPerDay()).isEqualTo(60);
         assertThat(saved.getMaxReviewsPerDay()).isEqualTo(150);
         assertThat(saved.getDesiredRetention()).isEqualTo(0.85);
@@ -230,7 +279,7 @@ class LearningSettingsServiceTest {
         assertThat(saved.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 12, 0));
 
         assertThat(response.maxReviewsPerDay()).isEqualTo(150);
-        assertThat(response.examOrigin()).isNull();
+        assertThat(response.track()).isNull();
         assertThat(response.daysToExam()).isNull();
         assertThat(response.defaults().maxReviewsPerDay()).isEqualTo(200);
     }
@@ -238,39 +287,41 @@ class LearningSettingsServiceTest {
     @Test
     void update_nullsMeanDefaults_andNullShuffleMeansYes() {
         UserSettings existing = new UserSettings(5L);
-        existing.setNewCardsPerDay(3);
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        existing.setNewFlashcardsPerDay(3);
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
 
         LearningSettingsResponse response = service.update(request(null, null, null, null, null), authentication);
 
-        assertThat(existing.getNewCardsPerDay()).isNull();
+        assertThat(existing.getNewFlashcardsPerDay()).isNull();
         assertThat(existing.isShuffleOptions()).isTrue();
-        assertThat(response.newCardsPerDay()).isEqualTo(20);
+        assertThat(response.newFlashcardsPerDay()).isEqualTo(20);
         assertThat(response.examDate()).isNull();
         assertThat(response.plan()).isNull();
     }
 
     @Test
-    void update_doesNotChangeTheChosenExamNorTheOriginFilter() {
+    void update_doesNotChangeTheChosenTrackNorTheSourceFilterNorTheNarrowing() {
         UserSettings existing = withExam(TODAY.plusDays(90));
-        existing.setTestOrigins("NOTARY,AUTHORED");
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        existing.setIncludeOtherSheets(false);
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(List.of());
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        trackExists(NOTARIALNA, "notarialna", "Notarialna", TrackKind.EXAM);
+        givenQuestionsInPool(0);
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
 
         LearningSettingsResponse response = service.update(request(null, 50, null, null, true), authentication);
 
-        assertThat(existing.getExamOrigin()).isEqualTo(QuestionOrigin.NOTARY);
-        assertThat(existing.getTestOrigins()).isEqualTo("NOTARY,AUTHORED");
-        assertThat(response.examOrigin()).isEqualTo(QuestionOrigin.NOTARY);
+        assertThat(existing.getTrackId()).isEqualTo(NOTARIALNA);
+        assertThat(existing.isIncludeOtherSheets()).isFalse();
+        verify(poolActRepository, never()).deleteByUserId(any());
+        assertThat(response.track().slug()).isEqualTo("notarialna");
         assertThat(response.daysToExam()).isEqualTo(90L);
     }
 
     @Test
     void update_rejectsRetentionOutsideTheAllowedRange() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
 
         assertThatThrownBy(() -> service.update(request(null, null, null, 0.5, null), authentication))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("retencja");
@@ -281,148 +332,153 @@ class LearningSettingsServiceTest {
         verify(repository, never()).save(any());
     }
 
-    // ---------------------------------------------------------------- wybór egzaminu
+    // ---------------------------------------------------------------- wybór ścieżki
 
     @Test
-    void chooseExam_storesTheApplication_andSetsTheOriginFilterToItPlusAuthored() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+    void chooseTrack_storesTheTrack_andReturnsItsTerm() {
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
-        ExamTerm term = new ExamTerm(QuestionOrigin.BAILIFF);
+        trackExists(KOMORNICZA, "komornicza", "Komornicza", TrackKind.EXAM);
+        ExamTerm term = new ExamTerm(KOMORNICZA);
         term.setExamDate(TODAY.plusDays(100));
-        when(examTerms.findById(QuestionOrigin.BAILIFF)).thenReturn(Optional.of(term));
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(List.of());
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        when(examTerms.findById(KOMORNICZA)).thenReturn(Optional.of(term));
+        givenQuestionsInPool(0);
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
 
-        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.BAILIFF, null), authentication);
+        LearningSettingsResponse response = service.chooseTrack(new ChooseTrackRequest(KOMORNICZA), authentication);
 
         ArgumentCaptor<UserSettings> captor = ArgumentCaptor.forClass(UserSettings.class);
         verify(repository).save(captor.capture());
         UserSettings saved = captor.getValue();
-        assertThat(saved.getExamOrigin()).isEqualTo(QuestionOrigin.BAILIFF);
-        assertThat(OriginFilterService.parse(saved.getTestOrigins()))
-                .isEqualTo(EnumSet.of(QuestionOrigin.BAILIFF, QuestionOrigin.AUTHORED));
+        assertThat(saved.getTrackId()).isEqualTo(KOMORNICZA);
         assertThat(saved.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 12, 0));
 
-        assertThat(response.examOrigin()).isEqualTo(QuestionOrigin.BAILIFF);
+        assertThat(response.track().id()).isEqualTo(KOMORNICZA);
+        assertThat(response.track().kind()).isEqualTo(TrackKind.EXAM);
         assertThat(response.examDate()).isEqualTo(TODAY.plusDays(100));
         assertThat(response.daysToExam()).isEqualTo(100L);
     }
 
     @Test
-    void chooseExam_keepsOtherSettings_andReplacesAnEarlierChoice() {
+    void chooseTrack_changingTheTrack_clearsTheNarrowingAndResetsTheSourceFilter() {
         UserSettings existing = new UserSettings(5L);
-        existing.setNewTestQuestionsPerDay(77);
-        existing.setExamOrigin(QuestionOrigin.NOTARY);
-        existing.setTestOrigins("NOTARY,AUTHORED");
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        existing.setTrackId(NOTARIALNA);
+        existing.setIncludeOwnSheets(false);
+        existing.setIncludeAuthored(false);
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
-        when(examTerms.findById(QuestionOrigin.JUDGE_PROSECUTOR)).thenReturn(Optional.empty());
+        trackExists(KOMORNICZA, "komornicza", "Komornicza", TrackKind.EXAM);
+        when(examTerms.findById(KOMORNICZA)).thenReturn(Optional.empty());
 
-        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.JUDGE_PROSECUTOR, null), authentication);
+        LearningSettingsResponse response = service.chooseTrack(new ChooseTrackRequest(KOMORNICZA), authentication);
 
-        assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
-        assertThat(existing.getExamOrigin()).isEqualTo(QuestionOrigin.JUDGE_PROSECUTOR);
-        assertThat(existing.getTestOrigins()).isEqualTo("AUTHORED,JUDGE_PROSECUTOR");
+        assertThat(existing.getTrackId()).isEqualTo(KOMORNICZA);
+        assertThat(existing.isIncludeOwnSheets()).isTrue();
+        assertThat(existing.isIncludeOtherSheets()).isTrue();
+        assertThat(existing.isIncludeAuthored()).isTrue();
+        verify(poolActRepository).deleteByUserId(5L);
         assertThat(response.examDate()).isNull(); // termin nieogłoszony
         assertThat(response.plan()).isNull();
     }
 
     @Test
-    void chooseExam_rejectsAuthoredQuestions() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
-
-        assertThatThrownBy(() -> service.chooseExam(new ChooseExamRequest(QuestionOrigin.AUTHORED, null), authentication))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("autorskie");
-        assertThatThrownBy(() -> service.chooseExam(new ChooseExamRequest(null, null), authentication))
-                .isInstanceOf(IllegalArgumentException.class);
-        verify(repository, never()).save(any());
-    }
-
-    @Test
-    void chooseExam_marksTheStartChoiceAsMade() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
-        when(repository.findById(5L)).thenReturn(Optional.empty());
-        when(examTerms.findById(QuestionOrigin.NOTARY)).thenReturn(Optional.empty());
-
-        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.NOTARY, null), authentication);
-
-        assertThat(response.startChoiceMade()).isTrue();
-    }
-
-    @Test
-    void chooseExam_asAStudent_hasNoApplicationNoExamDateAndNoOriginFilter() {
+    void chooseTrack_chosenAgain_changesNothing() {
         UserSettings existing = new UserSettings(5L);
-        existing.setExamOrigin(QuestionOrigin.NOTARY);
-        existing.setTestOrigins("AUTHORED,NOTARY");
-        existing.setStartChoiceMade(true);
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        existing.setTrackId(NOTARIALNA);
+        existing.setIncludeOtherSheets(false);
+        existing.setNewTestQuestionsPerDay(77);
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
+        trackExists(NOTARIALNA, "notarialna", "Notarialna", TrackKind.EXAM);
+        when(examTerms.findById(NOTARIALNA)).thenReturn(Optional.empty());
 
-        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(null, true), authentication);
+        service.chooseTrack(new ChooseTrackRequest(NOTARIALNA), authentication);
 
-        assertThat(existing.getExamOrigin()).isNull();
-        assertThat(existing.getTestOrigins()).isNull();
-        assertThat(response.examOrigin()).isNull();
+        assertThat(existing.isIncludeOtherSheets()).isFalse(); // filtr i zawężenie zostają
+        assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
+        verify(poolActRepository, never()).deleteByUserId(any());
+    }
+
+    @Test
+    void chooseTrack_keepsOtherSettings() {
+        UserSettings existing = new UserSettings(5L);
+        existing.setNewTestQuestionsPerDay(77);
+        existing.setNewFlashcardsPerDay(9);
+        existing.setShuffleOptions(false);
+        existing.setTheme(Theme.LIGHT);
+        loggedIn();
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
+        trackExists(NOTARIALNA, "notarialna", "Notarialna", TrackKind.EXAM);
+        when(examTerms.findById(NOTARIALNA)).thenReturn(Optional.empty());
+
+        service.chooseTrack(new ChooseTrackRequest(NOTARIALNA), authentication);
+
+        assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
+        assertThat(existing.getNewFlashcardsPerDay()).isEqualTo(9);
+        assertThat(existing.isShuffleOptions()).isFalse();
+        assertThat(existing.getTheme()).isEqualTo(Theme.LIGHT);
+    }
+
+    @Test
+    void chooseTrack_student_hasNoExamDateAndNoPlan() {
+        UserSettings existing = new UserSettings(5L);
+        existing.setTrackId(NOTARIALNA);
+        loggedIn();
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
+        trackExists(STUDENT, "student", "Student", TrackKind.STUDENT);
+        when(examTerms.findById(STUDENT)).thenReturn(Optional.empty());
+
+        LearningSettingsResponse response = service.chooseTrack(new ChooseTrackRequest(STUDENT), authentication);
+
+        assertThat(existing.getTrackId()).isEqualTo(STUDENT);
+        assertThat(response.track().kind()).isEqualTo(TrackKind.STUDENT);
         assertThat(response.examDate()).isNull();
         assertThat(response.daysToExam()).isNull();
         assertThat(response.plan()).isNull();
-        assertThat(response.startChoiceMade()).isTrue();
+        verify(poolActRepository).deleteByUserId(5L);
     }
 
     @Test
-    void chooseExam_asAStudent_ignoresAnApplicationSentAlong() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
-        when(repository.findById(5L)).thenReturn(Optional.empty());
-
-        service.chooseExam(new ChooseExamRequest(QuestionOrigin.BAILIFF, true), authentication);
-
-        ArgumentCaptor<UserSettings> captor = ArgumentCaptor.forClass(UserSettings.class);
-        verify(repository).save(captor.capture());
-        assertThat(captor.getValue().getExamOrigin()).isNull();
-        assertThat(captor.getValue().isStartChoiceMade()).isTrue();
-    }
-
-    @Test
-    void chooseExam_studentCanChooseAnApplicationLater() {
+    void chooseTrack_studentCanChooseAnApplicationLater() {
         UserSettings student = new UserSettings(5L);
-        student.setStartChoiceMade(true);
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        student.setTrackId(STUDENT);
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(student));
-        when(examTerms.findById(QuestionOrigin.JUDGE_PROSECUTOR)).thenReturn(Optional.empty());
+        trackExists(NOTARIALNA, "notarialna", "Notarialna", TrackKind.EXAM);
+        when(examTerms.findById(NOTARIALNA)).thenReturn(Optional.empty());
 
-        LearningSettingsResponse response = service.chooseExam(new ChooseExamRequest(QuestionOrigin.JUDGE_PROSECUTOR, null), authentication);
+        LearningSettingsResponse response = service.chooseTrack(new ChooseTrackRequest(NOTARIALNA), authentication);
 
-        assertThat(response.examOrigin()).isEqualTo(QuestionOrigin.JUDGE_PROSECUTOR);
-        assertThat(OriginFilterService.parse(student.getTestOrigins()))
-                .isEqualTo(EnumSet.of(QuestionOrigin.JUDGE_PROSECUTOR, QuestionOrigin.AUTHORED));
+        assertThat(response.track().slug()).isEqualTo("notarialna");
+        assertThat(student.getTrackId()).isEqualTo(NOTARIALNA);
     }
 
     @Test
-    void get_reportsTheStartChoiceOnlyOnceMade() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+    void chooseTrack_rejectsAnUnknownTrack() {
+        loggedIn();
+        when(trackRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.chooseTrack(new ChooseTrackRequest(99L), authentication))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Nie ma takiej ścieżki");
+        verify(repository, never()).save(any());
+        verify(poolActRepository, never()).deleteByUserId(any());
+    }
+
+    @Test
+    void get_withoutAChosenTrack_reportsNone_soTheAppShowsTheStartDialog() {
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
-        assertThat(service.get(authentication).startChoiceMade()).isFalse();
+        assertThat(service.get(authentication).track()).isNull();
 
-        UserSettings stored = new UserSettings(5L);
-        when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        assertThat(service.get(authentication).startChoiceMade()).isFalse(); // wiersz jest, ale wyboru nie było
-
-        stored.setStartChoiceMade(true);
-        assertThat(service.get(authentication).startChoiceMade()).isTrue();
+        when(repository.findById(5L)).thenReturn(Optional.of(new UserSettings(5L))); // wiersz jest, ścieżki nie wybrano
+        assertThat(service.get(authentication).track()).isNull();
     }
 
     // ---------------------------------------------------------------- plan
 
-    private static Card card(long id, boolean test) {
-        Card card = new Card();
-        card.setId(id);
-        if (test) card.setCorrectOption(CorrectOption.A);
-        return card;
-    }
-
-    private static UserCardStateRepository.CardDue started(long cardId) {
-        return new UserCardStateRepository.CardDue() {
-            public Long getCardId() { return cardId; }
+    private static UserQuestionStateRepository.QuestionDue started(long questionId) {
+        return new UserQuestionStateRepository.QuestionDue() {
+            public Long getQuestionId() { return questionId; }
             public LocalDateTime getDueDate() { return LocalDateTime.of(2026, 10, 20, 0, 0); }
             public Double getStability() { return 3.0; }
             public LocalDateTime getLastReviewAt() { return LocalDateTime.of(2026, 10, 10, 9, 0); }
@@ -437,43 +493,50 @@ class LearningSettingsServiceTest {
                 .thenReturn(count);
     }
 
+    /** Pytania 1..count w puli: odpowiadają zapytaniu o pytania puli (akty i dozwolone źródła z bieżącej puli). */
+    private void givenQuestionsInPool(int count) {
+        List<Question> all = new ArrayList<>();
+        for (long id = 1; id <= count; id++) {
+            all.add(QuestionRefs.question(id));
+        }
+        givenQuestions(all);
+    }
+
+    private void givenQuestions(List<Question> all) {
+        when(questionRepository.findRefsInPool(ArgumentMatchers.<Collection<Long>>any(), ArgumentMatchers.<Collection<Long>>any()))
+                .thenAnswer(inv -> QuestionRefs.inPool(all, inv.getArgument(0), inv.getArgument(1)));
+    }
+
+    private void startedTests(long from, long to) {
+        List<UserQuestionStateRepository.QuestionDue> schedule = new ArrayList<>();
+        for (long id = from; id <= to; id++) schedule.add(started(id));
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(schedule);
+    }
+
     @Test
-    void get_withExamDate_buildsPlanFromUntouchedCardsOnly() {
+    void get_withExamDate_buildsPlanFromUntouchedQuestionsOnly() {
         UserSettings stored = withExam(TODAY.plusDays(44)); // 44 - 14 rezerwy = 30 dni planowania
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        List<Card> readable = new java.util.ArrayList<>();
-        for (long id = 1; id <= 100; id++) readable.add(card(id, id <= 70)); // 70 pytań testowych, 30 fiszek
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
-        // użytkownik ruszył już 10 pytań testowych (1..10) i 5 fiszek (71..75)
-        List<UserCardStateRepository.CardDue> schedule = new java.util.ArrayList<>();
-        for (long id = 1; id <= 10; id++) schedule.add(started(id));
-        for (long id = 71; id <= 75; id++) schedule.add(started(id));
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(schedule);
+        givenQuestionsInPool(70);
+        startedTests(1, 10); // użytkownik ruszył już 10 pytań w teście
         startedToday(0);
 
         LearningSettingsResponse.Plan plan = service.get(authentication).plan();
 
         assertThat(plan.newTestQuestionsLeft()).isEqualTo(60);
-        assertThat(plan.newFlashcardsLeft()).isEqualTo(25);
         assertThat(plan.planningDays()).isEqualTo(30);
         assertThat(plan.suggestedTestQuestionsPerDay()).isEqualTo(2);
-        assertThat(plan.suggestedFlashcardsPerDay()).isEqualTo(1);
         assertThat(plan.newTestQuestionsToday()).isEqualTo(0);
     }
 
     @Test
     void get_todaysTargetIsComputedFromTheStartOfTheDay_soItDoesNotShrinkWhileLearning() {
         UserSettings stored = withExam(TODAY.plusDays(44)); // 30 dni planowania
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        List<Card> readable = new java.util.ArrayList<>();
-        for (long id = 1; id <= 300; id++) readable.add(card(id, true));
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
-        // 300 pytań, dziś zaczęto 20 (1..20): zostało 280, a cel dnia nadal wynika z 300 / 30 = 10
-        List<UserCardStateRepository.CardDue> schedule = new java.util.ArrayList<>();
-        for (long id = 1; id <= 20; id++) schedule.add(started(id));
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(schedule);
+        givenQuestionsInPool(300);
+        startedTests(1, 20); // 300 pytań, dziś zaczęto 20: zostało 280, a cel dnia nadal wynika z 300 / 30 = 10
         startedToday(20);
 
         LearningSettingsResponse.Plan plan = service.get(authentication).plan();
@@ -486,12 +549,10 @@ class LearningSettingsServiceTest {
     @Test
     void get_inTheLastTwoWeeks_planIsReviewOnly() {
         UserSettings stored = withExam(TODAY.plusDays(14));
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        List<Card> readable = new java.util.ArrayList<>();
-        for (long id = 1; id <= 50; id++) readable.add(card(id, true));
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        givenQuestionsInPool(50);
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
         startedToday(0);
 
         LearningSettingsResponse.Plan plan = service.get(authentication).plan();
@@ -499,62 +560,73 @@ class LearningSettingsServiceTest {
         assertThat(plan.newTestQuestionsLeft()).isEqualTo(50);
         assertThat(plan.planningDays()).isEqualTo(0);
         assertThat(plan.suggestedTestQuestionsPerDay()).isEqualTo(0); // nie "50 dziennie": zostają same powtórki
-        assertThat(plan.suggestedFlashcardsPerDay()).isEqualTo(0);
     }
 
     @Test
-    void get_withoutChosenApplication_hasNoPlan_andDoesNotLoadCards() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+    void get_withoutChosenTrack_hasNoPlan_andDoesNotLoadQuestions() {
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
 
         LearningSettingsResponse response = service.get(authentication);
 
         assertThat(response.plan()).isNull();
-        assertThat(response.examOrigin()).isNull();
-        verify(cardRepository, never()).findReadableRefsForUser(any());
+        assertThat(response.track()).isNull();
+        verify(questionRepository, never()).findRefsInPool(any(), any());
     }
 
     @Test
     void get_applicationWithoutAnnouncedTerm_hasNoPlan() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         UserSettings stored = withExam(null);
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        trackExists(NOTARIALNA, "notarialna", "Notarialna", TrackKind.EXAM);
 
         LearningSettingsResponse response = service.get(authentication);
 
-        assertThat(response.examOrigin()).isEqualTo(QuestionOrigin.NOTARY);
+        assertThat(response.track().slug()).isEqualTo("notarialna");
         assertThat(response.examDate()).isNull();
         assertThat(response.plan()).isNull();
-        verify(cardRepository, never()).findReadableRefsForUser(any());
+        verify(questionRepository, never()).findRefsInPool(any(), any());
     }
 
     @Test
-    void get_planCountsOnlyQuestionsFromTheSelectedOrigins_andAllFlashcards() {
+    void get_planCountsOnlyQuestionsFromTheUsersPool_thatIsItsActsAndSourceFilter() {
         UserSettings stored = withExam(TODAY.plusDays(44));
-        stored.setTestOrigins("NOTARY,BAILIFF");
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        pool = Pools.of(new SourceFilter(true, false, false), 1);
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        List<Card> readable = new java.util.ArrayList<>();
-        for (long id = 1; id <= 40; id++) {
-            Card card = card(id, id <= 30); // 30 pytań testowych, 10 fiszek
-            card.setOrigin(id <= 10 ? QuestionOrigin.NOTARY : id <= 20 ? QuestionOrigin.BAILIFF : QuestionOrigin.AUTHORED);
-            readable.add(card);
-        }
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        List<Question> all = new ArrayList<>();
+        for (long id = 1; id <= 10; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OWN_SHEET));       // liczone
+        for (long id = 11; id <= 20; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OTHER_SHEET));    // filtr źródeł
+        for (long id = 21; id <= 30; id++) all.add(QuestionRefs.question(id, 2, 1, QuestionRefs.OWN_SHEET));      // akt spoza puli
+        givenQuestions(all);
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
         startedToday(0);
 
         LearningSettingsResponse.Plan plan = service.get(authentication).plan();
 
-        assertThat(plan.newTestQuestionsLeft()).isEqualTo(20); // tylko NOTARY i BAILIFF
-        assertThat(plan.newFlashcardsLeft()).isEqualTo(10);    // fiszki bez filtra
+        assertThat(plan.newTestQuestionsLeft()).isEqualTo(10);
+    }
+
+    @Test
+    void get_planDoesNotCountQuestionsStartedInFlashcardsOnly() {
+        // „nowe" w planie to pytania nietknięte w TEŚCIE; fiszka tego samego pytania ma osobny stan
+        UserSettings stored = withExam(TODAY.plusDays(44));
+        loggedIn();
+        when(repository.findById(5L)).thenReturn(Optional.of(stored));
+        givenQuestionsInPool(20);
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
+        startedToday(0);
+
+        assertThat(service.get(authentication).plan().newTestQuestionsLeft()).isEqualTo(20);
+        verify(stateRepository, never()).findScheduleByUserIdAndMode(5L, ReviewMode.FLASHCARD);
     }
 
     // ---------------------------------------------------------------- wygląd (ciemny / jasny)
 
     @Test
     void get_withoutStoredSettings_themeIsDark() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
 
         assertThat(service.get(authentication).theme()).isEqualTo(Theme.DARK);
@@ -562,7 +634,7 @@ class LearningSettingsServiceTest {
 
     @Test
     void chooseTheme_createsSettingsWhenThereAreNone_andReturnsTheChoice() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
 
         LearningSettingsResponse response = service.chooseTheme(new ChooseThemeRequest(Theme.LIGHT), authentication);
@@ -580,21 +652,21 @@ class LearningSettingsServiceTest {
     void chooseTheme_keepsEveryOtherSetting() {
         UserSettings existing = new UserSettings(5L);
         existing.setNewTestQuestionsPerDay(77);
-        existing.setNewCardsPerDay(9);
-        existing.setExamOrigin(QuestionOrigin.NOTARY);
-        existing.setTestOrigins("NOTARY,AUTHORED");
+        existing.setNewFlashcardsPerDay(9);
+        existing.setTrackId(NOTARIALNA);
+        existing.setIncludeAuthored(false);
         existing.setShuffleOptions(false);
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
-        when(examTerms.findById(QuestionOrigin.NOTARY)).thenReturn(Optional.empty());
+        when(examTerms.findById(NOTARIALNA)).thenReturn(Optional.empty());
 
         LearningSettingsResponse response = service.chooseTheme(new ChooseThemeRequest(Theme.LIGHT), authentication);
 
         assertThat(existing.getTheme()).isEqualTo(Theme.LIGHT);
         assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
-        assertThat(existing.getNewCardsPerDay()).isEqualTo(9);
-        assertThat(existing.getExamOrigin()).isEqualTo(QuestionOrigin.NOTARY);
-        assertThat(existing.getTestOrigins()).isEqualTo("NOTARY,AUTHORED");
+        assertThat(existing.getNewFlashcardsPerDay()).isEqualTo(9);
+        assertThat(existing.getTrackId()).isEqualTo(NOTARIALNA);
+        assertThat(existing.isIncludeAuthored()).isFalse();
         assertThat(existing.isShuffleOptions()).isFalse();
         assertThat(response.newTestQuestionsPerDay()).isEqualTo(77);
     }
@@ -603,7 +675,7 @@ class LearningSettingsServiceTest {
     void chooseTheme_canGoBackToDark() {
         UserSettings existing = new UserSettings(5L);
         existing.setTheme(Theme.LIGHT);
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
 
         assertThat(service.chooseTheme(new ChooseThemeRequest(Theme.DARK), authentication).theme()).isEqualTo(Theme.DARK);
@@ -611,7 +683,7 @@ class LearningSettingsServiceTest {
 
     @Test
     void chooseTheme_rejectsAMissingTheme() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
 
         assertThatThrownBy(() -> service.chooseTheme(new ChooseThemeRequest(null), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -622,7 +694,7 @@ class LearningSettingsServiceTest {
     void update_doesNotChangeTheTheme() {
         UserSettings existing = new UserSettings(5L);
         existing.setTheme(Theme.LIGHT);
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
 
         LearningSettingsResponse response = service.update(request(null, null, null, null, null), authentication);
@@ -637,10 +709,8 @@ class LearningSettingsServiceTest {
     private UserSettings untouchedQuestionsAndExamIn(long daysToExam, int count) {
         UserSettings stored = withExam(TODAY.plusDays(daysToExam));
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        List<Card> readable = new java.util.ArrayList<>();
-        for (long id = 1; id <= count; id++) readable.add(card(id, true));
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        givenQuestionsInPool(count);
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
         startedToday(0);
         return stored;
     }
@@ -648,7 +718,7 @@ class LearningSettingsServiceTest {
     @Test
     void get_autoLimit_followsThePlanWhenItNeedsMoreThanTheDefault() {
         untouchedQuestionsAndExamIn(44, 1500); // 30 dni planowania => 50 dziennie
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
 
         LearningSettingsResponse response = service.get(authentication);
 
@@ -662,7 +732,7 @@ class LearningSettingsServiceTest {
     @Test
     void get_autoLimit_neverDropsBelowTheDefault() {
         untouchedQuestionsAndExamIn(44, 90); // trzeba 3 dziennie, ale limit nie schodzi poniżej domyślnych 40
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
 
         LearningSettingsResponse response = service.get(authentication);
 
@@ -673,7 +743,7 @@ class LearningSettingsServiceTest {
     @Test
     void get_autoLimit_hasACap_andThePlanAdmitsItCannotKeepUp() {
         untouchedQuestionsAndExamIn(44, 6000); // trzeba 200 dziennie, sufit 100
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
 
         LearningSettingsResponse response = service.get(authentication);
 
@@ -685,7 +755,7 @@ class LearningSettingsServiceTest {
 
     @Test
     void get_autoLimit_withoutAnExamDateIsTheDefault() {
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
 
         LearningSettingsResponse response = service.get(authentication);
@@ -699,7 +769,7 @@ class LearningSettingsServiceTest {
     void get_ownLimit_isKeptEvenWhenThePlanNeedsMore() {
         UserSettings stored = untouchedQuestionsAndExamIn(44, 1500);
         stored.setNewTestQuestionsPerDay(25);
-        when(currentUserResolver.resolve(authentication)).thenReturn(user());
+        loggedIn();
 
         LearningSettingsResponse response = service.get(authentication);
 
@@ -709,30 +779,30 @@ class LearningSettingsServiceTest {
     }
 
     @Test
-    void dailyLimit_ownLimitIsUsedAsIs_withoutLoadingAnyCards() {
+    void dailyLimit_ownLimitIsUsedAsIs_withoutLoadingAnyQuestions() {
         UserSettings stored = withExam(TODAY.plusDays(44));
         stored.setNewTestQuestionsPerDay(12);
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
 
         assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(12);
-        verify(cardRepository, never()).findReadableRefsForUser(any());
+        verify(questionRepository, never()).findRefsInPool(any(), any());
     }
 
     @Test
-    void dailyLimit_withoutAnExam_isTheDefault_withoutLoadingAnyCards() {
+    void dailyLimit_withoutAnExam_isTheDefault_withoutLoadingAnyQuestions() {
         when(repository.findById(5L)).thenReturn(Optional.empty());
 
         assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(40);
-        verify(cardRepository, never()).findReadableRefsForUser(any());
+        verify(questionRepository, never()).findRefsInPool(any(), any());
     }
 
     @Test
-    void dailyLimit_inTheReviewReserve_isTheDefault_withoutLoadingAnyCards() {
+    void dailyLimit_inTheReviewReserve_isTheDefault_withoutLoadingAnyQuestions() {
         UserSettings stored = withExam(TODAY.plusDays(10));
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
 
         assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(40);
-        verify(cardRepository, never()).findReadableRefsForUser(any());
+        verify(questionRepository, never()).findRefsInPool(any(), any());
     }
 
     @Test
@@ -744,15 +814,11 @@ class LearningSettingsServiceTest {
 
     @Test
     void dailyLimit_auto_isStableDuringTheDay() {
-        // Dziś zaczęto 20 z 300 pytań: zostało 280, ale limit nadal wynika ze stanu z początku dnia (300 / 30 dni)
+        // Dziś zaczęto 20 z 6000 pytań: zostało 5980, ale limit nadal wynika ze stanu z początku dnia (6000 / 30 dni)
         UserSettings stored = withExam(TODAY.plusDays(44));
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        List<Card> readable = new java.util.ArrayList<>();
-        for (long id = 1; id <= 6000; id++) readable.add(card(id, true));
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
-        List<UserCardStateRepository.CardDue> schedule = new java.util.ArrayList<>();
-        for (long id = 1; id <= 20; id++) schedule.add(started(id));
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(schedule);
+        givenQuestionsInPool(6000);
+        startedTests(1, 20);
         startedToday(20);
 
         // (5980 zostało + 20 zaczętych dziś) / 30 = 200 => sufit 100, tak samo jak rano
@@ -760,18 +826,15 @@ class LearningSettingsServiceTest {
     }
 
     @Test
-    void dailyLimit_auto_countsOnlyQuestionsFromTheSelectedOrigins() {
+    void dailyLimit_auto_countsOnlyQuestionsFromTheUsersPool() {
         UserSettings stored = withExam(TODAY.plusDays(44));
-        stored.setTestOrigins("NOTARY");
+        pool = Pools.of(new SourceFilter(true, false, false), 1);
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
-        List<Card> readable = new java.util.ArrayList<>();
-        for (long id = 1; id <= 3000; id++) {
-            Card card = card(id, true);
-            card.setOrigin(id <= 1800 ? QuestionOrigin.NOTARY : QuestionOrigin.BAILIFF);
-            readable.add(card);
-        }
-        when(cardRepository.findReadableRefsForUser(5L)).thenReturn(CardRefs.of(readable));
-        when(stateRepository.findCardDueByUserId(5L)).thenReturn(List.of());
+        List<Question> all = new ArrayList<>();
+        for (long id = 1; id <= 1800; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OWN_SHEET));
+        for (long id = 1801; id <= 3000; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OTHER_SHEET));
+        givenQuestions(all);
+        when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
         startedToday(0);
 
         assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(60); // 1800 / 30

@@ -9,8 +9,8 @@ import pl.tutlaw.backend.review.CustomTestKind;
 import java.util.List;
 
 /**
- * Własny test: co ma w nim być. Zakres to suma wskazanych rodzajów ({@code categoryIds}) i aktów prawnych albo
- * przedmiotów ({@code subjectIds}); bez żadnego z nich test obejmuje cały dostępny materiał.
+ * Własny test: co ma w nim być. Zakres to suma wskazanych dziedzin ({@code fieldIds}) i aktów prawnych
+ * ({@code actIds}); bez żadnego z nich test obejmuje całą pulę użytkownika.
  *
  * @param kind          które pytania (domyślnie wszystkie)
  * @param questionCount ile pytań wylosować: 10, 20, 50, 100 albo 150. Gdy w zakresie jest mniej niż 10 pytań, jedyny
@@ -18,10 +18,10 @@ import java.util.List;
  *                      test dostaje wszystkie
  */
 public record CustomTestRequest(
-        @Size(max = 200, message = "za dużo wybranych rodzajów")
-        List<Long> categoryIds,
+        @Size(max = 200, message = "za dużo wybranych dziedzin")
+        List<Long> fieldIds,
         @Size(max = 200, message = "za dużo wybranych aktów prawnych")
-        List<Long> subjectIds,
+        List<Long> actIds,
         CustomTestKind kind,
         @NotNull(message = "liczba pytań jest wymagana")
         @Min(value = 1, message = "liczba pytań musi wynosić od 1 do 150")

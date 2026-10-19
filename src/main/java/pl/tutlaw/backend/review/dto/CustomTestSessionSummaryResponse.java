@@ -1,18 +1,17 @@
 package pl.tutlaw.backend.review.dto;
 
-import pl.tutlaw.backend.card.QuestionOrigin;
 import pl.tutlaw.backend.review.CustomTestKind;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Zapisany własny test na liście "Moje testy": konfiguracja z chwili układania i wynik do tej pory.
  *
  * @param finishedAt     kiedy odpowiedziano na ostatnie pytanie; {@code null} = test nieukończony
- * @param categoryIds    wybrane rodzaje (z nich i z {@code subjectIds} da się ułożyć test ponownie; oba puste = cały materiał)
- * @param origins        filtr pochodzenia pytań obowiązujący, gdy układano test
+ * @param fieldIds       wybrane dziedziny (z nich i z {@code actIds} da się ułożyć test ponownie; oba puste = cała pula)
+ * @param sourceGroups   grupy źródeł obowiązujące, gdy układano test (OWN_SHEETS, OTHER_SHEETS, AUTHORED); wszystkie
+ *                       trzy, gdy filtr był domyślny
  * @param requestedCount o ile pytań prosił użytkownik
  * @param questionCount  ile pytań wylosowano
  * @param answeredCount  na ile już odpowiedział
@@ -26,9 +25,9 @@ public record CustomTestSessionSummaryResponse(
         boolean finished,
         String scopeLabel,
         CustomTestKind kind,
-        List<Long> categoryIds,
-        List<Long> subjectIds,
-        Set<QuestionOrigin> origins,
+        List<Long> fieldIds,
+        List<Long> actIds,
+        List<String> sourceGroups,
         int requestedCount,
         int questionCount,
         int answeredCount,

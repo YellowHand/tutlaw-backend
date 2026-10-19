@@ -19,7 +19,7 @@ class FlashcardUnlockServiceTest {
 
     @Test
     void unlockedQuestions_areConfidentMistakesPlusManualAdditions_withoutDuplicates() {
-        when(reviewLogRepository.findConfidentMistakeCardIds(5L)).thenReturn(List.of(1L, 2L));
+        when(reviewLogRepository.findConfidentMistakeQuestionIds(5L)).thenReturn(List.of(1L, 2L));
         when(additionRepository.findQuestionIdsByUserId(5L)).thenReturn(List.of(2L, 3L));
 
         assertThat(new FlashcardUnlockService(reviewLogRepository, additionRepository).unlockedQuestionIds(5L))
@@ -28,7 +28,7 @@ class FlashcardUnlockServiceTest {
 
     @Test
     void unlockedQuestions_isEmptyForANewAccount() {
-        when(reviewLogRepository.findConfidentMistakeCardIds(5L)).thenReturn(List.of());
+        when(reviewLogRepository.findConfidentMistakeQuestionIds(5L)).thenReturn(List.of());
         when(additionRepository.findQuestionIdsByUserId(5L)).thenReturn(List.of());
 
         assertThat(new FlashcardUnlockService(reviewLogRepository, additionRepository).unlockedQuestionIds(5L)).isEmpty();

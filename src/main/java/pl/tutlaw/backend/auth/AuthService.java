@@ -284,7 +284,7 @@ public class AuthService {
     private String dummyHash() {
         String hash = dummyHash;
         if (hash == null) {
-            hash = passwordEncoder.encode("tutlaw-nieistniejace-haslo");
+            hash = passwordEncoder.encode("gradus-nieistniejace-haslo");
             dummyHash = hash;
         }
         return hash;

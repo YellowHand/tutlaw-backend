@@ -22,7 +22,7 @@ public interface FlashcardAdditionRepository extends JpaRepository<FlashcardAddi
      */
     @Modifying
     @Query(value = """
-            INSERT INTO user_flashcard_additions (user_id, question_id, added_at)
+            INSERT INTO flashcard_additions (user_id, question_id, added_at)
             VALUES (:userId, :questionId, :addedAt)
             ON CONFLICT (user_id, question_id) DO NOTHING
             """, nativeQuery = true)
@@ -31,9 +31,9 @@ public interface FlashcardAdditionRepository extends JpaRepository<FlashcardAddi
 
     /** Ręcznie dodane przez użytkownika pytania wraz z treścią, do eksportu jego danych. */
     @Query("""
-            SELECT a.questionId AS questionId, c.front AS questionFront, a.addedAt AS addedAt
-            FROM FlashcardAddition a, Card c
-            WHERE a.userId = :userId AND c.id = a.questionId
+            SELECT a.questionId AS questionId, q.body AS questionBody, a.addedAt AS addedAt
+            FROM FlashcardAddition a, Question q
+            WHERE a.userId = :userId AND q.id = a.questionId
             ORDER BY a.addedAt, a.id
             """)
     List<ExportedAddition> findExportRows(@Param("userId") Long userId);
@@ -41,7 +41,7 @@ public interface FlashcardAdditionRepository extends JpaRepository<FlashcardAddi
     interface ExportedAddition {
         Long getQuestionId();
 
-        String getQuestionFront();
+        String getQuestionBody();
 
         LocalDateTime getAddedAt();
     }

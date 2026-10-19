@@ -4,11 +4,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.flashcard.FlashcardService;
 import pl.tutlaw.backend.flashcard.FlashcardStatus;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.SubmitReviewRequest;
 import pl.tutlaw.backend.review.dto.SubmitTestAnswerRequest;
 import pl.tutlaw.backend.review.dto.TestAnswerResultResponse;
@@ -28,9 +28,9 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class ReviewService {
 
-    private final UserCardStateRepository stateRepository;
+    private final UserQuestionStateRepository stateRepository;
     private final ReviewLogRepository reviewLogRepository;
-    private final CardRepository cardRepository;
+    private final QuestionRepository questionRepository;
     private final CurrentUserResolver currentUserResolver;
     private final FlashcardService flashcardService;
     private final FsrsEngine fsrsEngine;
@@ -41,22 +41,22 @@ public class ReviewService {
     private final Clock clock;
 
     /**
-     * Ocena fiszki: 1–4 wybrana przez użytkownika. „Nie pamiętam" (1) liczy się jako błąd.
+     * Ocena fiszki pytania: 1–4 wybrana przez użytkownika. „Nie pamiętam" (1) liczy się jako błąd.
+     * Fiszka ma własny stan nauki, niezależny od stanu tego pytania w testach.
      *
      * @return czy to była pierwsza ocena tej fiszki (zaczęła się uczyć właśnie teraz)
      */
     @Transactional
     public boolean submitReview(SubmitReviewRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        Card card = findReadableCard(request.cardId(), user);
+        Question question = findQuestion(request.questionId());
 
-        // Fiszki i Testy to osobne światy: pytanie testowe ocenia się tylko w teście (zob. submitTestAnswer).
-        if (card.getCorrectOption() != null) {
-            throw new IllegalArgumentException("To pytanie jest dostępne tylko w Testach");
+        if (question.isFlashcardHidden()) {
+            throw new IllegalArgumentException("Z tego pytania nie ma fiszki");
         }
 
         Rating rating = Rating.values()[request.rating() - 1];
-        UserCardState state = applyReview(user, card, rating, request.timeSpentSeconds(),
+        UserQuestionState state = applyReview(user, question, rating, request.timeSpentSeconds(),
                 ReviewMode.FLASHCARD, null, false, rating == Rating.AGAIN);
         return state.getReps() == 1;
     }
@@ -69,62 +69,54 @@ public class ReviewService {
     @Transactional
     public TestAnswerResultResponse submitTestAnswer(SubmitTestAnswerRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        Card card = findReadableCard(request.cardId(), user);
+        Question question = findQuestion(request.questionId());
 
-        if (card.getCorrectOption() == null) {
-            throw new IllegalArgumentException("To pytanie nie ma formatu testowego (brak poprawnej odpowiedzi)");
-        }
-
-        boolean correct = card.getCorrectOption() == request.selectedOption();
+        boolean correct = question.getCorrectOption() == request.selectedOption();
         boolean guessed = Boolean.TRUE.equals(request.guessed());
 
         // Pewny błąd (zły wybór bez „Nie jestem pewien") sam dodaje fiszkę pytania do Fiszek. Informujemy o tym
         // tylko raz: gdy to pierwszy taki błąd w tym pytaniu i fiszka istnieje (jest widoczna).
         boolean confidentMistake = !correct && !guessed;
-        long earlierConfidentMistakes = reviewLogRepository.countConfidentMistakes(user.getId(), card.getId());
+        long earlierConfidentMistakes = reviewLogRepository.countConfidentMistakes(user.getId(), question.getId());
         FlashcardStatus flashcard = flashcardService.statusOf(
-                user.getId(), card.getId(), confidentMistake || earlierConfidentMistakes > 0);
+                user.getId(), question, confidentMistake || earlierConfidentMistakes > 0);
         boolean unlocksFlashcard = confidentMistake && earlierConfidentMistakes == 0
                 && flashcard == FlashcardStatus.ADDED_BY_MISTAKE;
 
-        UserCardState state = applyReview(user, card, ReviewPolicy.testRating(correct, guessed),
+        UserQuestionState state = applyReview(user, question, ReviewPolicy.testRating(correct, guessed),
                 request.timeSpentSeconds(), ReviewMode.TEST, correct, guessed, !correct);
 
         // Odpowiedź w zapisanym własnym teście ("Moje testy"). Powtórki, błędy i egzamin przychodzą bez numeru testu.
-        customTestSessions.recordAnswer(user.getId(), request.sessionId(), card.getId(), request.selectedOption(),
+        customTestSessions.recordAnswer(user.getId(), request.sessionId(), question.getId(), request.selectedOption(),
                 correct, guessed, request.timeSpentSeconds());
 
         return new TestAnswerResultResponse(
-                correct, card.getCorrectOption(), card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(),
-                state.getLapses(), leechPolicy.isLeech(state.getLapses()), unlocksFlashcard, flashcard,
-                state.getReps() == 1);
+                correct, question.getCorrectOption(), question.getExplanation(), question.getLegalBasis(),
+                question.getValidAsOf(), state.getLapses(), leechPolicy.isLeech(state.getLapses()),
+                unlocksFlashcard, flashcard, state.getReps() == 1);
     }
 
     /**
-     * Karta musi istnieć i być dostępna dla użytkownika (pula płaska albo przeczytany rozdział podręcznika).
-     * Bez tego wystarczyło znać numer karty, żeby "odpowiadać" na pytania z nieodblokowanych rozdziałów.
-     * Dla karty niedostępnej odpowiadamy tak samo jak dla nieistniejącej. Ukrycie karty NIE blokuje odpowiedzi:
-     * kto ma ją już otwartą w sesji, kończy ją normalnie (nowe sesje jej nie zawierają).
+     * Pytanie musi istnieć. Ukrycie pytania NIE blokuje odpowiedzi: kto ma je już otwarte w sesji, kończy ją normalnie
+     * (nowe sesje go nie zawierają). Pula użytkownika decyduje o tym, co mu się pokazuje, a nie o tym, co wolno
+     * ocenić: wszystkie pytania są jawne dla każdego zalogowanego.
      */
-    private Card findReadableCard(Long cardId, User user) {
-        Card card = cardRepository.findById(cardId)
-                .orElseThrow(() -> new ResourceNotFoundException("Card not found"));
-        if (cardRepository.countReadableById(card.getId(), user.getId()) == 0) {
-            throw new ResourceNotFoundException("Card not found");
-        }
-        return card;
+    private Question findQuestion(Long questionId) {
+        return questionRepository.findById(questionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Question not found"));
     }
 
-    /** Zapisuje odpowiedź i zwraca stan karty po niej (przy zdublowanym żądaniu: stan bez zmian). */
-    private UserCardState applyReview(
-            User user, Card card, Rating rating, Double timeSpentSeconds,
+    /** Zapisuje odpowiedź i zwraca stan pytania w trybie po niej (przy zdublowanym żądaniu: stan bez zmian). */
+    private UserQuestionState applyReview(
+            User user, Question question, Rating rating, Double timeSpentSeconds,
             ReviewMode mode, Boolean wasCorrect, boolean wasGuessed, boolean countAsLapse) {
 
-        UserCardState state = stateRepository.findByUserIdAndCardId(user.getId(), card.getId())
+        UserQuestionState state = stateRepository.findByUserIdAndQuestionIdAndMode(user.getId(), question.getId(), mode)
                 .orElseGet(() -> {
-                    UserCardState s = new UserCardState();
+                    UserQuestionState s = new UserQuestionState();
                     s.setUser(user);
-                    s.setCard(card);
+                    s.setQuestion(question);
+                    s.setMode(mode);
                     return s;
                 });
 
@@ -168,7 +160,7 @@ public class ReviewService {
 
         ReviewLog log = new ReviewLog();
         log.setUser(user);
-        log.setCard(card);
+        log.setQuestion(question);
         log.setRating(rating.getValue());
         log.setReviewedAt(now);
         log.setElapsedDays(elapsedDays);
@@ -182,12 +174,12 @@ public class ReviewService {
         return state;
     }
 
-    private CardLearningState learningStateAfter(Rating rating, boolean firstReview) {
-        if (rating != Rating.AGAIN) return CardLearningState.REVIEW;
-        return firstReview ? CardLearningState.LEARNING : CardLearningState.RELEARNING;
+    private LearningState learningStateAfter(Rating rating, boolean firstReview) {
+        if (rating != Rating.AGAIN) return LearningState.REVIEW;
+        return firstReview ? LearningState.LEARNING : LearningState.RELEARNING;
     }
 
-    private void updateRunningAverageTime(UserCardState state, Double newTime) {
+    private void updateRunningAverageTime(UserQuestionState state, Double newTime) {
         if (newTime == null) return;
         if (state.getAvgTimeSeconds() == null) {
             state.setAvgTimeSeconds(newTime);

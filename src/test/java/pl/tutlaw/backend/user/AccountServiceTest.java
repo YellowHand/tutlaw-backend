@@ -7,25 +7,27 @@ import pl.tutlaw.backend.common.exception.UnauthorizedException;
 import pl.tutlaw.backend.exam.ExamAttempt;
 import pl.tutlaw.backend.exam.ExamAttemptRepository;
 import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
+import pl.tutlaw.backend.pool.UserPoolActRepository;
+import pl.tutlaw.backend.report.QuestionReportReason;
+import pl.tutlaw.backend.report.QuestionReportRepository;
+import pl.tutlaw.backend.report.QuestionReportStatus;
 import pl.tutlaw.backend.review.CustomTestKind;
 import pl.tutlaw.backend.review.CustomTestSessionService;
-import pl.tutlaw.backend.review.dto.CustomTestSessionSummaryResponse;
-import pl.tutlaw.backend.studytime.StudyTimeDaily;
-import pl.tutlaw.backend.studytime.StudyTimeRepository;
-import pl.tutlaw.backend.progress.ChapterProgressRepository;
-import pl.tutlaw.backend.report.CardReportReason;
-import pl.tutlaw.backend.report.CardReportRepository;
-import pl.tutlaw.backend.report.CardReportStatus;
-import pl.tutlaw.backend.review.CardLearningState;
+import pl.tutlaw.backend.review.LearningState;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.review.ReviewMode;
-import pl.tutlaw.backend.review.UserCardStateRepository;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.review.UserQuestionStateRepository;
+import pl.tutlaw.backend.review.dto.CustomTestSessionSummaryResponse;
 import pl.tutlaw.backend.settings.Theme;
 import pl.tutlaw.backend.settings.UserSettings;
 import pl.tutlaw.backend.settings.UserSettingsRepository;
+import pl.tutlaw.backend.studytime.StudyTimeDaily;
+import pl.tutlaw.backend.studytime.StudyTimeRepository;
 import pl.tutlaw.backend.testsupport.FakeRepos;
 import pl.tutlaw.backend.testsupport.MutableClock;
+import pl.tutlaw.backend.track.Track;
+import pl.tutlaw.backend.track.TrackKind;
+import pl.tutlaw.backend.track.TrackRepository;
 import pl.tutlaw.backend.user.dto.AccountExportResponse;
 
 import java.time.Instant;
@@ -61,6 +63,8 @@ class AccountServiceTest {
         final Authentication jan;
         /** Zapisane ustawienia nauki użytkownika; {@code null} = niczego nie ustawiał. */
         UserSettings storedSettings;
+        /** Akty, do których użytkownik zawęził pulę. */
+        List<Long> poolActIds = List.of();
 
         Fixture() {
             User user = new User();
@@ -75,28 +79,14 @@ class AccountServiceTest {
             users.add(user);
             jan = FakeRepos.authentication("jan@gmail.com");
 
-            ChapterProgressRepository progress = FakeRepos.proxy(ChapterProgressRepository.class, (method, args) -> {
+            UserQuestionStateRepository states = FakeRepos.proxy(UserQuestionStateRepository.class, (method, args) -> {
                 assertThat(method).isEqualTo("findExportRows");
                 assertThat(args[0]).isEqualTo(1L);
-                return List.of(new ChapterProgressRepository.ExportedProgress() {
-                    public Long getChapterId() { return 5L; }
-                    public String getChapterTitle() { return "Rozdział 5"; }
-                    public Boolean getReadFlag() { return true; }
-                    public LocalDateTime getReadAt() { return T.minusDays(2); }
-                }, new ChapterProgressRepository.ExportedProgress() {
-                    public Long getChapterId() { return 6L; }
-                    public String getChapterTitle() { return "Rozdział 6"; }
-                    public Boolean getReadFlag() { return null; }
-                    public LocalDateTime getReadAt() { return null; }
-                });
-            });
-
-            UserCardStateRepository states = FakeRepos.proxy(UserCardStateRepository.class, (method, args) -> {
-                assertThat(method).isEqualTo("findExportRows");
-                return List.of(new UserCardStateRepository.ExportedCardState() {
-                    public Long getCardId() { return 10L; }
-                    public String getCardFront() { return "Co to jest dolus?"; }
-                    public CardLearningState getState() { return CardLearningState.REVIEW; }
+                return List.of(new UserQuestionStateRepository.ExportedState() {
+                    public Long getQuestionId() { return 10L; }
+                    public ReviewMode getMode() { return ReviewMode.FLASHCARD; }
+                    public String getQuestionBody() { return "Co to jest dolus?"; }
+                    public LearningState getState() { return LearningState.REVIEW; }
                     public Integer getReps() { return 4; }
                     public Integer getLapses() { return null; }
                     public Double getStability() { return 12.5; }
@@ -104,13 +94,25 @@ class AccountServiceTest {
                     public LocalDateTime getDueDate() { return T.plusDays(12); }
                     public LocalDateTime getLastReviewAt() { return T.minusDays(1); }
                     public Boolean getSuspended() { return true; }
+                }, new UserQuestionStateRepository.ExportedState() {
+                    public Long getQuestionId() { return 10L; }
+                    public ReviewMode getMode() { return ReviewMode.TEST; }
+                    public String getQuestionBody() { return "Co to jest dolus?"; }
+                    public LearningState getState() { return LearningState.LEARNING; }
+                    public Integer getReps() { return 1; }
+                    public Integer getLapses() { return 0; }
+                    public Double getStability() { return 2.0; }
+                    public Double getDifficulty() { return 5.5; }
+                    public LocalDateTime getDueDate() { return T.plusDays(1); }
+                    public LocalDateTime getLastReviewAt() { return T; }
+                    public Boolean getSuspended() { return null; }
                 });
             });
 
             ReviewLogRepository logs = FakeRepos.proxy(ReviewLogRepository.class, (method, args) -> {
                 assertThat(method).isEqualTo("findExportRows");
                 return List.of(new ReviewLogRepository.ExportedReview() {
-                    public Long getCardId() { return 10L; }
+                    public Long getQuestionId() { return 10L; }
                     public LocalDateTime getReviewedAt() { return T.minusDays(1); }
                     public ReviewMode getMode() { return ReviewMode.TEST; }
                     public Integer getRating() { return 3; }
@@ -119,15 +121,15 @@ class AccountServiceTest {
                 });
             });
 
-            CardReportRepository reports = FakeRepos.proxy(CardReportRepository.class, (method, args) -> {
+            QuestionReportRepository reports = FakeRepos.proxy(QuestionReportRepository.class, (method, args) -> {
                 assertThat(method).isEqualTo("findExportRows");
                 assertThat(args[0]).isEqualTo(1L);
-                return List.of(new CardReportRepository.ExportedReport() {
-                    public Long getCardId() { return 10L; }
-                    public String getCardFront() { return "Co to jest dolus?"; }
-                    public CardReportReason getReason() { return CardReportReason.OUTDATED; }
+                return List.of(new QuestionReportRepository.ExportedReport() {
+                    public Long getQuestionId() { return 10L; }
+                    public String getQuestionBody() { return "Co to jest dolus?"; }
+                    public QuestionReportReason getReason() { return QuestionReportReason.OUTDATED; }
                     public String getComment() { return "Przepis się zmienił"; }
-                    public CardReportStatus getStatus() { return CardReportStatus.NEW; }
+                    public QuestionReportStatus getStatus() { return QuestionReportStatus.NEW; }
                     public LocalDateTime getCreatedAt() { return T.minusHours(3); }
                 });
             });
@@ -136,6 +138,23 @@ class AccountServiceTest {
                 assertThat(method).isEqualTo("findById");
                 assertThat(args[0]).isEqualTo(1L);
                 return Optional.ofNullable(storedSettings);
+            });
+
+            TrackRepository tracks = FakeRepos.proxy(TrackRepository.class, (method, args) -> {
+                assertThat(method).isEqualTo("findById");
+                Track notarial = new Track();
+                notarial.setId(4L);
+                notarial.setSlug("notarialna");
+                notarial.setName("Aplikacja notarialna");
+                notarial.setShortName("Notarialna");
+                notarial.setKind(TrackKind.EXAM);
+                return args[0].equals(4L) ? Optional.of(notarial) : Optional.empty();
+            });
+
+            UserPoolActRepository poolActs = FakeRepos.proxy(UserPoolActRepository.class, (method, args) -> {
+                assertThat(method).isEqualTo("findActIdsByUserId");
+                assertThat(args[0]).isEqualTo(1L);
+                return poolActIds;
             });
 
             ExamAttemptRepository exams = FakeRepos.proxy(ExamAttemptRepository.class, (method, args) -> {
@@ -158,17 +177,18 @@ class AccountServiceTest {
             CustomTestSessionService customTests = org.mockito.Mockito.mock(CustomTestSessionService.class);
             org.mockito.Mockito.when(customTests.listAll(1L)).thenReturn(List.of(new CustomTestSessionSummaryResponse(
                     7L, T.minusDays(2), T.minusDays(2).plusMinutes(20), true, "Prawo karne", CustomTestKind.NEW,
-                    List.of(2L), List.of(), java.util.EnumSet.allOf(QuestionOrigin.class),
+                    List.of(2L), List.of(), List.of("OWN_SHEETS", "AUTHORED"),
                     20, 20, 20, 15, 2, 300.0)));
 
             service = new AccountService(
                     new CurrentUserResolver(FakeRepos.users(users)),
                     FakeRepos.users(users),
                     encoder,
-                    progress,
                     states,
                     logs,
                     reports,
+                    tracks,
+                    poolActs,
                     settings,
                     exams,
                     FakeRepos.proxy(FlashcardAdditionRepository.class, (method, args) -> {
@@ -176,7 +196,7 @@ class AccountServiceTest {
                         assertThat(args[0]).isEqualTo(1L);
                         return List.of(new FlashcardAdditionRepository.ExportedAddition() {
                             public Long getQuestionId() { return 42L; }
-                            public String getQuestionFront() { return "Co to jest dolus?"; }
+                            public String getQuestionBody() { return "Co to jest dolus?"; }
                             public LocalDateTime getAddedAt() { return T.minusHours(2); }
                         });
                     }),
@@ -186,7 +206,7 @@ class AccountServiceTest {
                         assertThat(args[0]).isEqualTo(1L);
                         StudyTimeDaily day = new StudyTimeDaily();
                         day.setUserId(1L);
-                        day.setStudyDay(java.time.LocalDate.of(2026, 10, 11));
+                        day.setStudyDay(LocalDate.of(2026, 10, 11));
                         day.setSeconds(1800);
                         return List.of(day);
                     }),
@@ -209,12 +229,12 @@ class AccountServiceTest {
         assertThat(test.guessedCount()).isEqualTo(2);
         assertThat(test.finishedAt()).isNotNull();
         assertThat(export.studyTime()).hasSize(1);
-        assertThat(export.studyTime().get(0).day()).isEqualTo(java.time.LocalDate.of(2026, 10, 11));
+        assertThat(export.studyTime().get(0).day()).isEqualTo(LocalDate.of(2026, 10, 11));
         assertThat(export.studyTime().get(0).seconds()).isEqualTo(1800);
     }
 
     @Test
-    void exportContainsAccountProgressCardStatesAndHistory() {
+    void exportContainsAccountQuestionStatesPerModeAndHistory() {
         Fixture f = new Fixture();
 
         AccountExportResponse export = f.service.export(f.jan);
@@ -226,20 +246,23 @@ class AccountServiceTest {
         assertThat(export.account().universityEmailVerified()).isTrue();
         assertThat(export.account().termsAcceptedAt()).isEqualTo(T.minusDays(30));
 
-        assertThat(export.chapterProgress()).hasSize(2);
-        assertThat(export.chapterProgress().get(0).chapterTitle()).isEqualTo("Rozdział 5");
-        assertThat(export.chapterProgress().get(0).read()).isTrue();
-        // Brak zapisanej wartości liczymy jako "nie przeczytany", a nie wyjątek.
-        assertThat(export.chapterProgress().get(1).read()).isFalse();
-
-        assertThat(export.cardStates()).hasSize(1);
-        AccountExportResponse.CardStateItem state = export.cardStates().get(0);
-        assertThat(state.question()).isEqualTo("Co to jest dolus?");
-        assertThat(state.state()).isEqualTo("REVIEW");
-        assertThat(state.reps()).isEqualTo(4);
-        assertThat(state.lapses()).isEqualTo(0);
-        assertThat(state.difficulty()).isEqualTo(0.0);
-        assertThat(state.suspended()).isTrue();
+        // to samo pytanie ma osobny harmonogram w teście i w fiszkach
+        assertThat(export.questionStates()).hasSize(2);
+        AccountExportResponse.QuestionStateItem flashcard = export.questionStates().get(0);
+        assertThat(flashcard.questionId()).isEqualTo(10L);
+        assertThat(flashcard.mode()).isEqualTo("FLASHCARD");
+        assertThat(flashcard.question()).isEqualTo("Co to jest dolus?");
+        assertThat(flashcard.state()).isEqualTo("REVIEW");
+        assertThat(flashcard.reps()).isEqualTo(4);
+        // brak zapisanej wartości liczymy jako zero, a nie wyjątek
+        assertThat(flashcard.lapses()).isEqualTo(0);
+        assertThat(flashcard.difficulty()).isEqualTo(0.0);
+        assertThat(flashcard.suspended()).isTrue();
+        AccountExportResponse.QuestionStateItem test = export.questionStates().get(1);
+        assertThat(test.mode()).isEqualTo("TEST");
+        assertThat(test.state()).isEqualTo("LEARNING");
+        assertThat(test.difficulty()).isEqualTo(5.5);
+        assertThat(test.suspended()).isFalse();
 
         assertThat(export.flashcardAdditions()).hasSize(1);
         AccountExportResponse.FlashcardAdditionItem addition = export.flashcardAdditions().get(0);
@@ -249,12 +272,14 @@ class AccountServiceTest {
 
         assertThat(export.reviewLogs()).hasSize(1);
         AccountExportResponse.ReviewItem review = export.reviewLogs().get(0);
+        assertThat(review.questionId()).isEqualTo(10L);
         assertThat(review.mode()).isEqualTo("TEST");
         assertThat(review.correct()).isEqualTo(true);
         assertThat(review.unsure()).isFalse();
 
-        assertThat(export.cardReports()).hasSize(1);
-        AccountExportResponse.ReportItem report = export.cardReports().get(0);
+        assertThat(export.questionReports()).hasSize(1);
+        AccountExportResponse.ReportItem report = export.questionReports().get(0);
+        assertThat(report.questionId()).isEqualTo(10L);
         assertThat(report.question()).isEqualTo("Co to jest dolus?");
         assertThat(report.reason()).isEqualTo("OUTDATED");
         assertThat(report.comment()).isEqualTo("Przepis się zmienił");
@@ -266,7 +291,7 @@ class AccountServiceTest {
         assertThat(exam.correctCount()).isEqualTo(113);
         assertThat(exam.passed()).isTrue();
         assertThat(exam.timeLimitMinutes()).isEqualTo(150);
-        // podejście sprzed stałego formatu egzaminu: własny próg w procentach, bez progu w punktach
+        // podejście z własnym progiem w procentach, bez progu w punktach
         assertThat(exam.passThresholdPercent()).isEqualTo(75);
         assertThat(exam.passPoints()).isNull();
     }
@@ -282,33 +307,64 @@ class AccountServiceTest {
     void exportContainsStoredLearningSettings_withNullsMeaningDefaults() {
         Fixture f = new Fixture();
         UserSettings stored = new UserSettings(1L);
-        stored.setNewCardsPerDay(15);
+        stored.setNewFlashcardsPerDay(15);
         stored.setMaxReviewsPerDay(300);
-        stored.setExamOrigin(QuestionOrigin.NOTARY);
+        stored.setTrackId(4L);
         stored.setTheme(Theme.LIGHT);
         stored.setShuffleOptions(false);
         f.storedSettings = stored;
 
         AccountExportResponse.LearningSettings settings = f.service.export(f.jan).learningSettings();
 
-        assertThat(settings.newCardsPerDay()).isEqualTo(15);
+        assertThat(settings.newFlashcardsPerDay()).isEqualTo(15);
         assertThat(settings.newTestQuestionsPerDay()).isNull();
         assertThat(settings.maxReviewsPerDay()).isEqualTo(300);
         assertThat(settings.desiredRetention()).isNull();
-        assertThat(settings.examOrigin()).isEqualTo(QuestionOrigin.NOTARY);
+        // ścieżka idzie do eksportu jako czytelny adres (slug), a nie numer z bazy
+        assertThat(settings.track()).isEqualTo("notarialna");
         assertThat(settings.theme()).isEqualTo(Theme.LIGHT);
         assertThat(settings.shuffleOptions()).isFalse();
-        assertThat(settings.testOrigins()).isNull(); // brak filtra = wszystkie pochodzenia
+        assertThat(settings.sourceFilter()).isNull(); // brak filtra = wszystkie grupy źródeł
+        assertThat(settings.poolActIds()).isEmpty();  // brak zawężenia puli
     }
 
     @Test
-    void exportContainsTheOriginFilter() {
+    void exportHasNoTrackUntilTheUserPicksOne() {
+        Fixture f = new Fixture();
+        f.storedSettings = new UserSettings(1L);
+
+        assertThat(f.service.export(f.jan).learningSettings().track()).isNull();
+    }
+
+    @Test
+    void exportContainsTheSourceFilterAndThePoolNarrowing() {
         Fixture f = new Fixture();
         UserSettings stored = new UserSettings(1L);
-        stored.setTestOrigins("NOTARY,BAILIFF");
+        stored.setTrackId(4L);
+        stored.setIncludeOtherSheets(false);
+        stored.setIncludeAuthored(false);
+        f.storedSettings = stored;
+        f.poolActIds = List.of(3L, 8L);
+
+        AccountExportResponse.LearningSettings settings = f.service.export(f.jan).learningSettings();
+
+        assertThat(settings.sourceFilter()).isEqualTo("OWN_SHEETS");
+        assertThat(settings.poolActIds()).containsExactly(3L, 8L);
+    }
+
+    @Test
+    void exportContainsThePermanentHintAndTimerSettings() {
+        Fixture f = new Fixture();
+        UserSettings stored = new UserSettings(1L);
+        stored.setHintHiddenTest(true);
+        stored.setQuestionTimerHidden(true);
         f.storedSettings = stored;
 
-        assertThat(f.service.export(f.jan).learningSettings().testOrigins()).isEqualTo("NOTARY,BAILIFF");
+        AccountExportResponse.LearningSettings settings = f.service.export(f.jan).learningSettings();
+
+        assertThat(settings.hintHiddenTest()).isTrue();
+        assertThat(settings.hintHiddenFlashcard()).isFalse();
+        assertThat(settings.questionTimerHidden()).isTrue();
     }
 
     @Test

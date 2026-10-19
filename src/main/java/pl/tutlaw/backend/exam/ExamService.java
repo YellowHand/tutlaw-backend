@@ -5,18 +5,20 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.CardScopes;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.pool.Pool;
+import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRef;
+import pl.tutlaw.backend.question.QuestionRepository;
+import pl.tutlaw.backend.question.QuestionScopes;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
 import pl.tutlaw.backend.exam.dto.ExamResultResponse;
 import pl.tutlaw.backend.exam.dto.ExamStartResponse;
 import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
+import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.ReviewQueueMapper;
-import pl.tutlaw.backend.review.UserCardStateRepository;
+import pl.tutlaw.backend.review.UserQuestionStateRepository;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
-import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -34,11 +36,12 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Egzamin próbny w stałym formacie ({@link ExamFormat}): losowe {@value ExamFormat#QUESTION_COUNT} pytań testowych z
- * całego dostępnego materiału, zaliczenie od {@value ExamFormat#PASS_POINTS} punktów. Zakresu, liczby pytań ani progu
- * nie wybiera użytkownik. Ocena i próg są po stronie serwera, a podsumowanie podejścia jest zapisywane.
+ * Egzamin próbny w stałym formacie ({@link ExamFormat}): losowe {@value ExamFormat#QUESTION_COUNT} pytań z całej
+ * puli ścieżki użytkownika, zaliczenie od {@value ExamFormat#PASS_POINTS} punktów. Zakresu, liczby pytań ani progu
+ * nie wybiera użytkownik (zawężenie puli do wybranych aktów też go nie dotyczy, tak jak prawdziwego egzaminu).
+ * Ocena i próg są po stronie serwera, a podsumowanie podejścia jest zapisywane.
  * Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek (FSRS), dziennika odpowiedzi, dziennych limitów
- * ani licznika błędów kart. Po egzaminie użytkownik może przerobić swoje błędy zwykłą sesją testową.
+ * ani licznika błędów. Po egzaminie użytkownik może przerobić swoje błędy zwykłą sesją testową.
  * Ćwiczenie z wybranego działu to osobna funkcja bez oceny "zdał / nie zdał" (własny test).
  */
 @Service
@@ -48,50 +51,50 @@ public class ExamService {
     /** Ile ostatnich podejść zwraca historia. */
     static final int HISTORY_LIMIT = 50;
     /** Nazwa zakresu w raporcie i historii: egzamin zawsze obejmuje cały materiał. */
-    static final String SCOPE_LABEL = "Cały materiał";
+    static final String SCOPE_LABEL = "Cała pula";
 
-    private final CardRepository cardRepository;
-    private final UserCardStateRepository stateRepository;
+    private final QuestionRepository questionRepository;
+    private final UserQuestionStateRepository stateRepository;
     private final ExamAttemptRepository attemptRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
-    private final OriginFilterService originFilter;
+    private final PoolService poolService;
 
     private final Random random = new Random();
 
     /**
-     * Losuje {@value ExamFormat#QUESTION_COUNT} pytań z całego materiału: tylko w formacie testowym, z wybranych
-     * pochodzeń (filtr pochodzenia w Testach), dostępne dla użytkownika (pula płaska albo przeczytany rozdział)
-     * i niezawieszone. Gdy jest ich mniej niż 150, egzamin ma tyle, ile jest, a próg zaliczenia maleje proporcjonalnie
-     * (zob. {@link ExamFormat#passPointsFor}). Ocena egzaminu (submit) filtra nie stosuje: ocenia to, co zostało pokazane.
+     * Losuje {@value ExamFormat#QUESTION_COUNT} pytań z całej puli ścieżki (bez zawężenia do aktów), z wybranych źródeł
+     * (filtr źródeł w Testach) i niezawieszonych w testach. Gdy jest ich mniej niż 150, egzamin ma tyle, ile jest,
+     * a próg zaliczenia maleje proporcjonalnie (zob. {@link ExamFormat#passPointsFor}). Ocena egzaminu (submit)
+     * filtra nie stosuje: ocenia to, co zostało pokazane.
      */
     @Transactional(readOnly = true)
     public ExamStartResponse start(Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
+        Pool pool = poolService.forUser(user.getId()).unnarrowed();
 
-        Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedCardIds(user.getId()));
-        Set<QuestionOrigin> origins = originFilter.activeFor(user.getId());
-        // Losujemy na samych numerach; pełne karty ładujemy dopiero dla wylosowanych (jedno zapytanie).
-        List<CardRepository.CardRef> inScope = cardRepository.findReadableRefsForUser(user.getId())
+        Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedQuestionIds(user.getId(), ReviewMode.TEST));
+        Set<Long> allowedSources = new HashSet<>(pool.sourceIds());
+        // Losujemy na samych numerach; pełne pytania ładujemy dopiero dla wylosowanych (jedno zapytanie).
+        List<QuestionRef> inScope = questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds())
                 .stream()
-                .filter(CardScopes::isTest)
                 .filter(ref -> !suspended.contains(ref.getId()))
                 .toList();
-        List<Long> pool = new ArrayList<>(inScope.stream()
-                .filter(ref -> CardScopes.matchesOrigins(ref, origins))
-                .map(CardRepository.CardRef::getId)
+        List<Long> drawable = new ArrayList<>(inScope.stream()
+                .filter(ref -> allowedSources.contains(ref.getSourceId()))
+                .map(QuestionRef::getId)
                 .toList());
-        if (pool.isEmpty()) {
-            // Gdy pytania są, ale wszystkie spoza wybranych pochodzeń, podpowiadamy filtr zamiast mylić brakiem pytań.
+        if (drawable.isEmpty()) {
+            // Gdy pytania są, ale wszystkie spoza wybranych źródeł, podpowiadamy filtr zamiast mylić brakiem pytań.
             throw new IllegalArgumentException(inScope.isEmpty()
-                    ? "Nie ma teraz pytań testowych, które możesz rozwiązać na egzaminie."
-                    : "Nie ma pytań z wybranych pochodzeń. Zmień filtr pochodzenia w Testach.");
+                    ? "Nie ma teraz pytań, które możesz rozwiązać na egzaminie."
+                    : "Nie ma pytań z wybranych źródeł. Zmień filtr źródeł w Testach.");
         }
 
-        Collections.shuffle(pool, random);
-        List<Long> drawn = pool.stream().limit(ExamFormat.QUESTION_COUNT).toList();
-        List<TestQueueItemResponse> questions = CardScopes.loadInOrder(cardRepository, drawn).stream()
-                .map(ReviewQueueMapper::toTestResponse)
+        Collections.shuffle(drawable, random);
+        List<Long> drawn = drawable.stream().limit(ExamFormat.QUESTION_COUNT).toList();
+        List<TestQueueItemResponse> questions = QuestionScopes.loadInOrder(questionRepository, drawn).stream()
+                .map(ReviewQueueMapper::toTest)
                 .toList();
         return new ExamStartResponse(SCOPE_LABEL, ExamFormat.QUESTION_COUNT, ExamFormat.passPointsFor(questions.size()), questions);
     }
@@ -104,14 +107,14 @@ public class ExamService {
         List<ExamSubmitRequest.Answer> answers = request.answers();
         Set<Long> ids = new HashSet<>();
         for (ExamSubmitRequest.Answer answer : answers) {
-            if (!ids.add(answer.cardId())) {
+            if (!ids.add(answer.questionId())) {
                 throw new IllegalArgumentException("To samo pytanie zostało przesłane więcej niż raz.");
             }
         }
 
-        Map<Long, Card> cards = new HashMap<>();
-        for (Card card : cardRepository.findReadableTestCardsByIds(ids, user.getId())) {
-            cards.put(card.getId(), card);
+        Map<Long, Question> found = new HashMap<>();
+        for (Question question : questionRepository.findForGrading(ids)) {
+            found.put(question.getId(), question);
         }
 
         List<ExamResultResponse.QuestionResult> questions = new ArrayList<>();
@@ -120,29 +123,30 @@ public class ExamService {
         int correct = 0;
         int excluded = 0;
         for (ExamSubmitRequest.Answer answer : answers) {
-            Card card = cards.get(answer.cardId());
-            if (card == null) {
+            Question question = found.get(answer.questionId());
+            if (question == null) {
                 excluded++;
                 continue;
             }
-            boolean isCorrect = answer.selectedOption() != null && answer.selectedOption() == card.getCorrectOption();
+            boolean isCorrect = answer.selectedOption() != null && answer.selectedOption() == question.getCorrectOption();
             if (answer.selectedOption() != null) {
                 answered++;
             }
             if (isCorrect) {
                 correct++;
             }
-            String sourceName = card.getSource() != null ? card.getSource().getName() : null;
+            String sourceName = question.getSource().getName();
             int[] counts = bySource.computeIfAbsent(sourceName == null ? "" : sourceName, k -> new int[2]);
             counts[0]++;
             if (isCorrect) {
                 counts[1]++;
             }
             questions.add(new ExamResultResponse.QuestionResult(
-                    card.getId(), card.getFront(), card.getOptionA(), card.getOptionB(), card.getOptionC(),
-                    answer.selectedOption(), card.getCorrectOption(), isCorrect,
-                    card.getExplanation(), card.getLegalBasis(), card.getValidAsOf(), sourceName,
-                    card.getOrigin(), card.getExamYear()));
+                    question.getId(), question.getBody(), question.getOptionA(), question.getOptionB(), question.getOptionC(),
+                    answer.selectedOption(), question.getCorrectOption(), isCorrect,
+                    question.getExplanation(), question.getLegalBasis(), question.getValidAsOf(), sourceName,
+                    question.getSource().getKind(), question.getSource().getExamYear(),
+                    question.getLegalAct().getName(), question.getLegalAct().getShortName()));
         }
         if (questions.isEmpty()) {
             throw new IllegalArgumentException("Żadne z przesłanych pytań nie jest już dostępne, więc nie ma czego oceniać.");

@@ -6,7 +6,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
-import pl.tutlaw.backend.review.dto.DifficultCardsResponse;
+import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.review.dto.DifficultQuestionsResponse;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -15,9 +16,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Zawieszanie pytań i lista trudnych pytań. Zawieszenie dotyczy tylko jednego użytkownika i niczego nie kasuje:
- * stan karty (stabilność, termin, historia) zostaje, a po przywróceniu karta wraca do kolejki zgodnie z terminem
- * (zaległa pojawi się wśród najsłabiej zapamiętanych).
+ * Zawieszanie pytań i lista trudnych pytań. Zawieszenie dotyczy jednego użytkownika i jednego trybu (testu albo
+ * fiszki tego samego pytania) i niczego nie kasuje: stan (stabilność, termin, historia) zostaje, a po przywróceniu
+ * pytanie wraca do kolejki zgodnie z terminem (zaległe pojawi się wśród najsłabiej zapamiętanych).
  */
 @Service
 @RequiredArgsConstructor
@@ -26,18 +27,20 @@ public class SuspensionService {
     /** Ile pozycji maksymalnie pokazuje każda z dwóch list. */
     static final int LIST_LIMIT = 200;
 
-    private final UserCardStateRepository stateRepository;
+    private final UserQuestionStateRepository stateRepository;
     private final CurrentUserResolver currentUserResolver;
+    private final PoolService poolService;
     private final LeechPolicy leechPolicy;
     private final Clock clock;
 
     /**
-     * Zawiesza pytanie. Idempotentne: ponowne zawieszenie nic nie zmienia. Zawiesić można tylko pytanie,
-     * które użytkownik już rozwiązywał (tylko takie ma stan); dla pozostałych odpowiadamy jak dla nieistniejącego.
+     * Zawiesza pytanie w trybie. Idempotentne: ponowne zawieszenie nic nie zmienia. Zawiesić można tylko pytanie,
+     * które użytkownik już rozwiązywał w tym trybie (tylko takie ma stan); dla pozostałych odpowiadamy jak dla
+     * nieistniejącego.
      */
     @Transactional
-    public void suspend(Long cardId, Authentication authentication) {
-        UserCardState state = findState(cardId, authentication);
+    public void suspend(Long questionId, ReviewMode mode, Authentication authentication) {
+        UserQuestionState state = findState(questionId, mode, authentication);
         if (state.isSuspended()) {
             return;
         }
@@ -48,8 +51,8 @@ public class SuspensionService {
 
     /** Przywraca zawieszone pytanie. Idempotentne. Termin powtórki zostaje taki, jaki był. */
     @Transactional
-    public void unsuspend(Long cardId, Authentication authentication) {
-        UserCardState state = findState(cardId, authentication);
+    public void unsuspend(Long questionId, ReviewMode mode, Authentication authentication) {
+        UserQuestionState state = findState(questionId, mode, authentication);
         if (!state.isSuspended()) {
             return;
         }
@@ -59,30 +62,31 @@ public class SuspensionService {
     }
 
     @Transactional(readOnly = true)
-    public DifficultCardsResponse list(Authentication authentication) {
+    public DifficultQuestionsResponse list(Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         PageRequest firstPage = PageRequest.of(0, LIST_LIMIT);
 
-        List<DifficultCardsResponse.Item> suspended = stateRepository.findSuspendedRows(user.getId(), firstPage).stream()
+        List<DifficultQuestionsResponse.Item> suspended = stateRepository.findSuspendedRows(user.getId(), firstPage).stream()
                 .map(SuspensionService::toItem)
                 .toList();
-        List<DifficultCardsResponse.Item> leeches = stateRepository
-                .findLeechRows(user.getId(), leechPolicy.threshold(), firstPage).stream()
+        List<DifficultQuestionsResponse.Item> leeches = stateRepository
+                .findLeechRows(user.getId(), leechPolicy.threshold(), poolService.forUser(user.getId()).actIds(), firstPage)
+                .stream()
                 .map(SuspensionService::toItem)
                 .toList();
 
-        return new DifficultCardsResponse(leechPolicy.threshold(), suspended, leeches);
+        return new DifficultQuestionsResponse(leechPolicy.threshold(), suspended, leeches);
     }
 
-    private UserCardState findState(Long cardId, Authentication authentication) {
+    private UserQuestionState findState(Long questionId, ReviewMode mode, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        return stateRepository.findByUserIdAndCardId(user.getId(), cardId)
-                .orElseThrow(() -> new ResourceNotFoundException("Card not found"));
+        return stateRepository.findByUserIdAndQuestionIdAndMode(user.getId(), questionId, mode)
+                .orElseThrow(() -> new ResourceNotFoundException("Question not found"));
     }
 
-    private static DifficultCardsResponse.Item toItem(UserCardStateRepository.DifficultRow row) {
-        return new DifficultCardsResponse.Item(
-                row.getCardId(), row.getFront(), row.getSourceName(),
+    private static DifficultQuestionsResponse.Item toItem(UserQuestionStateRepository.DifficultRow row) {
+        return new DifficultQuestionsResponse.Item(
+                row.getQuestionId(), row.getMode(), row.getBody(), row.getActName(),
                 row.getLapses() == null ? 0 : row.getLapses(), row.getSuspendedAt());
     }
 }

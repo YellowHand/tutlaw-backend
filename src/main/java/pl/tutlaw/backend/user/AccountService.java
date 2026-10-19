@@ -7,14 +7,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.exam.ExamAttemptRepository;
-import pl.tutlaw.backend.progress.ChapterProgressRepository;
-import pl.tutlaw.backend.report.CardReportRepository;
+import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.pool.UserPoolActRepository;
+import pl.tutlaw.backend.report.QuestionReportRepository;
 import pl.tutlaw.backend.review.CustomTestSessionService;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.studytime.StudyTimeRepository;
-import pl.tutlaw.backend.review.UserCardStateRepository;
+import pl.tutlaw.backend.review.UserQuestionStateRepository;
 import pl.tutlaw.backend.settings.UserSettingsRepository;
 import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
+import pl.tutlaw.backend.track.TrackRepository;
 import pl.tutlaw.backend.user.dto.AccountExportResponse;
 
 import java.time.Clock;
@@ -30,10 +32,11 @@ public class AccountService {
     private final CurrentUserResolver currentUserResolver;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final ChapterProgressRepository chapterProgressRepository;
-    private final UserCardStateRepository stateRepository;
+    private final UserQuestionStateRepository stateRepository;
     private final ReviewLogRepository reviewLogRepository;
-    private final CardReportRepository cardReportRepository;
+    private final QuestionReportRepository questionReportRepository;
+    private final TrackRepository trackRepository;
+    private final UserPoolActRepository poolActRepository;
     private final UserSettingsRepository userSettingsRepository;
     private final ExamAttemptRepository examAttemptRepository;
     private final FlashcardAdditionRepository flashcardAdditionRepository;
@@ -53,16 +56,10 @@ public class AccountService {
                 user.getCreatedAt(),
                 user.getTermsAcceptedAt());
 
-        List<AccountExportResponse.ChapterProgressItem> progress = chapterProgressRepository
+        List<AccountExportResponse.QuestionStateItem> states = stateRepository
                 .findExportRows(user.getId()).stream()
-                .map(p -> new AccountExportResponse.ChapterProgressItem(
-                        p.getChapterId(), p.getChapterTitle(), Boolean.TRUE.equals(p.getReadFlag()), p.getReadAt()))
-                .toList();
-
-        List<AccountExportResponse.CardStateItem> states = stateRepository
-                .findExportRows(user.getId()).stream()
-                .map(s -> new AccountExportResponse.CardStateItem(
-                        s.getCardId(), s.getCardFront(), s.getState().name(),
+                .map(s -> new AccountExportResponse.QuestionStateItem(
+                        s.getQuestionId(), s.getMode().name(), s.getQuestionBody(), s.getState().name(),
                         orZero(s.getReps()), orZero(s.getLapses()),
                         orZero(s.getStability()), orZero(s.getDifficulty()),
                         s.getDueDate(), s.getLastReviewAt(), Boolean.TRUE.equals(s.getSuspended())))
@@ -71,14 +68,14 @@ public class AccountService {
         List<AccountExportResponse.ReviewItem> reviews = reviewLogRepository
                 .findExportRows(user.getId()).stream()
                 .map(r -> new AccountExportResponse.ReviewItem(
-                        r.getCardId(), r.getReviewedAt(), r.getMode().name(), orZero(r.getRating()),
+                        r.getQuestionId(), r.getReviewedAt(), r.getMode().name(), orZero(r.getRating()),
                         r.getWasCorrect(), Boolean.TRUE.equals(r.getWasGuessed())))
                 .toList();
 
-        List<AccountExportResponse.ReportItem> reports = cardReportRepository
+        List<AccountExportResponse.ReportItem> reports = questionReportRepository
                 .findExportRows(user.getId()).stream()
                 .map(r -> new AccountExportResponse.ReportItem(
-                        r.getCardId(), r.getCardFront(), r.getReason().name(), r.getComment(),
+                        r.getQuestionId(), r.getQuestionBody(), r.getReason().name(), r.getComment(),
                         r.getStatus().name(), r.getCreatedAt()))
                 .toList();
 
@@ -92,14 +89,18 @@ public class AccountService {
         List<AccountExportResponse.FlashcardAdditionItem> additions = flashcardAdditionRepository
                 .findExportRows(user.getId()).stream()
                 .map(a -> new AccountExportResponse.FlashcardAdditionItem(
-                        a.getQuestionId(), a.getQuestionFront(), a.getAddedAt()))
+                        a.getQuestionId(), a.getQuestionBody(), a.getAddedAt()))
                 .toList();
 
         AccountExportResponse.LearningSettings settings = userSettingsRepository.findById(user.getId())
                 .map(s -> new AccountExportResponse.LearningSettings(
-                        s.getNewCardsPerDay(), s.getNewTestQuestionsPerDay(), s.getMaxReviewsPerDay(),
-                        s.getDesiredRetention(), s.getExamOrigin(), s.getTheme(), s.isShuffleOptions(), s.getTestOrigins(),
-                        s.isStartChoiceMade(), s.isHintHiddenTest(), s.isHintHiddenFlashcard(), s.isQuestionTimerHidden()))
+                        s.getNewFlashcardsPerDay(), s.getNewTestQuestionsPerDay(), s.getMaxReviewsPerDay(),
+                        s.getDesiredRetention(),
+                        s.getTrackId() == null ? null : trackRepository.findById(s.getTrackId()).map(t -> t.getSlug()).orElse(null),
+                        s.getTheme(), s.isShuffleOptions(),
+                        new SourceFilter(s.isIncludeOwnSheets(), s.isIncludeOtherSheets(), s.isIncludeAuthored()).serialize(),
+                        poolActRepository.findActIdsByUserId(user.getId()),
+                        s.isHintHiddenTest(), s.isHintHiddenFlashcard(), s.isQuestionTimerHidden()))
                 .orElse(null);
 
         List<AccountExportResponse.CustomTestItem> customTests = customTestSessions.listAll(user.getId()).stream()
@@ -113,12 +114,12 @@ public class AccountService {
                 .toList();
 
         return new AccountExportResponse(
-                Instant.now(clock), account, progress, states, reviews, reports, exams, additions, customTests, studyTime,
+                Instant.now(clock), account, states, reviews, reports, exams, additions, customTests, studyTime,
                 settings);
     }
 
     /**
-     * Usuwa konto razem z całą historią nauki. Baza kasuje powiązane wiersze sama (ON DELETE CASCADE, migracja V11).
+     * Usuwa konto razem z całą historią nauki. Baza kasuje powiązane wiersze sama (ON DELETE CASCADE w schemacie bazy).
      * Złe hasło to IllegalArgumentException (HTTP 400), a konto zostaje nietknięte.
      */
     @Transactional

@@ -9,21 +9,21 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
-import pl.tutlaw.backend.card.Card;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.CorrectOption;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.pool.Pool;
+import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.MistakesCountResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
-import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.testsupport.MutableClock;
+import pl.tutlaw.backend.testsupport.Pools;
+import pl.tutlaw.backend.testsupport.QuestionRefs;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,37 +42,32 @@ class MistakesServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 12, 12, 0);
 
     @Mock private ReviewLogRepository reviewLogRepository;
-    @Mock private CardRepository cardRepository;
+    @Mock private QuestionRepository questionRepository;
     @Mock private CurrentUserResolver currentUserResolver;
-    @Mock private OriginFilterService originFilter;
+    /** Pula użytkownika; testy filtra źródeł ją podmieniają. */
+    private Pool pool = Pools.all();
     private final Authentication authentication = mock(Authentication.class);
 
     private MistakesService service;
 
     @BeforeEach
     void setUp() {
-        service = new MistakesService(reviewLogRepository, cardRepository, currentUserResolver, clock, originFilter);
+        service = new MistakesService(
+                reviewLogRepository, questionRepository, currentUserResolver, clock, Pools.holding(() -> pool));
         User user = new User();
         user.setId(5L);
         when(currentUserResolver.resolve(authentication)).thenReturn(user);
-        // Domyślnie wszystkie pochodzenia; testy filtra ustawiają własny zbiór.
-        lenient().when(originFilter.activeFor(5L)).thenReturn(EnumSet.allOf(QuestionOrigin.class));
     }
 
-    private static Card card(long id) {
-        Card card = new Card();
-        card.setId(id);
-        card.setFront("Pytanie " + id);
-        card.setCorrectOption(CorrectOption.A);
-        card.setOptionA("a");
-        card.setOptionB("b");
-        card.setOptionC("c");
-        return card;
+    private static Question question(long id) {
+        Question question = QuestionRefs.question(id);
+        question.setBody("Pytanie " + id);
+        return question;
     }
 
-    private static ReviewLogRepository.TestAnswerRow answer(long cardId, boolean correct, int daysAgo) {
+    private static ReviewLogRepository.TestAnswerRow answer(long questionId, boolean correct, int daysAgo) {
         return new ReviewLogRepository.TestAnswerRow() {
-            public Long getCardId() { return cardId; }
+            public Long getQuestionId() { return questionId; }
             public Boolean getWasCorrect() { return correct; }
             public LocalDateTime getReviewedAt() { return NOW.minusDays(daysAgo); }
         };
@@ -85,25 +80,27 @@ class MistakesServiceTest {
                 .thenReturn(List.of(rows));
     }
 
-    /** Karty, które zapytanie o dostępność uzna za ćwiczalne (bez zawieszonych, bez niedostępnych). */
-    private void practicable(Card... cards) {
-        when(cardRepository.findPracticeTestCards(ArgumentMatchers.<Collection<Long>>any(), eq(5L)))
-                .thenReturn(List.of(cards));
+    /** Pytania, które zapytanie o dostępność uzna za ćwiczalne (bez zawieszonych, ukrytych i spoza aktów puli). */
+    private void practicable(Question... questions) {
+        when(questionRepository.findPracticeQuestions(
+                ArgumentMatchers.<Collection<Long>>any(), eq(5L), ArgumentMatchers.<Collection<Long>>any()))
+                .thenReturn(List.of(questions));
     }
 
     private List<Long> idsAskedAboutAvailability() {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<Long>> captor = ArgumentCaptor.forClass(Collection.class);
-        verify(cardRepository).findPracticeTestCards(captor.capture(), eq(5L));
+        verify(questionRepository).findPracticeQuestions(
+                captor.capture(), eq(5L), ArgumentMatchers.<Collection<Long>>any());
         return new ArrayList<>(captor.getValue());
     }
 
     // ---------------------------------------------------------------- co jest błędem
 
     @Test
-    void count_includesCardsWhoseLatestAnswerWasWrong() {
+    void count_includesQuestionsWhoseLatestAnswerWasWrong() {
         answers(answer(1, false, 1), answer(2, false, 2));
-        practicable(card(1), card(2));
+        practicable(question(1), question(2));
 
         MistakesCountResponse response = service.count(authentication);
 
@@ -114,9 +111,9 @@ class MistakesServiceTest {
 
     @Test
     void aWrongAnswerFollowedByACorrectOneIsNoLongerAMistake() {
-        // karta 1: najnowsza (wczoraj) poprawna, wcześniejsza błędna; karta 2: tylko błędna
+        // pytanie 1: najnowsza (wczoraj) poprawna, wcześniejsza błędna; pytanie 2: tylko błędna
         answers(answer(1, true, 1), answer(2, false, 2), answer(1, false, 5));
-        practicable(card(2));
+        practicable(question(2));
 
         service.count(authentication);
 
@@ -125,9 +122,9 @@ class MistakesServiceTest {
 
     @Test
     void aCorrectAnswerFollowedByAWrongOneIsAMistake() {
-        // karta 1: najnowsza błędna, starsza poprawna
+        // pytanie 1: najnowsza błędna, starsza poprawna
         answers(answer(1, false, 1), answer(1, true, 6));
-        practicable(card(1));
+        practicable(question(1));
 
         assertThat(service.count(authentication).count()).isEqualTo(1);
         assertThat(idsAskedAboutAvailability()).containsExactly(1L);
@@ -144,7 +141,7 @@ class MistakesServiceTest {
     @Test
     void mistakesAreListedFromTheFreshestOne() {
         answers(answer(3, false, 1), answer(1, false, 4), answer(2, false, 9));
-        practicable(card(1), card(2), card(3));
+        practicable(question(1), question(2), question(3));
 
         service.count(authentication);
 
@@ -154,15 +151,15 @@ class MistakesServiceTest {
     // ---------------------------------------------------------------- dostępność
 
     @Test
-    void onlyCardsThatCanStillBePracticedSurvive() {
-        // karty 1 i 3 są zawieszone albo w niedostępnym rozdziale: zapytanie o dostępność ich nie zwraca
+    void onlyQuestionsThatCanStillBePracticedSurvive() {
+        // pytania 1 i 3 są zawieszone albo spoza puli: zapytanie o dostępność ich nie zwraca
         answers(answer(1, false, 1), answer(2, false, 2), answer(3, false, 3));
-        practicable(card(2));
+        practicable(question(2));
 
         MistakesCountResponse response = service.count(authentication);
 
         assertThat(response.count()).isEqualTo(1);
-        assertThat(service.queue(authentication)).extracting(TestQueueItemResponse::cardId).containsExactly(2L);
+        assertThat(service.queue(authentication)).extracting(TestQueueItemResponse::questionId).containsExactly(2L);
     }
 
     @Test
@@ -172,8 +169,8 @@ class MistakesServiceTest {
         assertThat(service.count(authentication).count()).isZero();
         assertThat(service.queue(authentication)).isEmpty();
 
-        verify(cardRepository, never()).findPracticeTestCards(
-                ArgumentMatchers.<Collection<Long>>any(), ArgumentMatchers.<Long>any());
+        verify(questionRepository, never()).findPracticeQuestions(
+                ArgumentMatchers.<Collection<Long>>any(), ArgumentMatchers.<Long>any(), ArgumentMatchers.<Collection<Long>>any());
     }
 
     @Test
@@ -190,43 +187,43 @@ class MistakesServiceTest {
     // ---------------------------------------------------------------- sesja
 
     @Test
-    void sessionHoldsAtMostFiftyCards_butTheCountShowsAllEligible() {
+    void sessionHoldsAtMostFiftyQuestions_butTheCountShowsAllEligible() {
         List<ReviewLogRepository.TestAnswerRow> rows = new ArrayList<>();
-        List<Card> cards = new ArrayList<>();
+        List<Question> questions = new ArrayList<>();
         for (long id = 1; id <= 60; id++) {
             rows.add(answer(id, false, 1));
-            cards.add(card(id));
+            questions.add(question(id));
         }
         answers(rows.toArray(new ReviewLogRepository.TestAnswerRow[0]));
-        practicable(cards.toArray(new Card[0]));
+        practicable(questions.toArray(new Question[0]));
 
         assertThat(service.count(authentication).count()).isEqualTo(60);
 
         List<TestQueueItemResponse> queue = service.queue(authentication);
         assertThat(queue).hasSize(50);
         // do sesji wchodzi 50 najświeższych (tu: pierwsze 50 z listy), nie dowolne
-        assertThat(queue).extracting(TestQueueItemResponse::cardId).doesNotHaveDuplicates()
+        assertThat(queue).extracting(TestQueueItemResponse::questionId).doesNotHaveDuplicates()
                 .allMatch(id -> id <= 50);
     }
 
     @Test
     void queueItemsCarryTheOptionsButNotTheCorrectAnswer() {
         answers(answer(1, false, 1));
-        practicable(card(1));
+        practicable(question(1));
 
         List<TestQueueItemResponse> queue = service.queue(authentication);
 
         assertThat(queue).hasSize(1);
         TestQueueItemResponse item = queue.get(0);
-        assertThat(item.cardId()).isEqualTo(1L);
-        assertThat(item.front()).isEqualTo("Pytanie 1");
+        assertThat(item.questionId()).isEqualTo(1L);
+        assertThat(item.body()).isEqualTo("Pytanie 1");
         assertThat(item.optionA()).isEqualTo("a");
         assertThat(item.optionB()).isEqualTo("b");
         assertThat(item.optionC()).isEqualTo("c");
     }
 
     @Test
-    void theNumberOfScannedCardsIsCapped() {
+    void theNumberOfScannedQuestionsIsCapped() {
         List<ReviewLogRepository.TestAnswerRow> rows = new ArrayList<>();
         for (long id = 1; id <= 1_200; id++) {
             rows.add(answer(id, false, 1));
@@ -239,35 +236,49 @@ class MistakesServiceTest {
         assertThat(idsAskedAboutAvailability()).hasSize(1_000);
     }
 
-    // ---------------------------------------------------------------- filtr pochodzenia
+    // ---------------------------------------------------------------- pula: akty i filtr źródeł
 
-    private static Card cardFrom(long id, QuestionOrigin origin) {
-        Card card = card(id);
-        card.setOrigin(origin);
-        card.setExamYear(origin == QuestionOrigin.AUTHORED ? null : 2021);
-        return card;
+    private static Question questionFrom(long id, long sourceId) {
+        Question question = QuestionRefs.question(id, 1, 1, sourceId);
+        question.setBody("Pytanie " + id);
+        return question;
     }
 
     @Test
-    void mistakesFromOriginsOutsideTheFilterAreNeitherCountedNorQueued() {
+    void mistakesFromSourcesOutsideTheFilterAreNeitherCountedNorQueued() {
         answers(answer(1, false, 1), answer(2, false, 2), answer(3, false, 3));
-        practicable(cardFrom(1, QuestionOrigin.NOTARY), cardFrom(2, QuestionOrigin.BAILIFF),
-                cardFrom(3, QuestionOrigin.AUTHORED));
-        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY, QuestionOrigin.AUTHORED));
+        practicable(questionFrom(1, QuestionRefs.OWN_SHEET), questionFrom(2, QuestionRefs.OTHER_SHEET),
+                questionFrom(3, QuestionRefs.AUTHORED));
+        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
 
         assertThat(service.count(authentication).count()).isEqualTo(2);
-        assertThat(service.queue(authentication)).extracting(TestQueueItemResponse::cardId)
+        assertThat(service.queue(authentication)).extracting(TestQueueItemResponse::questionId)
                 .containsExactlyInAnyOrder(1L, 3L);
     }
 
     @Test
-    void aMistakeInAFilteredOutOriginComesBackWhenTheFilterIsWidened() {
+    void aMistakeInAFilteredOutSourceComesBackWhenTheFilterIsWidened() {
         answers(answer(1, false, 1));
-        practicable(cardFrom(1, QuestionOrigin.BAILIFF));
-        when(originFilter.activeFor(5L)).thenReturn(EnumSet.of(QuestionOrigin.NOTARY));
+        practicable(questionFrom(1, QuestionRefs.OTHER_SHEET));
+        pool = Pools.of(new SourceFilter(true, false, false), 1, 2);
         assertThat(service.count(authentication).count()).isZero();
 
-        when(originFilter.activeFor(5L)).thenReturn(EnumSet.allOf(QuestionOrigin.class));
+        pool = Pools.of(SourceFilter.ALL, 1, 2);
         assertThat(service.count(authentication).count()).isEqualTo(1);
+    }
+
+    @Test
+    void theAvailabilityQueryGetsTheActsOfTheUsersPool() {
+        answers(answer(1, false, 1));
+        practicable(question(1));
+        pool = Pools.narrowedTo(Pools.all(), 2);
+
+        service.count(authentication);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<Long>> acts = ArgumentCaptor.forClass(Collection.class);
+        verify(questionRepository).findPracticeQuestions(
+                ArgumentMatchers.<Collection<Long>>any(), eq(5L), acts.capture());
+        assertThat(acts.getValue()).containsExactly(2L);
     }
 }

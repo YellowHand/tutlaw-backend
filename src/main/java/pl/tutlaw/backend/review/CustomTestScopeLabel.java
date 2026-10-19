@@ -2,17 +2,17 @@ package pl.tutlaw.backend.review;
 
 import java.util.List;
 
-/** Nazwa zakresu własnego testu na liście "Moje testy", złożona z nazw wybranych rodzajów i aktów prawnych. */
+/** Nazwa zakresu własnego testu na liście "Moje testy", złożona z nazw wybranych dziedzin i aktów prawnych. */
 final class CustomTestScopeLabel {
 
-    static final String EVERYTHING = "Cały materiał";
+    static final String EVERYTHING = "Cała pula";
     static final int MAX_LENGTH = 300;
 
     private CustomTestScopeLabel() {
     }
 
     /**
-     * Bez wyboru cały materiał; do trzech nazw wymienia wszystkie ("A", "A i B", "A, B i C"); dalej dwie pierwsze
+     * Bez wyboru cała pula; do trzech nazw wymienia wszystkie ("A", "A i B", "A, B i C"); dalej dwie pierwsze
      * i liczba pozostałych ("A, B i 2 inne", "A, B i 5 innych").
      */
     static String describe(List<String> names) {

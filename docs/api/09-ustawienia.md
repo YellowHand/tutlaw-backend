@@ -1,8 +1,9 @@
-# API: ustawienia (`/api/me/settings`, `/api/me/exam`, `/api/me/theme`, `/api/me/interface`, `/api/me/study-time`, `/api/me/origin-filter`, `/api/exam-terms`)
+# API: ustawienia (`/api/me/settings`, `/api/me/track`, `/api/me/theme`, `/api/me/interface`, `/api/me/study-time`, `/api/exam-terms`)
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
 Ustawienia zapisane **na koncie** (działają tak samo na każdym urządzeniu) i terminy egzaminów aplikacji. Wymagają tokenu.
+Pula pytań (zawężenie do aktów i filtr źródeł) ma osobne endpointy: [03. Ścieżki, pula, katalog](03-tresci.md#pula-pytań-użytkownika).
 
 ## Ustawienia nauki
 
@@ -12,35 +13,32 @@ Wpływają na limity dzienne, terminy powtórek i tryb egzaminacyjny. Co dokład
 ### `GET /api/me/settings`
 
 Zwraca **obowiązujące** wartości (nigdy `null`: tam, gdzie użytkownik niczego nie ustawił, wstawiana jest wartość
-domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej terminem, wartości domyślne do podpowiedzi i, gdy termin jest znany, plan nowych pytań.
+domyślna z konfiguracji serwera), wybraną ścieżkę z terminem egzaminu, wartości domyślne do podpowiedzi i, gdy termin jest znany, plan nowych pytań.
 
 ```json
 {
-  "newCardsPerDay": 20,
+  "newFlashcardsPerDay": 20,
   "newTestQuestionsPerDay": 40,
   "newTestQuestionsAuto": true,
   "maxReviewsPerDay": 100,
   "desiredRetention": 0.9,
-  "examOrigin": "NOTARY",
+  "track": { "id": 4, "slug": "notarialna", "name": "Aplikacja notarialna", "shortName": "Notarialna", "kind": "EXAM" },
   "examDate": "2027-03-15",
   "shuffleOptions": true,
   "theme": "DARK",
-  "startChoiceMade": true,
   "daysToExam": 154,
   "examPassed": false,
   "effectiveRetention": 0.9,
   "retentionBoosted": false,
   "defaults": {
-    "newCardsPerDay": 20, "newTestQuestionsPerDay": 40, "maxReviewsPerDay": 100, "desiredRetention": 0.9
+    "newFlashcardsPerDay": 20, "newTestQuestionsPerDay": 40, "maxReviewsPerDay": 100, "desiredRetention": 0.9
   },
   "plan": {
     "newTestQuestionsLeft": 300,
-    "newFlashcardsLeft": 40,
     "planningDays": 140,
     "requiredTestQuestionsPerDay": 3,
     "maxTestQuestionsPerDay": 100,
     "suggestedTestQuestionsPerDay": 3,
-    "suggestedFlashcardsPerDay": 1,
     "newTestQuestionsToday": 2
   }
 }
@@ -48,37 +46,36 @@ domyślna z konfiguracji serwera), wybraną aplikację egzaminacyjną z jej term
 
 | Pole | Znaczenie |
 |------|-----------|
-| `newCardsPerDay` | Dzienny limit nowych fiszek |
+| `newFlashcardsPerDay` | Dzienny limit **nowych fiszek** (nowych kart w trybie fiszek; dostają je pytania odblokowane pomyłką albo dodane ręcznie) |
 | `newTestQuestionsPerDay` | Dzienny limit nowych pytań testowych, **który naprawdę obowiązuje**. Własny limit użytkownika, a bez niego (`newTestQuestionsAuto = true`) automatyczny: nie mniej niż domyślny (`defaults.newTestQuestionsPerDay`), a gdy plan do egzaminu wymaga więcej, tyle, ile trzeba, ale nie więcej niż `plan.maxTestQuestionsPerDay` (100). Bez terminu egzaminu i w ostatnich 14 dniach automatyczny limit to po prostu domyślny |
 | `newTestQuestionsAuto` | `true`, gdy użytkownik nie ustawił własnego limitu nowych pytań i obowiązuje limit automatyczny |
 | `theme` | Wygląd aplikacji: `DARK` (domyślnie) albo `LIGHT`. Zmienia się przez `PUT /api/me/theme` |
 | `maxReviewsPerDay` | Dzienny limit zaległych powtórek (osobno dla fiszek i testów) |
 | `desiredRetention` | Docelowa szansa przypomnienia wybrana przez użytkownika |
-| `examOrigin` | Aplikacja wybrana przez użytkownika (`PUT /api/me/exam`); `null`, gdy jeszcze nie wybrał albo jest studentem |
-| `startChoiceMade` | `true`, gdy użytkownik zrobił wybór w oknie startowym (aplikacja albo „Jestem studentem / jeszcze nie wybrałem”). Przy `false` aplikacja pokazuje okno startowe. Samo `examOrigin = null` nie wystarcza, bo student też go nie ma |
-| `examDate` | Termin egzaminu wybranej aplikacji (ustawia go administrator, tylko do odczytu); `null`, gdy aplikacji nie wybrano albo termin jest nieogłoszony. Także gdy już minął |
+| `track` | Ścieżka wybrana przez użytkownika (`PUT /api/me/track`): jedna z pięciu aplikacji albo Student. `null`, gdy jeszcze nie wybrał: wtedy aplikacja pokazuje okno startowe, a pula obejmuje wszystko |
+| `examDate` | Termin egzaminu wybranej aplikacji (ustawia go administrator, tylko do odczytu); `null`, gdy ścieżki nie wybrano, to Student albo termin jest nieogłoszony. Także gdy już minął |
 | `shuffleOptions` | Czy mieszać kolejność odpowiedzi A/B/C w pytaniach (korzysta z tego frontend) |
 | `daysToExam` | Ile dni do egzaminu; `null`, gdy terminu nie ma albo egzamin już się odbył |
 | `examPassed` | Termin egzaminu wybranej aplikacji jest w przeszłości (ustawienia egzaminacyjne wtedy nie działają) |
 | `effectiveRetention` | Retencja faktycznie użyta do liczenia terminów (w 30 dniach przed egzaminem co najmniej 0,95) |
 | `retentionBoosted` | Czy retencja jest podniesiona przez tryb egzaminacyjny |
 | `defaults` | Wartości domyślne serwera (do podpowiedzi „przywróć domyślne”) |
-| `plan` | `null`, gdy nie ma terminu egzaminu albo już minął. Inaczej: ile nowych pytań i fiszek zostało (`newTestQuestionsLeft`, `newFlashcardsLeft`), ile dni jest na planowanie nowych (`planningDays`: dni do egzaminu − 14 dni rezerwy na same powtórki, najmniej 0), ile nowych pytań dziennie **trzeba**, żeby zdążyć (`requiredTestQuestionsPerDay`, bez żadnego sufitu) i sufit limitu automatycznego (`maxTestQuestionsPerDay`, 100), cel na dziś (`suggestedTestQuestionsPerDay` = trzeba, ale nie więcej niż sufit; `suggestedFlashcardsPerDay`; zaokrąglone w górę, **0 w ostatnich 14 dniach**) i ile nowych pytań użytkownik zaczął dzisiaj (`newTestQuestionsToday`) |
+| `plan` | `null`, gdy nie ma terminu egzaminu albo już minął. Inaczej: ile nowych pytań testowych zostało (`newTestQuestionsLeft`), ile dni jest na planowanie nowych (`planningDays`: dni do egzaminu − 14 dni rezerwy na same powtórki, najmniej 0), ile nowych pytań dziennie **trzeba**, żeby zdążyć (`requiredTestQuestionsPerDay`, bez żadnego sufitu) i sufit limitu automatycznego (`maxTestQuestionsPerDay`, 100), cel na dziś (`suggestedTestQuestionsPerDay` = trzeba, ale nie więcej niż sufit; zaokrąglone w górę, **0 w ostatnich 14 dniach**) i ile nowych pytań użytkownik zaczął dzisiaj (`newTestQuestionsToday`). Fiszek się nie planuje: powstają z pomyłek, więc ich liczby nie da się przewidzieć |
 
 Gdy `requiredTestQuestionsPerDay` jest większe niż `maxTestQuestionsPerDay`, wszystkich nowych pytań nie da się zacząć przed rezerwą na powtórki; frontend mówi to wprost, zamiast prosić o podniesienie limitu.
 
-Cel na dziś liczy się od stanu z **początku dnia** (pozostałe + zaczęte dzisiaj), więc nie maleje w miarę nauki w ciągu dnia. W planie nowe pytania testowe liczą się tylko z pochodzeń wybranych w filtrze.
+Cel na dziś liczy się od stanu z **początku dnia** (pozostałe + zaczęte dzisiaj), więc nie maleje w miarę nauki w ciągu dnia. W planie nowe pytania testowe to pytania z **puli** użytkownika (jego akty po zawężeniu i źródła z filtra), których jeszcze nie ruszył w teście.
 
 ### `PUT /api/me/settings`
 
 Zapisuje **pełny zestaw** (zastępuje poprzedni). `null` w polu liczbowym oznacza „wartość domyślna”, a `null` w
 `shuffleOptions` to „tak”. Wyjątek: `null` w `newTestQuestionsPerDay` to **limit automatyczny** (idzie za planem do
-egzaminu), a nie stała wartość. Daty egzaminu tu nie ma: wybiera się ją przez aplikację (`PUT /api/me/exam`), a termin ustawia
-administrator. Pole `examDate` wysłane przez starszego klienta jest ignorowane.
+egzaminu), a nie stała wartość. Daty egzaminu tu nie ma: użytkownik wybiera ścieżkę (`PUT /api/me/track`), a termin
+egzaminu ustawia administrator. Nieznane pola (np. `examDate`) są ignorowane.
 
 ```json
 {
-  "newCardsPerDay": null,
+  "newFlashcardsPerDay": null,
   "newTestQuestionsPerDay": 30,
   "maxReviewsPerDay": 150,
   "desiredRetention": 0.92,
@@ -88,7 +85,7 @@ administrator. Pole `examDate` wysłane przez starszego klienta jest ignorowane.
 
 | Pole | Dozwolone wartości |
 |------|--------------------|
-| `newCardsPerDay` | 0–200 |
+| `newFlashcardsPerDay` | 0–200 |
 | `newTestQuestionsPerDay` | 0–500 albo `null` (automatyczny) |
 | `maxReviewsPerDay` | 10–1000 |
 | `desiredRetention` | od 0,70 do 0,97 (70–97%) |
@@ -97,31 +94,26 @@ administrator. Pole `examDate` wysłane przez starszego klienta jest ignorowane.
 **Odpowiedź `200`**: ten sam kształt co `GET`, już po zapisie. **Błędy `400`:** „Docelowa retencja musi mieścić się
 między 70% a 97%.”, a także komunikaty zakresów z walidacji pól („nie może być ujemna”, „najwyżej 200” itd.).
 
-Zapis ustawień nauki **nie zmienia** ani wybranej aplikacji, ani wyglądu, ani filtra pochodzenia (to osobne zestawy, patrz niżej).
+Zapis ustawień nauki **nie zmienia** ani wybranej ścieżki, ani wyglądu, ani puli (zawężenia i filtra źródeł): to osobne zestawy.
 
-### `PUT /api/me/exam`
+### `PUT /api/me/track` — wybór ścieżki
 
-Wybór aplikacji, do której użytkownik się przygotowuje (z niej bierze się termin egzaminu). Jednocześnie **jednorazowo
-ustawia filtr pochodzenia** na wybraną aplikację i pytania autorskie; późniejsze zmiany filtra są niezależne.
-Ponowny wybór (inna aplikacja) znów ustawia filtr, nadpisując wcześniejszy.
-
-```json
-{ "origin": "NOTARY" }
-```
-
-albo, dla studenta („Jestem studentem / jeszcze nie wybrałem”):
+Wybór ścieżki, do której użytkownik się przygotowuje: jednej z pięciu aplikacji albo **Studenta**. Od tej chwili pulą
+pytań jest pula tej ścieżki ([03](03-tresci.md#pula-pytań-użytkownika)), a terminem egzaminu termin wybranej aplikacji.
+Student nie ma terminu egzaminu ani planu dnia (`examDate` i `plan` są `null`).
 
 ```json
-{ "student": true }
+{ "trackId": 4 }
 ```
 
-Student nie ma aplikacji: `examOrigin` zostaje `null`, nie ma terminu egzaminu ani planu dnia, a filtr pochodzenia
-obejmuje wszystko. Przy `student = true` pole `origin` jest pomijane. Obie odmiany zapisują `startChoiceMade = true`.
-Student może później wybrać aplikację tym samym endpointem, a aplikację zmienić z powrotem na studenta.
+Identyfikatory ścieżek podaje [`GET /api/tracks`](03-tresci.md#get-apitracks).
 
-**Odpowiedź `200`**: ten sam kształt co `GET /api/me/settings`, już po zapisie. **Błędy `400`:** „Wybierz aplikację, do
-której się przygotowujesz (pytania autorskie nie mają egzaminu).” (`AUTHORED` albo brak `origin` bez `student`), „Nieprawidłowy
-format żądania” (nieznany kod).
+**Zmiana ścieżki** (inna niż dotychczasowa) **czyści zawężenie puli do aktów i przywraca filtr źródeł** (wszystkie trzy
+grupy włączone), bo oba dotyczyły poprzedniej ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia. Stan nauki
+(terminy powtórek, historia) zostaje: należy do pytań, nie do ścieżki.
+
+**Odpowiedź `200`**: ten sam kształt co `GET /api/me/settings`, już po zapisie. **Błędy `400`:** „Nie ma takiej
+ścieżki.”, „wybierz ścieżkę” (brak `trackId`).
 
 ### `PUT /api/me/theme`
 
@@ -181,26 +173,26 @@ przekracza 24 godzin. To inna miara niż czas odpowiedzi na pytanie (`timeSpentS
 
 ## Terminy egzaminów
 
-Termin najbliższego egzaminu każdej aplikacji (bez pytań autorskich) ustawia administrator. `null` oznacza „termin
-nieogłoszony”. Użytkownik ich nie zmienia; wybiera tylko aplikację.
+Termin najbliższego egzaminu każdej aplikacji (ścieżki rodzaju `EXAM`; Student go nie ma) ustawia administrator. `null`
+oznacza „termin nieogłoszony”. Użytkownik ich nie zmienia; wybiera tylko ścieżkę.
 
 ### `GET /api/exam-terms`
 
-Dostępny dla każdego zalogowanego. Zawsze wszystkie pięć aplikacji, w stałej kolejności, także te bez terminu.
+Dostępny dla każdego zalogowanego. Zawsze wszystkie pięć aplikacji, w kolejności ścieżek, także te bez terminu.
 
 ```json
 [
-  { "origin": "ADVOCATE_LEGAL_ADVISER", "examDate": null, "daysToExam": null },
-  { "origin": "JUDGE_PROSECUTOR", "examDate": "2027-03-20", "daysToExam": 159 },
-  { "origin": "NOTARY", "examDate": "2027-03-15", "daysToExam": 154 },
-  { "origin": "SUPPLEMENTARY_JUDGE", "examDate": null, "daysToExam": null },
-  { "origin": "BAILIFF", "examDate": null, "daysToExam": null }
+  { "track": { "id": 1, "slug": "adwokacka-radcowska", "name": "Aplikacja adwokacka i radcowska",
+               "shortName": "Adwokacka i radcowska", "kind": "EXAM" },
+    "examDate": null, "daysToExam": null },
+  { "track": { "id": 4, "slug": "notarialna", "name": "Aplikacja notarialna", "shortName": "Notarialna", "kind": "EXAM" },
+    "examDate": "2027-03-15", "daysToExam": 154 }
 ]
 ```
 
 `daysToExam` jest `null`, gdy terminu nie ma albo już minął.
 
-### `PUT /api/exam-terms/{origin}`
+### `PUT /api/exam-terms/{trackId}`
 
 Tylko `ADMIN` (inni dostają `403`). Ustawia albo usuwa termin jednej aplikacji. Zmiana działa od razu u wszystkich
 użytkowników, którzy wybrali tę aplikację; już wyznaczone terminy powtórek **nie są** przeliczane wstecz (nowe odpowiedzi
@@ -211,48 +203,6 @@ liczą się z nową datą).
 ```
 
 `null` w `examDate` usuwa termin. Odpowiedź `200`: wiersz w kształcie jak w `GET`. Dozwolona data: od dziś do 3 lat w
-przód. **Błędy `400`:** „Termin można ustawić tylko dla aplikacji, nie dla pytań autorskich.” (`AUTHORED`), „Termin
-egzaminu nie może być w przeszłości.”, „Termin egzaminu jest zbyt odległy (najwyżej 3 lata od dziś).”, „Nieprawidłowy
-format żądania” (nieznany kod aplikacji albo zły format daty).
-
-## Filtr pochodzenia pytań
-
-Zawęża **Testy** do wybranych pochodzeń. Zawsze wybrane jest co najmniej jedno; domyślnie wszystkie. Filtr dotyczy
-wyłącznie pytań testowych (katalog Testów, kolejki, „Powtórz moje błędy”, odznaka zaległych, plan do egzaminu, losowanie
-egzaminu). Wybór aplikacji (`PUT /api/me/exam`) ustawia go jednorazowo na aplikację i pytania autorskie. Fiszki i statystyki go nie uwzględniają.
-
-### `GET /api/me/origin-filter`
-
-```json
-{
-  "selected": ["NOTARY", "BAILIFF"],
-  "all": false,
-  "options": [
-    { "origin": "AUTHORED", "questionCount": 120 },
-    { "origin": "ADVOCATE_LEGAL_ADVISER", "questionCount": 800 },
-    { "origin": "JUDGE_PROSECUTOR", "questionCount": 650 },
-    { "origin": "NOTARY", "questionCount": 500 },
-    { "origin": "SUPPLEMENTARY_JUDGE", "questionCount": 90 },
-    { "origin": "BAILIFF", "questionCount": 410 }
-  ]
-}
-```
-
-| Pole | Znaczenie |
-|------|-----------|
-| `selected` | Wybrane pochodzenia (zawsze co najmniej jedno), w kolejności wyliczenia |
-| `all` | Czy wybrane są wszystkie (stan domyślny) |
-| `options` | Wszystkie pochodzenia z liczbą pytań testowych (bez ukrytych), do okna wyboru |
-
-### `PUT /api/me/origin-filter`
-
-```json
-{ "origins": ["NOTARY", "BAILIFF"] }
-```
-
-Powtórzenia są ignorowane. Odpowiedź `200`: stan filtra po zapisie (kształt jak `GET`). **Błędy `400`:** „Zaznacz co
-najmniej jedno pochodzenie pytań.” (pusta lista), „Nieznane pochodzenie pytań.” (`null` na liście), „Nieprawidłowy
-format żądania” (nieznany kod).
-
-Zapis: gdy wybrane są wszystkie pochodzenia, w bazie zapisywane jest `NULL` (dzięki temu pochodzenia dodane w
-przyszłości są od razu widoczne); w przeciwnym razie lista kodów oddzielona przecinkami.
+przód. **Błędy `400`:** „Nie ma takiej ścieżki.”, „Termin można ustawić tylko dla aplikacji, nie dla ścieżki Student.”,
+„Termin egzaminu nie może być w przeszłości.”, „Termin egzaminu jest zbyt odległy (najwyżej 3 lata od dziś).”,
+„Nieprawidłowy format żądania” (zły format daty).

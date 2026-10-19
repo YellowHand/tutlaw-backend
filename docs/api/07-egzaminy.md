@@ -2,10 +2,11 @@
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
-Egzamin próbny ma **stały format**: zawsze **150 pytań** z całego dostępnego materiału, a zaliczenie jest od
-**100 punktów**. Pytania losuje serwer, serwer też ocenia egzamin i sam ustala próg. Użytkownik nie wybiera ani zakresu,
-ani liczby pytań, ani progu (żądania ich nie przyjmują). Ćwiczenie z jednego działu to osobna funkcja,
-[własny test](05-nauka.md), która niczego nie zalicza. Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek,
+Egzamin próbny ma **stały format**: zawsze **150 pytań** z całej puli użytkownika (pytania jego ścieżki i jego własnych
+arkuszy), a zaliczenie jest od **100 punktów**. Pytania losuje serwer, serwer też ocenia egzamin i sam ustala próg.
+Użytkownik nie wybiera ani zakresu, ani liczby pytań, ani progu (żądania ich nie przyjmują). Zawężenie puli do
+wybranych aktów prawnych egzaminu **nie dotyczy** (prawdziwy egzamin też obejmuje wszystko), a filtr źródeł już tak.
+Ćwiczenie z jednego działu to osobna funkcja, [własny test](05-nauka.md), która niczego nie zalicza. Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek,
 dziennika odpowiedzi ani dziennych limitów. Zasady punktacji i zaliczenia:
 [04](../04-nauka-testy-fiszki-fsrs.md#egzamin-próbny). Wszystkie endpointy wymagają tokenu.
 
@@ -28,8 +29,10 @@ sequenceDiagram
 **Ciało żądania:** brak. Format egzaminu jest stały, więc nic się nie wybiera. Ciało wysłane przez starszego klienta
 (zakres, `questionCount`) jest ignorowane.
 
-Serwer losuje **150** pytań: tylko testowe, **dostępne** dla użytkownika (pula płaska albo przeczytany rozdział),
-niezawieszone, z **pochodzeń wybranych w filtrze**, z całego materiału. Niczego nie zapisuje.
+Serwer losuje **150** pytań: z **puli** użytkownika (akty jego ścieżki albo jego arkusze, **bez** zawężenia do
+wybranych aktów), niewyciszone (nieukryte przez administratora), niezawieszone w testach i ze **źródeł wybranych w
+filtrze źródeł**. Niczego nie zapisuje. Każde pytanie ma jedną poprawną odpowiedź (A, B albo C); poprawnej nie ma w
+odpowiedzi tego endpointu.
 
 Gdy w materiale jest mniej niż 150 takich pytań, egzamin ma tyle, ile jest, a próg maleje proporcjonalnie
 (100 z 150, zaokrąglone w górę do całego punktu; np. 12 pytań to próg 8).
@@ -38,16 +41,18 @@ Gdy w materiale jest mniej niż 150 takich pytań, egzamin ma tyle, ile jest, a 
 
 ```json
 {
-  "scopeLabel": "Cały materiał",
+  "scopeLabel": "Cała pula",
   "requestedCount": 150,
   "passPoints": 100,
   "questions": [
     {
-      "cardId": 101,
-      "front": "Czy czyn zabroniony…?",
+      "questionId": 101,
+      "body": "Czy czyn zabroniony…?",
       "optionA": "…", "optionB": "…", "optionC": "…",
-      "sourceName": "Egzamin notarialny 2024",
-      "origin": "NOTARY",
+      "actName": "Kodeks karny",
+      "actShortName": "k.k.",
+      "sourceName": "Notarialna 2024",
+      "sourceKind": "EXAM_SHEET",
       "examYear": 2024
     }
   ]
@@ -59,9 +64,10 @@ Gdy w materiale jest mniej niż 150 takich pytań, egzamin ma tyle, ile jest, a 
 | `requestedCount` | Ile pytań ma pełny egzamin: zawsze 150 |
 | `passPoints` | Ile punktów trzeba mieć, żeby zdać ten egzamin: 100, a przy krótszym zestawie proporcjonalnie |
 | `questions` | Bywa krótsze niż `requestedCount`. Pytania **nie zawierają** poprawnych odpowiedzi |
+| `questions[].sourceKind` | `EXAM_SHEET` (arkusz egzaminu z danego roku, `examYear` wypełnione) albo `AUTHORED` (pytanie autorskie, `examYear` = `null`) |
 
-**Błędy:** `400` — „Nie ma teraz pytań testowych, które możesz rozwiązać na egzaminie.” albo, gdy pytania są, ale
-wszystkie spoza filtra: „Nie ma pytań z wybranych pochodzeń. Zmień filtr pochodzenia w Testach.”
+**Błędy:** `400` — „Nie ma teraz pytań, które możesz rozwiązać na egzaminie.” albo, gdy pytania są, ale wszystkie spoza
+filtra: „Nie ma pytań z wybranych źródeł. Zmień filtr źródeł w Testach.”
 
 ## `POST /api/exams/submit` — ocena egzaminu
 
@@ -76,8 +82,8 @@ wybrane odpowiedzi, limit czasu i czas trwania.
   "durationSeconds": 7710,
   "timedOut": false,
   "answers": [
-    { "cardId": 101, "selectedOption": "B" },
-    { "cardId": 102, "selectedOption": null }
+    { "questionId": 101, "selectedOption": "B" },
+    { "questionId": 102, "selectedOption": null }
   ]
 }
 ```
@@ -89,27 +95,27 @@ wybrane odpowiedzi, limit czasu i czas trwania.
 | `timedOut` | nie | Czy egzamin zakończył się automatycznie z powodu końca czasu |
 | `answers` | tak | 1–150 pozycji. `selectedOption` = `A`/`B`/`C` albo `null` (pytanie bez odpowiedzi) |
 
-Progu zaliczenia ani zakresu klient nie wysyła: pola `passThresholdPercent`, `categoryId`, `subjectId` i `sourceId`
-z poprzednich wersji są ignorowane.
+Progu zaliczenia ani zakresu klient nie wysyła: nieznane pola (np. `passThresholdPercent`) są ignorowane.
 
 **Odpowiedź `200`**
 
 ```json
 {
   "attempt": {
-    "id": 9, "finishedAt": "2026-10-12T20:00:00", "scopeLabel": "Cały materiał",
+    "id": 9, "finishedAt": "2026-10-12T20:00:00", "scopeLabel": "Cała pula",
     "questionCount": 150, "answeredCount": 148, "correctCount": 112, "scorePercent": 74.7,
     "passThresholdPercent": 67, "passPoints": 100, "passed": true, "timeLimitMinutes": 150,
     "durationSeconds": 7710, "timedOut": false
   },
   "excludedCount": 0,
-  "bySource": [ { "sourceName": "Egzamin notarialny 2024", "total": 150, "correct": 112 } ],
+  "bySource": [ { "sourceName": "Notarialna 2024", "total": 150, "correct": 112 } ],
   "questions": [
     {
-      "cardId": 101, "front": "…", "optionA": "…", "optionB": "…", "optionC": "…",
+      "questionId": 101, "body": "…", "optionA": "…", "optionB": "…", "optionC": "…",
       "selectedOption": "B", "correctOption": "B", "correct": true,
       "explanation": "…", "legalBasis": "art. 26 § 1 k.k.", "validAsOf": "2026-01-01",
-      "sourceName": "Egzamin notarialny 2024", "origin": "NOTARY", "examYear": 2024
+      "sourceName": "Notarialna 2024", "sourceKind": "EXAM_SHEET", "examYear": 2024,
+      "actName": "Kodeks karny", "actShortName": "k.k."
     }
   ]
 }
@@ -122,8 +128,8 @@ z poprzednich wersji są ignorowane.
 | `attempt.passThresholdPercent` | Ten sam próg w pełnych procentach, zaokrąglony w górę (100 z 150 to 67). Do wyświetlania liczy się `passPoints` |
 | `attempt.passed` | Zaliczone, gdy liczba poprawnych odpowiedzi jest co najmniej równa `passPoints` (liczby całkowite) |
 | `excludedCount` | Pytania z listy, których nie dało się ocenić (usunięte lub już niedostępne); nie wchodzą do wyniku |
-| `bySource` | Wynik w obrębie źródeł pytań, od największego |
-| `questions` | Każde pytanie w kolejności egzaminu, z poprawną odpowiedzią i wyjaśnieniem |
+| `bySource` | Wynik w obrębie źródeł pytań (np. „Notarialna 2024”, „Pytania autorskie”), od największego |
+| `questions` | Każde pytanie w kolejności egzaminu, z poprawną odpowiedzią, wyjaśnieniem, podstawą prawną (`legalBasis`, `validAsOf`) i aktem prawnym |
 
 Punktacja: 1 punkt za poprawną odpowiedź, bez punktów ujemnych, brak odpowiedzi = 0.
 
@@ -131,7 +137,7 @@ Punktacja: 1 punkt za poprawną odpowiedź, bez punktów ujemnych, brak odpowied
 pytań nie jest już dostępne („Żadne z przesłanych pytań nie jest już dostępne, więc nie ma czego oceniać.”), błędne
 pola (komunikaty po polsku, np. „zbyt wiele pytań (egzamin ma najwyżej 150)”).
 
-Ocena **nie stosuje filtra pochodzenia**: ocenia to, co zostało pokazane w `start`. Serwer nie pamięta, które pytania
+Ocena **nie stosuje filtra źródeł**: ocenia to, co zostało pokazane w `start`. Serwer nie pamięta, które pytania
 wydał w `start`, więc zaliczenie dotyczy zestawu przesłanego w `submit` (to ćwiczenie dla samego użytkownika, nie
 egzamin z uprawnieniami).
 
@@ -141,18 +147,14 @@ Ostatnie **50** podejść zalogowanego użytkownika, od najnowszego. Elementy ma
 
 ```json
 [
-  { "id": 9, "finishedAt": "2026-10-12T20:00:00", "scopeLabel": "Cały materiał", "questionCount": 150,
+  { "id": 9, "finishedAt": "2026-10-12T20:00:00", "scopeLabel": "Cała pula", "questionCount": 150,
     "answeredCount": 148, "correctCount": 112, "scorePercent": 74.7, "passThresholdPercent": 67,
-    "passPoints": 100, "passed": true, "timeLimitMinutes": 150, "durationSeconds": 7710, "timedOut": false },
-  { "id": 4, "finishedAt": "2026-09-20T18:00:00", "scopeLabel": "Prawo karne", "questionCount": 40,
-    "answeredCount": 40, "correctCount": 31, "scorePercent": 77.5, "passThresholdPercent": 75,
-    "passPoints": null, "passed": true, "timeLimitMinutes": null, "durationSeconds": 1500, "timedOut": false }
+    "passPoints": 100, "passed": true, "timeLimitMinutes": 150, "durationSeconds": 7710, "timedOut": false }
 ]
 ```
 
-**Podejścia sprzed stałego formatu** (z własnym zakresem, liczbą pytań i progiem w procentach) zostają w historii bez
-zmian. Rozpoznasz je po `passPoints: null`: ich próg to `passThresholdPercent` wybrany wtedy przez użytkownika, a
-`scopeLabel` to nazwa zakresu, który wybrał.
+Serwer zawsze zapisuje `passPoints` (kolumna w bazie dopuszcza `NULL` z historycznych powodów, ale kod nie zapisuje
+tam pustej wartości). `scopeLabel` to zawsze „Cała pula”.
 
 Historia zawiera tylko podsumowania; pojedyncze odpowiedzi nie są przechowywane (raport dostaje się raz, po
 zakończeniu).

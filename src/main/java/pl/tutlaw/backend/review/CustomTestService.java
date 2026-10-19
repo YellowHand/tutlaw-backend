@@ -3,14 +3,14 @@ package pl.tutlaw.backend.review;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
-import pl.tutlaw.backend.card.CardRepository;
-import pl.tutlaw.backend.card.CardScopes;
-import pl.tutlaw.backend.card.QuestionOrigin;
+import pl.tutlaw.backend.pool.Pool;
+import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.question.QuestionRef;
+import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.CustomTestCountsResponse;
 import pl.tutlaw.backend.review.dto.CustomTestRequest;
 import pl.tutlaw.backend.review.dto.CustomTestSelectionResponse;
 import pl.tutlaw.backend.review.fsrs.FsrsEngine;
-import pl.tutlaw.backend.settings.OriginFilterService;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 
 import java.time.Clock;
@@ -26,15 +26,15 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Własny test: użytkownik składa sesję z wybranych rodzajów i aktów prawnych, wybiera, które pytania mają w niej być
+ * Własny test: użytkownik składa sesję z wybranych dziedzin i aktów prawnych, wybiera, które pytania mają w niej być
  * (wszystkie, nowe, błędy, zaległe) i mówi, ile pytań chce (10, 20, 50, 100 albo 150). Serwis tylko LOSUJE numery
  * pytań (zapisuje je jako sesję {@link CustomTestSessionService}); samą sesję otwiera się zwykłą kolejką ćwiczeń
  * ({@link PracticeQueueService}), więc odpowiedzi idą normalną drogą testu: z oceną pamięci, a pomyłki trafiają do
  * „Moich błędów".
  *
- * <p>W puli są wyłącznie pytania testowe dostępne dla użytkownika (pula płaska albo przeczytany rozdział),
- * niezawieszone i z wybranych pochodzeń (filtr pochodzenia w Testach). Własny test nie jest ograniczony dziennym
- * limitem nowych pytań (tak jak „Powtórz jeszcze"): użytkownik sam mówi, ile chce.
+ * <p>W puli są wyłącznie pytania z puli użytkownika (akty jego ścieżki, jego zawężenie i filtr źródeł w Testach),
+ * niezawieszone w trybie testu. Własny test nie jest ograniczony dziennym limitem nowych pytań (tak jak „Powtórz
+ * jeszcze"): użytkownik sam mówi, ile chce.
  */
 @Service
 @RequiredArgsConstructor
@@ -44,24 +44,22 @@ public class CustomTestService {
     public static final List<Integer> COUNT_CHOICES = List.of(10, 20, 50, 100, 150);
     /** Największa możliwa sesja (musi mieścić się w limicie kolejki ćwiczeń, przez którą jest otwierana). */
     static final int MAX_QUESTIONS = COUNT_CHOICES.get(COUNT_CHOICES.size() - 1);
-    /** Numer, którego nie ma w bazie: zamiast pustej listy w {@code IN}. */
-    private static final Long NO_SUCH_ID = -1L;
 
-    private final CardRepository cardRepository;
-    private final UserCardStateRepository stateRepository;
+    private final QuestionRepository questionRepository;
+    private final UserQuestionStateRepository stateRepository;
     private final MistakesService mistakesService;
     private final CurrentUserResolver currentUserResolver;
     private final FsrsEngine fsrsEngine;
     private final Clock clock;
-    private final OriginFilterService originFilter;
+    private final PoolService poolService;
 
     private final Random random = new Random();
 
     /** Pytania dostępne w zakresie, z podziałem na rodzaje: do podglądu „Dostępnych: N" przy układaniu testu. */
     public CustomTestCountsResponse counts(
-            List<Long> categoryIds, List<Long> subjectIds, Authentication authentication) {
+            List<Long> fieldIds, List<Long> actIds, Authentication authentication) {
         Long userId = currentUserResolver.resolve(authentication).getId();
-        Pool pool = pool(userId, categoryIds, subjectIds);
+        Candidates pool = pool(userId, fieldIds, actIds);
         LocalDateTime now = LocalDateTime.now(clock);
         return new CustomTestCountsResponse(
                 pool.refs().size(),
@@ -82,7 +80,7 @@ public class CustomTestService {
             throw new IllegalArgumentException("Liczba pytań musi wynosić od 1 do " + MAX_QUESTIONS + ".");
         }
 
-        Pool pool = pool(userId, request.categoryIds(), request.subjectIds());
+        Candidates pool = pool(userId, request.fieldIds(), request.actIds());
         List<Long> candidates = new ArrayList<>(
                 candidates(kind, pool, userId, LocalDateTime.now(clock)));
         if (candidates.isEmpty()) {
@@ -107,59 +105,68 @@ public class CustomTestService {
     // ---------------------------------------------------------------- pula
 
     /**
-     * Pytania zakresu po wszystkich filtrach (pochodzenie, zawieszone) i harmonogram użytkownika.
-     * {@code inScope} to liczba pytań zakresu przed filtrami: odróżnia „nie ma pytań" od „filtr wszystko wyciął".
+     * Pytania zakresu po wszystkich filtrach (źródła, zawieszone) i harmonogram użytkownika w trybie testu.
+     * {@code inScope} to liczba pytań zakresu przed filtrem źródeł i zawieszeniem: odróżnia „nie ma pytań" od
+     * „filtr wszystko wyciął".
      */
-    private record Pool(List<CardRepository.TestRef> refs, int inScope, Map<Long, UserCardStateRepository.CardDue> schedule) {
+    private record Candidates(List<QuestionRef> refs, int inScope, Map<Long, UserQuestionStateRepository.QuestionDue> schedule) {
     }
 
-    private Pool pool(Long userId, List<Long> categoryIds, List<Long> subjectIds) {
-        List<Long> categories = ids(categoryIds);
-        List<Long> subjects = ids(subjectIds);
+    private Candidates pool(Long userId, List<Long> fieldIds, List<Long> actIds) {
+        Pool pool = poolService.forUser(userId);
+        List<QuestionRef> all = questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds());
+        List<QuestionRef> inScope = scoped(all, ids(fieldIds), ids(actIds));
 
-        List<CardRepository.TestRef> inScope = categories.isEmpty() && subjects.isEmpty()
-                ? cardRepository.findReadableTestRefsForUser(userId)
-                : cardRepository.findReadableTestRefsInScope(
-                        userId, orNoSuchId(categories), orNoSuchId(subjects));
-
-        Map<Long, UserCardStateRepository.CardDue> schedule = new HashMap<>();
-        for (UserCardStateRepository.CardDue row : stateRepository.findCardDueByUserId(userId)) {
-            schedule.put(row.getCardId(), row);
+        Set<Long> allowedSources = new HashSet<>(pool.sourceIds());
+        Map<Long, UserQuestionStateRepository.QuestionDue> schedule = new HashMap<>();
+        for (UserQuestionStateRepository.QuestionDue row : stateRepository.findScheduleByUserIdAndMode(userId, ReviewMode.TEST)) {
+            schedule.put(row.getQuestionId(), row);
         }
-        Set<QuestionOrigin> origins = originFilter.activeFor(userId);
 
-        List<CardRepository.TestRef> refs = inScope.stream()
-                .filter(ref -> CardScopes.originAllowed(ref.getOrigin(), origins))
+        List<QuestionRef> refs = inScope.stream()
+                .filter(ref -> allowedSources.contains(ref.getSourceId()))
                 .filter(ref -> !isSuspended(schedule.get(ref.getId())))
                 .toList();
-        return new Pool(refs, inScope.size(), schedule);
+        return new Candidates(refs, inScope.size(), schedule);
+    }
+
+    /** Zakres to suma wybranych dziedzin i aktów; bez żadnego z nich cała pula. */
+    static List<QuestionRef> scoped(List<QuestionRef> refs, List<Long> fieldIds, List<Long> actIds) {
+        if (fieldIds.isEmpty() && actIds.isEmpty()) {
+            return refs;
+        }
+        Set<Long> fields = new HashSet<>(fieldIds);
+        Set<Long> acts = new HashSet<>(actIds);
+        return refs.stream()
+                .filter(ref -> fields.contains(ref.getLegalFieldId()) || acts.contains(ref.getLegalActId()))
+                .toList();
     }
 
     /** Numery pytań wybranego rodzaju. Dla błędów od najświeższej pomyłki, dla zaległych od najpilniejszej. */
-    private List<Long> candidates(CustomTestKind kind, Pool pool, Long userId, LocalDateTime now) {
+    private List<Long> candidates(CustomTestKind kind, Candidates pool, Long userId, LocalDateTime now) {
         if (pool.refs().isEmpty()) {
             return List.of();
         }
         return switch (kind) {
-            case ALL -> pool.refs().stream().map(CardRepository.TestRef::getId).toList();
+            case ALL -> pool.refs().stream().map(QuestionRef::getId).toList();
             case NEW -> pool.refs().stream()
-                    .map(CardRepository.TestRef::getId)
+                    .map(QuestionRef::getId)
                     .filter(id -> !pool.schedule().containsKey(id))
                     .toList();
             case MISTAKES -> {
                 Set<Long> inPool = new HashSet<>();
                 pool.refs().forEach(ref -> inPool.add(ref.getId()));
-                yield mistakesService.recentMistakeCardIds(userId).stream().filter(inPool::contains).toList();
+                yield mistakesService.recentMistakeQuestionIds(userId).stream().filter(inPool::contains).toList();
             }
             case DUE -> dueByUrgency(pool, now);
         };
     }
 
     /** Zaległe od tych, które najpewniej już zapomniałeś (jak w kolejce nauki). */
-    private List<Long> dueByUrgency(Pool pool, LocalDateTime now) {
+    private List<Long> dueByUrgency(Candidates pool, LocalDateTime now) {
         List<QueueRules.DueItem> due = new ArrayList<>();
-        for (CardRepository.TestRef ref : pool.refs()) {
-            UserCardStateRepository.CardDue schedule = pool.schedule().get(ref.getId());
+        for (QuestionRef ref : pool.refs()) {
+            UserQuestionStateRepository.QuestionDue schedule = pool.schedule().get(ref.getId());
             if (schedule == null || schedule.getDueDate().isAfter(now)) {
                 continue; // nowe albo jeszcze nie ich czas (zawieszone są już poza pulą)
             }
@@ -168,12 +175,12 @@ public class CustomTestService {
                     QueueRules.elapsedDays(schedule.getLastReviewAt(), now), stability);
             due.add(new QueueRules.DueItem(ref.getId(), schedule.getDueDate(), retrievability));
         }
-        return QueueRules.prioritize(due).stream().map(QueueRules.DueItem::cardId).toList();
+        return QueueRules.prioritize(due).stream().map(QueueRules.DueItem::questionId).toList();
     }
 
     // ---------------------------------------------------------------- pomocnicze
 
-    private static boolean isSuspended(UserCardStateRepository.CardDue schedule) {
+    private static boolean isSuspended(UserQuestionStateRepository.QuestionDue schedule) {
         return schedule != null && Boolean.TRUE.equals(schedule.getSuspended());
     }
 
@@ -194,21 +201,17 @@ public class CustomTestService {
         return raw.stream().filter(Objects::nonNull).distinct().toList();
     }
 
-    private static List<Long> orNoSuchId(List<Long> ids) {
-        return ids.isEmpty() ? List.of(NO_SUCH_ID) : ids;
-    }
-
-    private static String nothingToDrawMessage(CustomTestKind kind, Pool pool) {
+    private static String nothingToDrawMessage(CustomTestKind kind, Candidates pool) {
         if (pool.refs().isEmpty()) {
             return pool.inScope() == 0
-                    ? "W wybranym zakresie nie ma teraz pytań testowych, które możesz rozwiązać."
-                    : "W wybranym zakresie nie ma pytań z wybranych pochodzeń. Zmień filtr pochodzenia w Testach.";
+                    ? "W wybranym zakresie nie ma teraz pytań, które możesz rozwiązać."
+                    : "W wybranym zakresie nie ma pytań z wybranych źródeł. Zmień filtr źródeł w Testach.";
         }
         return switch (kind) {
             case NEW -> "Wszystkie pytania z wybranego zakresu były już rozwiązywane.";
             case MISTAKES -> "W wybranym zakresie nie ma teraz pytań z błędną ostatnią odpowiedzią.";
             case DUE -> "W wybranym zakresie nie ma teraz zaległych powtórek.";
-            case ALL -> "W wybranym zakresie nie ma teraz pytań testowych, które możesz rozwiązać.";
+            case ALL -> "W wybranym zakresie nie ma teraz pytań, które możesz rozwiązać.";
         };
     }
 }

@@ -22,7 +22,7 @@ public class EmailService {
     public void sendVerificationEmail(String toEmail, String token) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(toEmail);
-        message.setSubject("Potwierdź rejestrację w Tutlaw");
+        message.setSubject("Potwierdź rejestrację w Gradus iuris");
         message.setText(
                 "Cześć!\n\nKliknij link, aby aktywować konto:\n\n" +
                         "http://localhost:5173/verify?token=" + token +
@@ -35,9 +35,9 @@ public class EmailService {
     public void sendPasswordResetEmail(String toEmail, String token) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(toEmail);
-        message.setSubject("Zmiana hasła w Tutlaw");
+        message.setSubject("Zmiana hasła w Gradus iuris");
         message.setText(
-                "Cześć!\n\nOtrzymaliśmy prośbę o zmianę hasła do Twojego konta w Tutlaw. " +
+                "Cześć!\n\nOtrzymaliśmy prośbę o zmianę hasła do Twojego konta w Gradus iuris. " +
                         "Kliknij link, aby ustawić nowe hasło:\n\n" +
                         frontendUrl + "/reset-password?token=" + token +
                         "\n\nLink jest ważny przez godzinę i można go użyć tylko raz." +
@@ -51,9 +51,9 @@ public class EmailService {
     public void sendPasswordChangedEmail(String toEmail) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(toEmail);
-        message.setSubject("Hasło do Twojego konta w Tutlaw zostało zmienione");
+        message.setSubject("Hasło do Twojego konta w Gradus iuris zostało zmienione");
         message.setText(
-                "Cześć!\n\nHasło do Twojego konta w Tutlaw zostało właśnie zmienione, a wszystkie wcześniejsze sesje " +
+                "Cześć!\n\nHasło do Twojego konta w Gradus iuris zostało właśnie zmienione, a wszystkie wcześniejsze sesje " +
                         "(zalogowane urządzenia) zostały wylogowane." +
                         "\n\nJeśli to Ty, nic nie musisz robić." +
                         "\n\nJeśli to nie Ty, ustaw nowe hasło od razu tutaj:\n\n" +

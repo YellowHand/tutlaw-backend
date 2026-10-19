@@ -9,7 +9,6 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import pl.tutlaw.backend.card.QuestionOrigin;
 
 import java.time.LocalDateTime;
 
@@ -29,8 +28,8 @@ public class UserSettings {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "new_cards_per_day")
-    private Integer newCardsPerDay;
+    @Column(name = "new_flashcards_per_day")
+    private Integer newFlashcardsPerDay;
 
     @Column(name = "new_test_questions_per_day")
     private Integer newTestQuestionsPerDay;
@@ -42,22 +41,18 @@ public class UserSettings {
     @Column(name = "desired_retention")
     private Double desiredRetention;
 
-    /** Aplikacja, do której użytkownik się przygotowuje (data egzaminu bierze się z {@code ExamTerm}); {@code null}, gdy nie wybrał. */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "exam_origin", length = 40)
-    private QuestionOrigin examOrigin;
+    /**
+     * Wybrana ścieżka: aplikacja, do której użytkownik się przygotowuje (data egzaminu bierze się z {@code ExamTerm}),
+     * albo Student. {@code null}, gdy jeszcze nie wybrał (aplikacja pokazuje wtedy okno startowe). Zwykły numer
+     * zamiast relacji: ścieżkę wczytuje się osobno, gdy jest potrzebna.
+     */
+    @Column(name = "track_id")
+    private Long trackId;
 
     /** Wygląd aplikacji (domyślnie ciemny). Zapisany na koncie, żeby był taki sam na każdym urządzeniu. */
     @Enumerated(EnumType.STRING)
     @Column(name = "theme", nullable = false, length = 10)
     private Theme theme = Theme.DARK;
-
-    /**
-     * Czy użytkownik dokonał wyboru w oknie startowym: aplikacja ({@code examOrigin}) albo "Jestem studentem". Student
-     * nie ma aplikacji, więc samo {@code examOrigin == null} nie wystarcza do rozpoznania, że wybór został zrobiony.
-     */
-    @Column(name = "start_choice_made", nullable = false)
-    private boolean startChoiceMade = false;
 
     /** Stałe ukrycie podpowiedzi o skrótach klawiszowych w testach (przycisk „×" przy podpowiedzi). */
     @Column(name = "hint_hidden_test", nullable = false)
@@ -76,11 +71,18 @@ public class UserSettings {
     private boolean shuffleOptions = true;
 
     /**
-     * Filtr pochodzenia pytań w Testach: kody {@code QuestionOrigin} oddzielone przecinkami albo {@code null}
-     * (wszystkie). Zapisywany i odczytywany przez {@code OriginFilterService}.
+     * Filtr źródeł pytań w Testach: własne arkusze (arkusze wybranej aplikacji), arkusze innych aplikacji i pytania
+     * autorskie. Domyślnie wszystkie trzy; zawsze zaznaczone jest co najmniej jedno (pilnuje tego baza).
+     * Zapisywany i odczytywany przez {@code SourceFilterService}.
      */
-    @Column(name = "test_origins", length = 200)
-    private String testOrigins;
+    @Column(name = "include_own_sheets", nullable = false)
+    private boolean includeOwnSheets = true;
+
+    @Column(name = "include_other_sheets", nullable = false)
+    private boolean includeOtherSheets = true;
+
+    @Column(name = "include_authored", nullable = false)
+    private boolean includeAuthored = true;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();

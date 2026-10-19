@@ -10,10 +10,10 @@ import java.time.LocalDateTime;
 /**
  * Ręczne dodanie pytania do fiszek przez użytkownika (przycisk „Dodaj do fiszek" przy odpowiedzi w teście).
  * Dodane pytanie odblokowuje jego fiszkę w Fiszkach, tak samo jak pewny błąd. Zwykłe numery zamiast relacji,
- * bo tabela służy tylko do sprawdzania „czy odblokowane" i nie ma po co ładować użytkownika ani karty.
+ * bo tabela służy tylko do sprawdzania „czy odblokowane" i nie ma po co ładować użytkownika ani pytania.
  */
 @Entity
-@Table(name = "user_flashcard_additions")
+@Table(name = "flashcard_additions")
 @Getter
 @Setter
 @NoArgsConstructor
