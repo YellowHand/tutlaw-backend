@@ -8,6 +8,7 @@ import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.flashcard.FlashcardService;
 import pl.tutlaw.backend.flashcard.FlashcardStatus;
 import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.SubmitReviewRequest;
 import pl.tutlaw.backend.review.dto.SubmitTestAnswerRequest;
@@ -93,7 +94,7 @@ public class ReviewService {
         return new TestAnswerResultResponse(
                 correct, question.getCorrectOption(), question.getExplanation(), question.getLegalBasis(),
                 question.getValidAsOf(), state.getLapses(), leechPolicy.isLeech(state.getLapses()),
-                unlocksFlashcard, flashcard, state.getReps() == 1);
+                unlocksFlashcard, flashcard, state.getReps() == 1, LawChangeInfo.of(question));
     }
 
     /**

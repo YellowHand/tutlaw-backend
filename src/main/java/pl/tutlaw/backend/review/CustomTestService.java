@@ -3,8 +3,10 @@ package pl.tutlaw.backend.review;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.question.LawChangePolicy;
 import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.CustomTestCountsResponse;
@@ -19,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -27,7 +30,7 @@ import java.util.Set;
 
 /**
  * Własny test: użytkownik składa sesję z wybranych dziedzin i aktów prawnych, wybiera, które pytania mają w niej być
- * (wszystkie, nowe, błędy, zaległe) i mówi, ile pytań chce (10, 20, 50, 100 albo 150). Serwis tylko LOSUJE numery
+ * (wszystkie, nowe, błędy, zaległe, zmiany w prawie) i mówi, ile pytań chce (10, 20, 50, 100 albo 150). Serwis tylko LOSUJE numery
  * pytań (zapisuje je jako sesję {@link CustomTestSessionService}); samą sesję otwiera się zwykłą kolejką ćwiczeń
  * ({@link PracticeQueueService}), więc odpowiedzi idą normalną drogą testu: z oceną pamięci, a pomyłki trafiają do
  * „Moich błędów".
@@ -52,20 +55,23 @@ public class CustomTestService {
     private final FsrsEngine fsrsEngine;
     private final Clock clock;
     private final PoolService poolService;
+    private final LawChangePolicy lawChangePolicy;
+    private final CourseRepository courseRepository;
 
     private final Random random = new Random();
 
     /** Pytania dostępne w zakresie, z podziałem na rodzaje: do podglądu „Dostępnych: N" przy układaniu testu. */
     public CustomTestCountsResponse counts(
-            List<Long> fieldIds, List<Long> actIds, Authentication authentication) {
+            List<Long> fieldIds, List<Long> actIds, List<Long> courseIds, Authentication authentication) {
         Long userId = currentUserResolver.resolve(authentication).getId();
-        Candidates pool = pool(userId, fieldIds, actIds);
+        Candidates pool = pool(userId, fieldIds, actIds, courseIds);
         LocalDateTime now = LocalDateTime.now(clock);
         return new CustomTestCountsResponse(
                 pool.refs().size(),
                 candidates(CustomTestKind.NEW, pool, userId, now).size(),
                 candidates(CustomTestKind.MISTAKES, pool, userId, now).size(),
-                candidates(CustomTestKind.DUE, pool, userId, now).size());
+                candidates(CustomTestKind.DUE, pool, userId, now).size(),
+                candidates(CustomTestKind.LAW_CHANGE, pool, userId, now).size());
     }
 
     /**
@@ -80,7 +86,7 @@ public class CustomTestService {
             throw new IllegalArgumentException("Liczba pytań musi wynosić od 1 do " + MAX_QUESTIONS + ".");
         }
 
-        Candidates pool = pool(userId, request.fieldIds(), request.actIds());
+        Candidates pool = pool(userId, request.fieldIds(), request.actIds(), request.courseIds());
         List<Long> candidates = new ArrayList<>(
                 candidates(kind, pool, userId, LocalDateTime.now(clock)));
         if (candidates.isEmpty()) {
@@ -112,10 +118,19 @@ public class CustomTestService {
     private record Candidates(List<QuestionRef> refs, int inScope, Map<Long, UserQuestionStateRepository.QuestionDue> schedule) {
     }
 
-    private Candidates pool(Long userId, List<Long> fieldIds, List<Long> actIds) {
+    private Candidates pool(Long userId, List<Long> fieldIds, List<Long> actIds, List<Long> courseIds) {
         Pool pool = poolService.forUser(userId);
         List<QuestionRef> all = questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds());
-        List<QuestionRef> inScope = scoped(all, ids(fieldIds), ids(actIds));
+        List<Long> fields = ids(fieldIds);
+        List<Long> chosenCourses = ids(courseIds);
+        // Przedmiot to akty przypisane przez administratora; akty wybrane wprost i akty przedmiotów to jeden zakres.
+        Set<Long> acts = new LinkedHashSet<>(ids(actIds));
+        if (!chosenCourses.isEmpty()) {
+            acts.addAll(courseRepository.findActIdsByCourseIds(chosenCourses));
+        }
+        // Wybrane przedmioty bez żadnego aktu nie mogą rozszerzyć zakresu do całej puli.
+        boolean emptyScopeRequested = fields.isEmpty() && acts.isEmpty() && !chosenCourses.isEmpty();
+        List<QuestionRef> inScope = emptyScopeRequested ? List.of() : scoped(all, fields, new ArrayList<>(acts));
 
         Set<Long> allowedSources = new HashSet<>(pool.sourceIds());
         Map<Long, UserQuestionStateRepository.QuestionDue> schedule = new HashMap<>();
@@ -159,6 +174,10 @@ public class CustomTestService {
                 yield mistakesService.recentMistakeQuestionIds(userId).stream().filter(inPool::contains).toList();
             }
             case DUE -> dueByUrgency(pool, now);
+            case LAW_CHANGE -> pool.refs().stream()
+                    .filter(ref -> lawChangePolicy.isRecent(ref.getLawChangedAt()))
+                    .map(QuestionRef::getId)
+                    .toList();
         };
     }
 
@@ -211,6 +230,7 @@ public class CustomTestService {
             case NEW -> "Wszystkie pytania z wybranego zakresu były już rozwiązywane.";
             case MISTAKES -> "W wybranym zakresie nie ma teraz pytań z błędną ostatnią odpowiedzią.";
             case DUE -> "W wybranym zakresie nie ma teraz zaległych powtórek.";
+            case LAW_CHANGE -> "W wybranym zakresie nie ma pytań ze zmianą w prawie z ostatniego roku.";
             case ALL -> "W wybranym zakresie nie ma teraz pytań, które możesz rozwiązać.";
         };
     }

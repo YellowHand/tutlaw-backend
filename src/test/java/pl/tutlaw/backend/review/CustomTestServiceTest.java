@@ -7,8 +7,10 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
+import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.question.LawChangePolicy;
 import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.CustomTestCountsResponse;
@@ -22,6 +24,7 @@ import pl.tutlaw.backend.testsupport.QuestionRefs;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +51,7 @@ class CustomTestServiceTest {
     @Mock private UserQuestionStateRepository stateRepository;
     @Mock private MistakesService mistakesService;
     @Mock private CurrentUserResolver currentUserResolver;
+    @Mock private CourseRepository courseRepository;
     private final Authentication authentication = mock(Authentication.class);
     /** Pula użytkownika; testy filtra źródeł ją podmieniają. */
     private Pool pool = Pools.all();
@@ -57,7 +61,8 @@ class CustomTestServiceTest {
     @BeforeEach
     void setUp() {
         service = new CustomTestService(questionRepository, stateRepository, mistakesService, currentUserResolver,
-                new FsrsEngine(FsrsWeights.defaults(), 0.9), clock, Pools.holding(() -> pool));
+                new FsrsEngine(FsrsWeights.defaults(), 0.9), clock, Pools.holding(() -> pool),
+                new LawChangePolicy(clock, 365), courseRepository);
         User user = new User();
         user.setId(5L);
         lenient().when(currentUserResolver.resolve(authentication)).thenReturn(user);
@@ -74,6 +79,13 @@ class CustomTestServiceTest {
 
     private static QuestionRef ref(long id, long actId, long fieldId, long sourceId) {
         return QuestionRefs.refOf(QuestionRefs.question(id, actId, fieldId, sourceId));
+    }
+
+    /** Pytanie w akcie 1 i własnym arkuszu ze zmianą w prawie z podanego dnia. */
+    private static QuestionRef lawChanged(long id, LocalDate changedAt) {
+        var question = QuestionRefs.question(id, 1, 1, QuestionRefs.OWN_SHEET);
+        question.setLawChangedAt(changedAt);
+        return QuestionRefs.refOf(question);
     }
 
     private static List<QuestionRef> refs(long from, long to) {
@@ -117,11 +129,11 @@ class CustomTestServiceTest {
     }
 
     private static CustomTestRequest request(CustomTestKind kind, int count) {
-        return new CustomTestRequest(null, null, kind, count);
+        return new CustomTestRequest(null, null, null, kind, count);
     }
 
     private CustomTestCountsResponse counts() {
-        return service.counts(null, null, authentication);
+        return service.counts(null, null, null, authentication);
     }
 
     private static Set<Long> set(List<Long> ids) {
@@ -151,7 +163,7 @@ class CustomTestServiceTest {
 
         CustomTestCountsResponse counts = counts();
 
-        assertThat(counts).isEqualTo(new CustomTestCountsResponse(0, 0, 0, 0));
+        assertThat(counts).isEqualTo(new CustomTestCountsResponse(0, 0, 0, 0, 0));
         verify(mistakesService, never()).recentMistakeQuestionIds(ArgumentMatchers.anyLong());
     }
 
@@ -175,11 +187,11 @@ class CustomTestServiceTest {
                 ref(6, 12, 4, QuestionRefs.OWN_SHEET))); // poza zakresem
 
         CustomTestCountsResponse counts = service.counts(
-                java.util.Arrays.asList(2L, 2L, null), List.of(7L, 8L), authentication);
+                java.util.Arrays.asList(2L, 2L, null), List.of(7L, 8L), null, authentication);
 
         assertThat(counts.all()).isEqualTo(4);
         assertThat(set(service.select(
-                new CustomTestRequest(List.of(2L), List.of(7L, 8L), CustomTestKind.ALL, 10), authentication).questionIds()))
+                new CustomTestRequest(List.of(2L), List.of(7L, 8L), null, CustomTestKind.ALL, 10), authentication).questionIds()))
                 .containsExactlyInAnyOrder(1L, 2L, 3L, 4L);
     }
 
@@ -187,8 +199,8 @@ class CustomTestServiceTest {
     void scope_withOnlyActs_ignoresFields() {
         wholePool(List.of(ref(1, 7, 3, QuestionRefs.OWN_SHEET), ref(2, 8, 3, QuestionRefs.OWN_SHEET)));
 
-        assertThat(service.counts(null, List.of(7L), authentication).all()).isEqualTo(1);
-        assertThat(service.counts(List.of(), List.of(), authentication).all()).isEqualTo(2);
+        assertThat(service.counts(null, List.of(7L), null, authentication).all()).isEqualTo(1);
+        assertThat(service.counts(List.of(), List.of(), null, authentication).all()).isEqualTo(2);
     }
 
     // ---------------------------------------------------------------- filtry
@@ -206,8 +218,9 @@ class CustomTestServiceTest {
 
     @Test
     void suspendedQuestions_neverEnterAnyKind() {
-        wholePool(refs(1, 4));
-        // 1 i 2 zawieszone (z minionym terminem i z błędem), 3 zaległe, 4 nowe
+        LocalDate recent = LocalDate.of(2026, 10, 1);
+        wholePool(List.of(lawChanged(1, recent), lawChanged(2, recent), lawChanged(3, recent), lawChanged(4, recent)));
+        // 1 i 2 zawieszone (z minionym terminem i z błędem), 3 zaległe, 4 nowe; wszystkie ze świeżą zmianą w prawie
         schedule(state(1, NOW.minusDays(1), NOW.minusDays(5), true), state(2, NOW.minusDays(1), NOW.minusDays(5), true),
                 overdue(3, 5));
         when(mistakesService.recentMistakeQuestionIds(5L)).thenReturn(List.of(1L, 2L, 3L));
@@ -216,6 +229,89 @@ class CustomTestServiceTest {
             assertThat(service.select(request(kind, 10), authentication).questionIds())
                     .as(kind.name()).doesNotContain(1L, 2L);
         }
+    }
+
+    // ---------------------------------------------------------------- zmiany w prawie
+
+    @Test
+    void lawChange_takesOnlyQuestionsWhoseChangeAlreadyAppliesAndIsWithinTheLastYear() {
+        wholePool(List.of(
+                lawChanged(1, LocalDate.of(2026, 10, 12)),   // dziś: świeża
+                lawChanged(2, LocalDate.of(2025, 10, 12)),   // dokładnie rok temu: jeszcze świeża
+                lawChanged(3, LocalDate.of(2025, 10, 11)),   // rok i dzień temu: za stara
+                lawChanged(4, LocalDate.of(2026, 10, 13)),   // jutro: jeszcze nie obowiązuje
+                ref(5)));                                     // bez zmiany
+
+        CustomTestCountsResponse counts = counts();
+
+        assertThat(counts.lawChanges()).isEqualTo(2);
+        assertThat(counts.all()).isEqualTo(5);
+        assertThat(set(service.select(request(CustomTestKind.LAW_CHANGE, 10), authentication).questionIds()))
+                .containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void lawChange_withNothingChangedSaysSo() {
+        wholePool(refs(1, 3));
+
+        assertThat(counts().lawChanges()).isZero();
+        assertThatThrownBy(() -> service.select(request(CustomTestKind.LAW_CHANGE, 10), authentication))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("zmianą w prawie");
+    }
+
+    @Test
+    void lawChange_isStillSubjectToTheSourceFilter() {
+        wholePool(List.of(
+                QuestionRefs.refOf(withLawChange(QuestionRefs.question(1, 1, 1, QuestionRefs.OWN_SHEET))),
+                QuestionRefs.refOf(withLawChange(QuestionRefs.question(2, 1, 1, QuestionRefs.OTHER_SHEET)))));
+        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
+
+        assertThat(counts().lawChanges()).isEqualTo(1);
+    }
+
+    private static pl.tutlaw.backend.question.Question withLawChange(pl.tutlaw.backend.question.Question question) {
+        question.setLawChangedAt(LocalDate.of(2026, 9, 1));
+        return question;
+    }
+
+    // ---------------------------------------------------------------- przedmioty
+
+    @Test
+    void courses_areTheActsAssignedToThemAndAddToTheScope() {
+        wholePool(List.of(
+                ref(1, 4, 9, QuestionRefs.OWN_SHEET),   // akt 4 przedmiotu
+                ref(2, 5, 9, QuestionRefs.OWN_SHEET),   // akt 5 przedmiotu
+                ref(3, 7, 3, QuestionRefs.OWN_SHEET),   // akt wybrany wprost
+                ref(4, 8, 3, QuestionRefs.OWN_SHEET))); // poza zakresem
+        when(courseRepository.findActIdsByCourseIds(List.of(10L))).thenReturn(List.of(4L, 5L));
+
+        CustomTestCountsResponse counts = service.counts(null, List.of(7L), List.of(10L), authentication);
+
+        assertThat(counts.all()).isEqualTo(3);
+        assertThat(set(service.select(
+                new CustomTestRequest(null, List.of(7L), List.of(10L), CustomTestKind.ALL, 10), authentication).questionIds()))
+                .containsExactlyInAnyOrder(1L, 2L, 3L);
+    }
+
+    @Test
+    void courses_withoutAnyAct_doNotWidenTheScopeToTheWholePool() {
+        wholePool(refs(1, 5));
+        when(courseRepository.findActIdsByCourseIds(List.of(13L))).thenReturn(List.of());
+
+        assertThat(service.counts(null, null, List.of(13L), authentication).all()).isZero();
+        assertThatThrownBy(() -> service.select(
+                new CustomTestRequest(null, null, List.of(13L), CustomTestKind.ALL, 10), authentication))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void courses_overlappingActsCountEachQuestionOnce() {
+        wholePool(List.of(ref(1, 4, 9, QuestionRefs.OWN_SHEET), ref(2, 5, 9, QuestionRefs.OWN_SHEET)));
+        // dwa przedmioty z aktem 4 w obu
+        when(courseRepository.findActIdsByCourseIds(List.of(10L, 12L))).thenReturn(List.of(4L, 5L));
+
+        assertThat(service.counts(null, null, List.of(10L, 12L), authentication).all()).isEqualTo(2);
     }
 
     // ---------------------------------------------------------------- losowanie
@@ -250,7 +346,7 @@ class CustomTestServiceTest {
         schedule(overdue(1, 10));
 
         CustomTestSelectionResponse response = service.select(
-                new CustomTestRequest(null, null, null, 10), authentication);
+                new CustomTestRequest(null, null, null, null, 10), authentication);
 
         assertThat(response.questionIds()).hasSize(5);
     }

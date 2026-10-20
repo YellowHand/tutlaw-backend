@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
 import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.question.QuestionScopes;
@@ -146,7 +147,8 @@ public class ExamService {
                     answer.selectedOption(), question.getCorrectOption(), isCorrect,
                     question.getExplanation(), question.getLegalBasis(), question.getValidAsOf(), sourceName,
                     question.getSource().getKind(), question.getSource().getExamYear(),
-                    question.getLegalAct().getName(), question.getLegalAct().getShortName()));
+                    question.getLegalAct().getName(), question.getLegalAct().getShortName(),
+                    LawChangeInfo.of(question)));
         }
         if (questions.isEmpty()) {
             throw new IllegalArgumentException("Żadne z przesłanych pytań nie jest już dostępne, więc nie ma czego oceniać.");

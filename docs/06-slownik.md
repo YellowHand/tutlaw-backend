@@ -23,7 +23,7 @@ ułożone alfabetycznie.
 | **Guessed (zgadywane)** | Zaznaczenie „Nie jestem pewien” przy odpowiedzi w teście | `guessed`, `review_logs.was_guessed` |
 | **Idempotentny** | Operacja, którą można powtórzyć bez skutków ubocznych (np. ponowne zawieszenie tego samego pytania) | `SuspensionService`, `AuthService.verify` |
 | **JWT** | Podpisany token logowania wysyłany w nagłówku `Authorization: Bearer ...` | `JwtService`, `JwtAuthenticationFilter` |
-| **Katalog Testów** | Drzewo dziedzina → akt → źródło z licznikami pytań dla ekranu Testów | `TestCatalogService`, `GET /api/tests/catalog` |
+| **Katalog Testów** | Drzewo dziedzina → akt → źródło (u Studenta: przedmioty) z licznikami pytań dla ekranu Testów | `TestCatalogService`, `GET /api/tests/catalog` |
 | **Kolejka** | Lista pytań na dzisiejszą sesję: zaległe, potem nowe | `ReviewQueueService`, `QueueRules` |
 | **Lapse (błąd)** | Licznik pomyłek na pytaniu w danym trybie. W teście rośnie przy błędnej odpowiedzi, w fiszkach przy „Nie pamiętam” | `user_question_states.lapses` |
 | **Leech (trudne pytanie)** | Pytanie, na którym pomyłek jest co najmniej 8 (próg w konfiguracji). Aplikacja podpowiada zawieszenie albo zgłoszenie | `LeechPolicy`, `app.review.leech-threshold` |
@@ -36,8 +36,8 @@ ułożone alfabetycznie.
 | **Pewny błąd** | Błędna odpowiedź w teście **bez** „Nie jestem pewien”. Oznacza utrwalone błędne przekonanie i odblokowuje fiszkę pytania | `review_logs` (`was_correct = false`, `was_guessed = false`), `FlashcardUnlockService` |
 | **Powtórka (review)** | Pojedyncza odpowiedź na pytanie zapisana w historii | `ReviewLog`, `review_logs` |
 | **Podstawa prawna** | Przepis, na którym opiera się poprawna odpowiedź (np. „art. 187 KC”); pole opcjonalne, widoczne w fiszce | `questions.legal_basis` |
-| **Pula (pytań użytkownika)** | Zbiór pytań, które użytkownik może ćwiczyć. Wyliczana regułą: dla aplikacji to pytania z jej arkuszy oraz z aktów jej listy, dla Studenta pytania z aktów wszystkich przedmiotów; potem opcjonalne zawężenie do wybranych aktów | `Pool`, `PoolService`, pakiet `pool` |
-| **Przedmiot** | Pozycja ścieżki Student porządkująca akty ze wspólnej bazy (np. „Prawo rzymskie”). Nie ma własnych pytań | `courses`, `course_acts`, pakiet `course` |
+| **Pula (pytań użytkownika)** | Zbiór pytań, które użytkownik może ćwiczyć. Wyliczana regułą: dla aplikacji to pytania z jej arkuszy oraz z aktów jej listy, dla Studenta pytania z aktów wybranych przedmiotów (bez wyboru: wszystkich); potem opcjonalne zawężenie do wybranych aktów | `Pool`, `PoolService`, pakiet `pool` |
+| **Przedmiot** | Pozycja ścieżki Student porządkująca akty ze wspólnej bazy (np. „Prawo karne”). Nie ma własnych pytań. Administrator tworzy go i przypisuje akty SQL-em; student wybiera przedmioty, z których się uczy, i dostaje wszystkie pytania ich aktów. Płatne i darmowe przedmioty to przyszła funkcja | `courses`, `course_acts`, `user_courses`, pakiet `course` |
 | **Przypominalność (retrievability, R)** | Szansa, że użytkownik przypomni sobie pytanie teraz (0–100%) | `FsrsEngine.retrievability` |
 | **Pytanie** | Podstawowa jednostka treści: trzy odpowiedzi ABC, dokładnie jedna poprawna, wyjaśnienie i podstawa prawna. Służy zarówno do Testów, jak i (jako fiszka) do Fiszek | `questions`, `Question` |
 | **Pytania autorskie** | Pytania spoza arkuszy egzaminów, napisane na potrzeby aplikacji; jedno źródło „Pytania autorskie” | `question_sources.kind = 'AUTHORED'`, `SourceKind.AUTHORED` |
@@ -45,16 +45,18 @@ ułożone alfabetycznie.
 | **Retencja efektywna** | Retencja faktycznie użyta do liczenia terminów; w 30 dniach przed egzaminem co najmniej 95% | `EffectiveSettings.effectiveRetention` |
 | **Rola** | `STUDENT` (zwykły użytkownik) albo `ADMIN` (może ukrywać pytania i ustawiać terminy egzaminów) | `Role`, `users.role` |
 | **Stabilność (stability, S)** | Po ilu dniach szansa przypomnienia pytania spada do 90%. Im wyższa, tym trwalej pamiętasz | `user_question_states.stability` |
-| **Student** | Ścieżka rodzaju `STUDENT` o nazwie „Student”: bez egzaminu, terminu i planu dnia; pula to akty wszystkich przedmiotów. Wybiera się ją tak samo jak aplikację | `tracks.kind = 'STUDENT'`, `PUT /api/me/track` |
+| **Student** | Ścieżka rodzaju `STUDENT` o nazwie „Student”: bez egzaminu, terminu i planu dnia; pula to akty wybranych przedmiotów (bez wyboru: wszystkich). Wybiera się ją tak samo jak aplikację | `tracks.kind = 'STUDENT'`, `PUT /api/me/track` |
 | **Ścieżka** | To, co użytkownik wybiera na starcie: jedna z pięciu aplikacji albo Student. Wyznacza pulę pytań, termin egzaminu i plan | `tracks`, `user_settings.track_id`, pakiet `track` |
 | **Trudność (difficulty, D)** | Jak trudne jest pytanie dla użytkownika (1–10) | `user_question_states.difficulty` |
 | **Tryb egzaminacyjny** | Zachowanie, gdy wybrana aplikacja ma ogłoszony termin egzaminu: wyższa retencja w ostatnich 30 dniach, odstępy nie wykraczają poza egzamin, plan nowych pytań (ostatnie 14 dni bez nowych) | `SchedulingRules`, `LearningSettingsService` |
 | **Termin (due date)** | Kiedy pytanie ma wrócić; od niego jest „zaległe” | `user_question_states.due_date` |
 | **Token odświeżający** | Długo żyjący (30 dni) jednorazowy token, którym przeglądarka zdobywa nowy token dostępu bez logowania; wymieniany przy każdym użyciu | `RefreshTokenService`, `refresh_tokens` |
 | **Ukryte pytanie** | Pytanie wyłączone przez administratora dla wszystkich; historia zostaje. Osobno można ukryć samą fiszkę | `questions.hidden`, `questions.flashcard_hidden` |
-| **Własny test** | Sesja nauki ułożona przez użytkownika: wybrane dziedziny i akty prawne, rodzaj pytań (wszystkie, nowe, błędy, zaległe) i liczba pytań (10, 20, 50, 100 albo 150). Bez progu zaliczenia, odpowiedzi jak w zwykłym teście. Zapisywany jako sesja | `CustomTestService`, `CustomTestSessionService`, `POST /api/review/custom-test` |
+| **Własny test** | Sesja nauki ułożona przez użytkownika: wybrane dziedziny, akty prawne i przedmioty (Student), rodzaj pytań (wszystkie, nowe, błędy, zaległe, ze zmianą w prawie) i liczba pytań (10, 20, 50, 100 albo 150). Bez progu zaliczenia, odpowiedzi jak w zwykłym teście. Zapisywany jako sesja | `CustomTestService`, `CustomTestSessionService`, `POST /api/review/custom-test` |
 | **Zaległe pytanie** | Pytanie z minionym terminem powtórki | `ReviewQueueService.splitByDue` |
-| **Zawężenie puli** | Trwały wybór konkretnych aktów, do których użytkownik ogranicza swoją pulę (nie dotyczy egzaminu próbnego). Zmiana ścieżki czyści zawężenie | `user_pool_acts`, `PoolSettingsService` |
+| **Zerowanie postępów** | Świadome, nieodwracalne usunięcie postępów użytkownika (stany nauki, historia odpowiedzi, ręczne fiszki, własne testy, egzaminy, czas nauki) przy zachowaniu konta, ścieżki, ustawień i wybranych przedmiotów. Wymaga wpisania słowa WYZERUJ | `StudyProgressService`, `DELETE /api/me/study-progress` |
+| **Zmiana w prawie** | Data (i opis) zapisana przy pytaniu, którego treść uwzględnia nowelizację. Od tej daty pytanie wraca jako zaległe u tych, którzy odpowiadali przed nią, a przez rok jest w kategorii „Zmiany w prawie” własnego testu; plakietka „Zmiana w prawie: data” towarzyszy mu w nauce | `questions.law_changed_at`, `law_change_note`, `LawChangeService`, `LawChangePolicy`, `CustomTestKind.LAW_CHANGE` |
+| **Zawężenie puli** | Trwały wybór konkretnych aktów (Student: przedmiotów), do których użytkownik ogranicza swoją pulę (nie dotyczy egzaminu próbnego). Zmiana ścieżki czyści zawężenie aktami; wybrane przedmioty zostają | `user_pool_acts`, `user_courses`, `PoolSettingsService` |
 | **Zawieszenie** | Wyłączenie pytania z kolejek i liczników w jednym trybie dla jednego użytkownika, bez utraty postępu | `user_question_states.suspended`, `SuspensionService` |
 | **Zgłoszenie błędu** | Informacja od użytkownika, że pytanie jest błędne, nieaktualne albo niejasne; rozpatrywana ręcznie w bazie | `question_reports`, `QuestionReportService` |
 | **Źródło** | Skąd pochodzi pytanie: arkusz egzaminu aplikacji w danym roku albo pytania autorskie | `question_sources`, pakiet `source` |

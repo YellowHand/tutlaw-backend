@@ -46,6 +46,14 @@ public interface FlashcardAdditionRepository extends JpaRepository<FlashcardAddi
         LocalDateTime getAddedAt();
     }
 
+    /** Ile pytań użytkownik sam dodał do fiszek. */
+    long countByUserId(Long userId);
+
+    /** Kasuje wszystkie ręczne dodania do fiszek użytkownika (zerowanie postępów). Zwraca liczbę usuniętych. */
+    @Modifying
+    @Query("DELETE FROM FlashcardAddition a WHERE a.userId = :userId")
+    int deleteAllByUser(@Param("userId") Long userId);
+
     @Modifying
     @Query("DELETE FROM FlashcardAddition a WHERE a.userId = :userId AND a.questionId = :questionId")
     int deleteByUserIdAndQuestionId(@Param("userId") Long userId, @Param("questionId") Long questionId);

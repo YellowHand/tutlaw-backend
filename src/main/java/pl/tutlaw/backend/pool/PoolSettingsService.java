@@ -6,12 +6,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.common.GroupCount;
 import pl.tutlaw.backend.common.PolishSort;
+import pl.tutlaw.backend.course.Course;
+import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalField;
 import pl.tutlaw.backend.legal.LegalFieldRepository;
 import pl.tutlaw.backend.pool.dto.PoolResponse;
 import pl.tutlaw.backend.pool.dto.UpdatePoolActsRequest;
+import pl.tutlaw.backend.pool.dto.UpdatePoolCoursesRequest;
 import pl.tutlaw.backend.pool.dto.UpdateSourceFilterRequest;
 import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.question.QuestionRepository;
@@ -39,8 +42,8 @@ import java.util.stream.Collectors;
 
 /**
  * Okno „Pula pytań": odczyt puli użytkownika oraz dwie rzeczy, które sam ustawia: zawężenie do wybranych aktów
- * prawnych (trwałe, nie dotyczy egzaminu próbnego) i filtr źródeł w Testach (własne arkusze, arkusze innych ścieżek,
- * pytania autorskie). Samą regułę puli liczy {@link PoolService}.
+ * prawnych (student: do wybranych przedmiotów; trwałe, nie dotyczy egzaminu próbnego) i filtr źródeł w Testach (własne
+ * arkusze, arkusze innych ścieżek, pytania autorskie). Samą regułę puli liczy {@link PoolService}.
  */
 @Service
 @RequiredArgsConstructor
@@ -49,6 +52,8 @@ public class PoolSettingsService {
     private final PoolService poolService;
     private final UserSettingsRepository settingsRepository;
     private final UserPoolActRepository poolActRepository;
+    private final UserCourseRepository userCourseRepository;
+    private final CourseRepository courseRepository;
     private final TrackRepository trackRepository;
     private final LegalFieldRepository fieldRepository;
     private final LegalActRepository actRepository;
@@ -84,6 +89,36 @@ public class PoolSettingsService {
         poolActRepository.flush();
         if (!chosen.isEmpty() && !chosen.containsAll(base)) {
             poolActRepository.saveAll(chosen.stream().map(id -> new UserPoolAct(user.getId(), id)).toList());
+        }
+        return describe(user.getId());
+    }
+
+    /**
+     * Student wybiera przedmioty, z których się uczy. Wybór ma sens tylko na ścieżce Student, a numery muszą wskazywać
+     * przedmioty, które mają akty. Zaznaczenie wszystkich przedmiotów albo pusta lista zdejmuje wybór, żeby
+     * przedmioty dodane później przez administratora były widoczne. Postęp w nauce nie zmienia się: odpowiedzi
+     * należą do pytań, nie do przedmiotów.
+     */
+    @Transactional
+    public PoolResponse updateCourses(UpdatePoolCoursesRequest request, Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        Pool pool = poolService.forUser(user.getId());
+        if (!pool.isStudent()) {
+            throw new IllegalArgumentException("Przedmioty wybierasz na ścieżce Student.");
+        }
+        StudentCourses courses = poolService.studentCourses(user.getId());
+
+        Set<Long> chosen = request.courseIds().stream().filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new));
+        for (Long id : chosen) {
+            if (!courses.actsByCourse().containsKey(id)) {
+                throw new IllegalArgumentException("Wybrany przedmiot nie istnieje albo nie ma jeszcze pytań.");
+            }
+        }
+
+        userCourseRepository.deleteByUserId(user.getId());
+        userCourseRepository.flush();
+        if (!chosen.isEmpty() && !chosen.containsAll(courses.actsByCourse().keySet())) {
+            userCourseRepository.saveAll(chosen.stream().map(id -> new UserCourse(user.getId(), id)).toList());
         }
         return describe(user.getId());
     }
@@ -129,6 +164,9 @@ public class PoolSettingsService {
                             act.getId(), act.getName(), act.getShortName(), act.getKind(),
                             perAct.getOrDefault(act.getId(), 0L).intValue(), selected.contains(act.getId())))
                     .toList();
+            if (acts.isEmpty()) {
+                continue; // dziedzina bez aktów w puli niczego nie daje (np. „Student" użytkownikowi aplikacji)
+            }
             fields.add(new PoolResponse.FieldNode(field.getId(), field.getName(), field.getSlug(), acts));
         }
 
@@ -150,7 +188,35 @@ public class PoolSettingsService {
                 new PoolResponse.SourceGroupNode(SourceFilter.AUTHORED, filter.authored(), perGroup.getOrDefault(SourceFilter.AUTHORED, 0)));
 
         return new PoolResponse(
-                track == null ? null : TrackSummary.of(track), pool.narrowed(), inPool, fields, groups);
+                track == null ? null : TrackSummary.of(track), pool.narrowed(), inPool, fields,
+                pool.isStudent() ? describeCourses(userId, pool) : List.of(), groups);
+    }
+
+    /** Przedmioty do wyboru: tylko takie, w których są jakieś pytania, w kolejności ustalonej przez administratora. */
+    private List<PoolResponse.CourseNode> describeCourses(Long userId, Pool pool) {
+        StudentCourses courses = poolService.studentCourses(userId);
+        Set<Long> allActs = courses.actsByCourse().values().stream().flatMap(List::stream).collect(Collectors.toSet());
+        if (allActs.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Long> perAct = new HashMap<>();
+        for (GroupCount row : questionRepository.countByAct(allActs, pool.allSourceIds())) {
+            perAct.put(row.getGroupId(), row.getTotal());
+        }
+        List<PoolResponse.CourseNode> nodes = new ArrayList<>();
+        for (Course course : courseRepository.findAllByOrderBySortOrderAscIdAsc()) {
+            List<Long> acts = courses.actsByCourse().get(course.getId());
+            if (acts == null) {
+                continue;
+            }
+            int questions = acts.stream().mapToInt(id -> perAct.getOrDefault(id, 0L).intValue()).sum();
+            if (questions == 0) {
+                continue;
+            }
+            nodes.add(new PoolResponse.CourseNode(
+                    course.getId(), course.getName(), course.getSlug(), questions, courses.inPool().contains(course.getId())));
+        }
+        return nodes;
     }
 
     /** Do której z trzech grup filtra należy każde źródło. */

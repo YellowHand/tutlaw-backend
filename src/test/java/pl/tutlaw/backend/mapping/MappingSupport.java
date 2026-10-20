@@ -309,7 +309,15 @@ final class MappingSupport {
                     + "|TIMESTAMP(?:\\s+WITH(?:OUT)?\\s+TIME\\s+ZONE)?|DATE|TIME|BYTEA|UUID|JSONB?)(?!\\w)");
     private static final Set<String> TABLE_CONSTRAINTS = Set.of("CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE");
 
-    /** Czyta CREATE TABLE z tekstu SQL. Rozpoznaje tylko to, czego potrzebują testy (kolumny, typy, NOT NULL, DEFAULT, CHECK ... IN). */
+    private static final Pattern ALTER_ADD_COLUMN = Pattern.compile("(?is)ALTER\\s+TABLE\\s+(\\w+)\\s+ADD\\s+COLUMN\\s+([^;]+);");
+    private static final Pattern ALTER_ADD_CHECK_IN = Pattern.compile(
+            "(?is)ALTER\\s+TABLE\\s+(\\w+)\\s+ADD\\s+CONSTRAINT\\s+\\w+\\s+CHECK\\s*\\(\\s*(\\w+)\\s+IN\\s*\\(([^)]*)\\)\\s*\\)");
+
+    /**
+     * Czyta CREATE TABLE z tekstu SQL, a potem kolejne ALTER TABLE ... ADD COLUMN i ADD CONSTRAINT ... CHECK (kolumna IN (...))
+     * (nowe ograniczenie zastępuje poprzednie dla tej kolumny). Rozpoznaje tylko to, czego potrzebują testy (kolumny, typy,
+     * NOT NULL, DEFAULT, CHECK ... IN).
+     */
     static Map<String, SchemaTable> parseSchema(String sql) {
         String clean = Pattern.compile("--[^\\n]*").matcher(sql).replaceAll("");
         Map<String, SchemaTable> tables = new LinkedHashMap<>();
@@ -329,7 +337,33 @@ final class MappingSupport {
             String body = clean.substring(start, i - 1);
             tables.put(m.group(1).toLowerCase(), new SchemaTable(m.group(1).toLowerCase(), parseColumns(body)));
         }
+        Matcher add = ALTER_ADD_COLUMN.matcher(clean);
+        while (add.find()) {
+            tableOf(tables, add.group(1)).columns().putAll(parseColumns(add.group(2)));
+        }
+        Matcher check = ALTER_ADD_CHECK_IN.matcher(clean);
+        while (check.find()) {
+            Map<String, SchemaColumn> columns = tableOf(tables, check.group(1)).columns();
+            String name = check.group(2).toLowerCase();
+            SchemaColumn column = columns.get(name);
+            if (column == null) {
+                throw new IllegalStateException("CHECK na nieznanej kolumnie: " + check.group(1) + "." + name);
+            }
+            Set<String> values = new LinkedHashSet<>();
+            Matcher v = Pattern.compile("'([^']*)'").matcher(check.group(3));
+            while (v.find()) values.add(v.group(1));
+            columns.put(name, new SchemaColumn(column.name(), column.type(), column.length(), column.notNull(),
+                    column.hasDefault(), column.identity(), values));
+        }
         return tables;
+    }
+
+    private static SchemaTable tableOf(Map<String, SchemaTable> tables, String name) {
+        SchemaTable table = tables.get(name.toLowerCase());
+        if (table == null) {
+            throw new IllegalStateException("ALTER TABLE na nieznanej tabeli: " + name);
+        }
+        return table;
     }
 
     private static Map<String, SchemaColumn> parseColumns(String body) {

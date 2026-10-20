@@ -1,6 +1,7 @@
 package pl.tutlaw.backend.review.dto;
 
 import pl.tutlaw.backend.question.CorrectOption;
+import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.source.SourceKind;
 
 import java.time.LocalDate;
@@ -16,6 +17,7 @@ public record CustomTestSessionDetailResponse(
      * @param selectedOption odpowiedź użytkownika pod oryginalnym kluczem z bazy; {@code null}, gdy nie odpowiedział
      * @param correct        {@code null}, gdy nie odpowiedział
      * @param timeSeconds    czas odpowiedzi; {@code null}, gdy nie odpowiedział albo brak pomiaru
+     * @param lawChange      zmiana w prawie dotykająca pytania ({@code null}, gdy jej nie ma)
      */
     public record Question(
             int position,
@@ -35,7 +37,8 @@ public record CustomTestSessionDetailResponse(
             String actName,
             String sourceName,
             SourceKind sourceKind,
-            Integer examYear
+            Integer examYear,
+            LawChangeInfo lawChange
     ) {
     }
 }

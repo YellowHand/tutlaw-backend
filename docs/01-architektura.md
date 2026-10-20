@@ -25,7 +25,7 @@ flowchart LR
 | Spring Web MVC | w Spring Boot | Kontrolery REST |
 | Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
 | PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe), uruchamiane przy starcie |
+| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta), uruchamiane przy starcie |
 | Spring Security | w Spring Boot | Ochrona endpointów, role |
 | jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
 | Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |
@@ -47,14 +47,14 @@ komplet klas.
 | Pakiet | Za co odpowiada |
 |--------|-----------------|
 | `auth` | Rejestracja, aktywacja, logowanie, reset hasła, JWT (token dostępu) i tokeny odświeżające (rotacja, wykrywanie kradzieży), maile, limity prób |
-| `user` | Encja użytkownika, rola, konto zalogowanego (eksport danych, zmiana hasła, usunięcie konta) |
+| `user` | Encja użytkownika, rola, konto zalogowanego (eksport danych, zmiana hasła, usunięcie konta), **zerowanie postępów w nauce** |
 | `security` | Filtr JWT (sprawdza token przy każdym żądaniu) i reguła ważności sesji |
 | `legal` | Dziedziny prawa (`LegalField`, np. „Prawo karne i proces karny”) i akty prawne albo zagadnienia (`LegalAct`, np. „Kodeks karny”) |
 | `track` | Ścieżki: pięć aplikacji egzaminacyjnych (rodzaj `EXAM`) i ścieżka „Student” (rodzaj `STUDENT`); lista aktów ścieżki |
-| `course` | Przedmioty ścieżki Student: porządkują akty ze wspólnej bazy, nie przechowują własnych pytań |
+| `course` | Przedmioty ścieżki Student: porządkują akty ze wspólnej bazy, nie przechowują własnych pytań; student wybiera, z których się uczy |
 | `source` | Źródła pytań: arkusz egzaminu aplikacji w danym roku (`EXAM_SHEET`) albo pytania autorskie (`AUTHORED`) |
-| `question` | Pytania ABC z dokładnie jedną poprawną odpowiedzią, podstawą prawną i wyjaśnieniem; ukrywanie pytania i fiszki przez administratora; zakres nauki (dziedzina, akt, źródło) |
-| `pool` | **Pula pytań użytkownika** wyliczana regułą (akty ścieżki albo własne arkusze), trwałe zawężenie do wybranych aktów, filtr źródeł |
+| `question` | Pytania ABC z dokładnie jedną poprawną odpowiedzią, podstawą prawną i wyjaśnieniem; ukrywanie pytania i fiszki przez administratora; zakres nauki (dziedzina, akt, źródło); **zmiany w prawie** (data i opis przy pytaniu, zwrot pytań do nauki po zmianie) |
+| `pool` | **Pula pytań użytkownika** wyliczana regułą (akty ścieżki albo własne arkusze; u Studenta akty wybranych przedmiotów), trwałe zawężenie do wybranych aktów, wybór przedmiotów Studenta, filtr źródeł |
 | `catalog` | Drzewo ekranu Testów: dziedzina → akt → źródło, z licznikami pytań |
 | `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS) osobno dla trybów Testy i Fiszki, zawieszanie, błędy, własny test i jego zapis jako sesji („Moje testy”) |
 | `review.fsrs` | Sam algorytm FSRS-6 (wzory matematyczne) |
@@ -197,7 +197,7 @@ Jeśli to samo pytanie dostanie odpowiedź w tym samym trybie w ciągu **1 sekun
 
 ## Testy
 
-W `src/test` jest **55 klas testowych** (ok. 580 testów) i 4 klasy pomocnicze (`testsupport`: zegar do sterowania
+W `src/test` jest **58 klas testowych** (ok. 620 testów) i 4 klasy pomocnicze (`testsupport`: zegar do sterowania
 czasem, „fałszywe” repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy jednostkowe
 czystej logiki (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`, `SourceFilterTest`…) oraz serwisów na repozytoriach w
 pamięci (np. `AuthFlowTest` przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez
@@ -210,7 +210,7 @@ prawdziwą bazą PostgreSQL i uruchamia migracje, więc wymaga działającej baz
 Czego testy **nie** sprawdzają: zapytań JPQL i SQL wykonanych na prawdziwej bazie. W zamian pakiet `mapping` zawiera
 **testy statyczne**, które bez Springa i bez bazy odtwarzają to, co przy starcie sprawdza Hibernate:
 
-- `EntityMappingTest` czyta schemat z migracji `V1`/`V2` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
+- `EntityMappingTest` czyta schemat z migracji `V1`–`V3` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
   zgodne typy, długości oraz ograniczenia `CHECK`;
 - `RepositoryQueryTest` sprawdza zapytania repozytoriów (sklejone słowa kluczowe, parametry bez `@Param`,
   nieistniejące pola encji, aliasy projekcji);

@@ -22,7 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Reguła dostępu do pytań na prawdziwym PoolService, z repozytoriami "w pamięci".
  * <p>Dane: akty 1-6. Ścieżka 1 (adwokacka) ma na liście akty 1 i 2 oraz własny arkusz 1 z pytaniami z aktów 2 i 3;
- * ścieżka 2 (notarialna) ma arkusz 2; źródło 3 to pytania autorskie; ścieżka 9 to Student z przedmiotami z aktami 4 i 5.
+ * ścieżka 2 (notarialna) ma arkusz 2; źródło 3 to pytania autorskie; ścieżka 9 to Student z przedmiotami:
+ * 10 (akt 4), 11 (akt 5) i 12 (akty 4 i 5, więc nakłada się na dwa pozostałe); przedmiot 13 nie ma aktów.
  */
 class PoolServiceTest {
 
@@ -31,6 +32,7 @@ class PoolServiceTest {
     private static final class Fixture {
         UserSettings settings;
         final List<Long> chosenActs = new ArrayList<>();
+        final List<Long> chosenCourses = new ArrayList<>();
         final List<Track> tracks = new ArrayList<>();
         final PoolService service;
 
@@ -51,8 +53,12 @@ class PoolServiceTest {
                 default -> throw new AssertionError("nieoczekiwane: " + method);
             });
             CourseRepository courseRepository = FakeRepos.proxy(CourseRepository.class, (method, args) -> {
-                assertThat(method).isEqualTo("findAllActIds");
-                return List.of(4L, 5L);
+                assertThat(method).isEqualTo("findCourseActs");
+                return List.of(courseAct(10L, 4L), courseAct(11L, 5L), courseAct(12L, 4L), courseAct(12L, 5L));
+            });
+            UserCourseRepository userCourseRepository = FakeRepos.proxy(UserCourseRepository.class, (method, args) -> {
+                assertThat(method).isEqualTo("findCourseIdsByUserId");
+                return List.copyOf(chosenCourses);
             });
             LegalActRepository actRepository = FakeRepos.proxy(LegalActRepository.class, (method, args) -> {
                 assertThat(method).isEqualTo("findAllIds");
@@ -79,7 +85,14 @@ class PoolServiceTest {
                 return List.copyOf(chosenActs);
             });
             service = new PoolService(settingsRepository, trackRepository, courseRepository, actRepository,
-                    sourceRepository, questionRepository, poolActRepository);
+                    sourceRepository, questionRepository, poolActRepository, userCourseRepository);
+        }
+
+        private static CourseRepository.CourseAct courseAct(Long courseId, Long actId) {
+            return new CourseRepository.CourseAct() {
+                public Long getCourseId() { return courseId; }
+                public Long getActId() { return actId; }
+            };
         }
 
         Fixture onTrack(Long trackId) {
@@ -141,6 +154,94 @@ class PoolServiceTest {
         assertThat(pool.isStudent()).isTrue();
         assertThat(pool.baseActIds()).containsExactlyInAnyOrder(4L, 5L);
         assertThat(pool.ownSheetIds()).isEmpty();
+    }
+
+    @Test
+    void aStudentWhoChoseNoCourses_hasAllCourses_andIsNotNarrowed() {
+        Pool pool = new Fixture().onTrack(9L).service.forUser(USER);
+
+        assertThat(pool.narrowed()).isFalse();
+        assertThat(pool.actIds()).containsExactlyInAnyOrder(4L, 5L);
+    }
+
+    @Test
+    void aStudentWhoChoseOneCourse_getsOnlyTheActsOfThatCourse() {
+        Fixture f = new Fixture().onTrack(9L);
+        f.chosenCourses.add(10L);
+
+        Pool pool = f.service.forUser(USER);
+
+        assertThat(pool.narrowed()).isTrue();
+        assertThat(pool.baseActIds()).containsExactly(4L);
+        assertThat(pool.actIds()).containsExactly(4L);
+    }
+
+    @Test
+    void overlappingCourses_shareTheirActs_withoutDuplicates() {
+        Fixture f = new Fixture().onTrack(9L);
+        f.chosenCourses.addAll(List.of(10L, 12L)); // akt 4 jest w obu przedmiotach
+
+        Pool pool = f.service.forUser(USER);
+
+        assertThat(pool.narrowed()).isTrue();
+        assertThat(pool.actIds()).containsExactlyInAnyOrder(4L, 5L);
+        assertThat(pool.actIds()).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void aStudentWhoChoseEveryCourse_isNotNarrowed() {
+        Fixture f = new Fixture().onTrack(9L);
+        f.chosenCourses.addAll(List.of(10L, 11L, 12L));
+
+        assertThat(f.service.forUser(USER).narrowed()).isFalse();
+    }
+
+    @Test
+    void aChosenCourseThatNoLongerExistsOrHasNoActs_doesNotCutTheWholePool() {
+        Fixture f = new Fixture().onTrack(9L);
+        f.chosenCourses.addAll(List.of(13L, 99L)); // 13 nie ma aktów, 99 skasowano
+
+        Pool pool = f.service.forUser(USER);
+
+        assertThat(pool.narrowed()).isFalse();
+        assertThat(pool.actIds()).containsExactlyInAnyOrder(4L, 5L);
+    }
+
+    @Test
+    void aStudentNarrowsWithCourses_notWithActs() {
+        Fixture f = new Fixture().onTrack(9L);
+        f.chosenActs.add(4L); // zawężenie do aktów z dawnej ścieżki nie obowiązuje Studenta
+
+        Pool pool = f.service.forUser(USER);
+
+        assertThat(pool.narrowed()).isFalse();
+        assertThat(pool.actIds()).containsExactlyInAnyOrder(4L, 5L);
+    }
+
+    @Test
+    void chosenCourses_areIgnoredOnAnExamTrack_butKeptForTheWayBack() {
+        Fixture f = new Fixture().onTrack(9L);
+        f.chosenCourses.add(10L);
+        assertThat(f.service.forUser(USER).actIds()).containsExactly(4L);
+
+        f.settings.setTrackId(1L);
+        assertThat(f.service.forUser(USER).actIds()).containsExactlyInAnyOrder(1L, 2L, 3L);
+
+        f.settings.setTrackId(9L);
+        assertThat(f.service.forUser(USER).actIds()).containsExactly(4L);
+    }
+
+    @Test
+    void studentCourses_describeTheActsOfEveryCourseWithActs() {
+        Fixture f = new Fixture();
+        f.chosenCourses.add(11L);
+
+        StudentCourses courses = f.service.studentCourses(USER);
+
+        assertThat(courses.actsByCourse()).containsOnlyKeys(10L, 11L, 12L);
+        assertThat(courses.actsByCourse().get(12L)).containsExactly(4L, 5L);
+        assertThat(courses.inPool()).containsExactly(11L);
+        assertThat(courses.narrowed()).isTrue();
     }
 
     @Test

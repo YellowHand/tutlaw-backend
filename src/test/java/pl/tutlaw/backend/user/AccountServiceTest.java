@@ -177,7 +177,7 @@ class AccountServiceTest {
             CustomTestSessionService customTests = org.mockito.Mockito.mock(CustomTestSessionService.class);
             org.mockito.Mockito.when(customTests.listAll(1L)).thenReturn(List.of(new CustomTestSessionSummaryResponse(
                     7L, T.minusDays(2), T.minusDays(2).plusMinutes(20), true, "Prawo karne", CustomTestKind.NEW,
-                    List.of(2L), List.of(), List.of("OWN_SHEETS", "AUTHORED"),
+                    List.of(2L), List.of(), List.of(), List.of("OWN_SHEETS", "AUTHORED"),
                     20, 20, 20, 15, 2, 300.0)));
 
             service = new AccountService(

@@ -2,6 +2,7 @@ package pl.tutlaw.backend.review;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pl.tutlaw.backend.common.GroupCount;
@@ -21,6 +22,11 @@ public interface ReviewLogRepository extends JpaRepository<ReviewLog, Long> {
     List<Long> findIdsByMode(@Param("userId") Long userId, @Param("mode") ReviewMode mode, Pageable pageable);
 
     long countByUserIdAndMode(Long userId, ReviewMode mode);
+
+    /** Kasuje całą historię odpowiedzi użytkownika (zerowanie postępów). Zwraca liczbę usuniętych wpisów. */
+    @Modifying
+    @Query("DELETE FROM ReviewLog r WHERE r.user.id = :userId")
+    int deleteAllByUser(@Param("userId") Long userId);
 
     /**
      * Średni czas odpowiedzi w sekundach w danym trybie. Pojedyncza odpowiedź liczy się najwyżej tyle, ile

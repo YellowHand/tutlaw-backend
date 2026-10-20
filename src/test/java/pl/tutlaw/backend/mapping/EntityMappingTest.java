@@ -69,6 +69,39 @@ class EntityMappingTest {
         assertThat(tables.get("pair").columns()).containsOnlyKeys("x", "y");
     }
 
+    @Test
+    void parserAppliesAlterTableAddColumnAndReplacesCheckConstraints() {
+        Map<String, SchemaTable> tables = MappingSupport.parseSchema("""
+                CREATE TABLE sample (
+                    id BIGSERIAL PRIMARY KEY,
+                    kind VARCHAR(10) NOT NULL,
+                    CONSTRAINT chk_kind CHECK (kind IN ('A', 'B'))
+                );
+                -- komentarz; ze średnikiem
+                ALTER TABLE sample ADD COLUMN note VARCHAR(500);
+                ALTER TABLE sample ADD COLUMN ids VARCHAR(500) NOT NULL DEFAULT '';
+                ALTER TABLE sample ADD CONSTRAINT chk_note CHECK (note IS NULL OR length(note) > 0);
+                ALTER TABLE sample DROP CONSTRAINT chk_kind;
+                ALTER TABLE sample ADD CONSTRAINT chk_kind CHECK (kind IN ('A', 'B', 'C'));
+                """);
+
+        SchemaTable sample = tables.get("sample");
+        assertThat(sample.columns()).containsOnlyKeys("id", "kind", "note", "ids");
+        assertThat(sample.columns().get("note").notNull()).isFalse();
+        assertThat(sample.columns().get("note").length()).isEqualTo(500);
+        assertThat(sample.columns().get("ids").notNull()).isTrue();
+        assertThat(sample.columns().get("ids").hasDefault()).isTrue();
+        assertThat(sample.columns().get("kind").allowedValues()).containsExactly("A", "B", "C");
+    }
+
+    @Test
+    void theRealSchemaIncludesTheColumnsAddedByLaterMigrations() {
+        assertThat(schema.get("questions").columns()).containsKeys("law_changed_at", "law_change_note");
+        assertThat(schema.get("custom_test_sessions").columns().get("kind").allowedValues())
+                .containsExactlyInAnyOrder("ALL", "NEW", "MISTAKES", "DUE", "LAW_CHANGE");
+        assertThat(schema).containsKey("user_courses");
+    }
+
     // ---------------------------------------------------------------- tabele i kolumny
 
     @Test

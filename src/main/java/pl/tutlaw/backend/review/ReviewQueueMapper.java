@@ -1,6 +1,7 @@
 package pl.tutlaw.backend.review;
 
 import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.review.dto.FlashcardQueueItemResponse;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
 
@@ -24,7 +25,8 @@ public class ReviewQueueMapper {
                 question.getSource().getKind(),
                 question.getSource().getExamYear(),
                 lapses,
-                leech
+                leech,
+                LawChangeInfo.of(question)
         );
     }
 
@@ -39,7 +41,8 @@ public class ReviewQueueMapper {
                 question.getLegalAct().getShortName(),
                 question.getSource().getName(),
                 question.getSource().getKind(),
-                question.getSource().getExamYear()
+                question.getSource().getExamYear(),
+                LawChangeInfo.of(question)
         );
     }
 }

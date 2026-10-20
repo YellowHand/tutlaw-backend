@@ -47,8 +47,9 @@ Wywołanie jest dostępne po zalogowaniu (jak reszta aplikacji). Wybór ścieżk
 
 Przedmioty studenta (kursy) w kolejności z bazy. Przedmiot to **tylko podział aktów prawnych**: wskazuje akty (i
 zagadnienia), z których składa się jego materiał. Pytania i tak należą do aktów, więc nie ma osobnych „pytań
-przedmiotu”. Wybór przedmiotu w aplikacji to zawężenie puli do jego aktów
-([`PUT /api/me/pool/acts`](#put-apimepoolacts--zawężenie-puli-do-aktów)).
+przedmiotu”. Administrator tworzy przedmioty i przypisuje do nich akty skryptem SQL (`course_acts`); student wybiera
+przedmioty, z których się uczy ([`PUT /api/me/pool/courses`](#put-apimepoolcourses--wybór-przedmiotów-studenta)), i dostaje
+wszystkie pytania aktów tych przedmiotów. Ten sam akt w kilku przedmiotach nie dubluje pytań.
 
 ```json
 [
@@ -67,8 +68,8 @@ Zagadnienia spoza prawa (np. paremie łacińskie, logika) to akty rodzaju `TOPIC
 ## Pula pytań użytkownika
 
 Pula to zbiór pytań, które użytkownik może rozwiązywać: **pytania z jego własnych arkuszy ALBO z aktów prawnych jego
-ścieżki** (dla Studenta: z aktów wszystkich przedmiotów), opcjonalnie **zawężone** do aktów wybranych przez
-użytkownika i **przefiltrowane** po źródłach. Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
+ścieżki** (dla Studenta: z aktów **wybranych przedmiotów**, a bez wyboru wszystkich przedmiotów), opcjonalnie **zawężone**
+do aktów wybranych przez użytkownika (Student zawęża przedmiotami, nie aktami) i **przefiltrowane** po źródłach. Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
 
 ### `GET /api/me/pool`
 
@@ -88,6 +89,7 @@ Opis puli do okna „Pula pytań”: wybrana ścieżka, dziedziny z aktami do za
     },
     { "id": 8, "name": "Prawo Unii Europejskiej i międzynarodowe", "slug": "prawo-ue-i-miedzynarodowe", "acts": [] }
   ],
+  "courses": [],
   "sourceGroups": [
     { "code": "OWN_SHEETS",   "selected": true,  "questionCount": 600 },
     { "code": "OTHER_SHEETS", "selected": false, "questionCount": 1400 },
@@ -99,16 +101,19 @@ Opis puli do okna „Pula pytań”: wybrana ścieżka, dziedziny z aktami do za
 | Pole | Znaczenie |
 |------|-----------|
 | `track` | Wybrana ścieżka; `null`, gdy użytkownik jeszcze jej nie wybrał |
-| `narrowed` | Czy użytkownik zawęził pulę do wybranych aktów. Bez zawężenia obowiązują wszystkie akty ścieżki |
+| `narrowed` | Czy użytkownik zawęził pulę do wybranych aktów (Student: do wybranych przedmiotów, czyli nie do wszystkich). Bez zawężenia obowiązują wszystkie akty ścieżki (Student: wszystkie przedmioty) |
 | `questionCount` | Pytania w puli po zawężeniu **i** po filtrze źródeł |
-| `fields` | **Wszystkie** dziedziny (każdy widzi wszystkie), ale `acts` zawiera tylko akty ścieżki użytkownika; dziedzina bez jego aktów ma pustą listę |
+| `fields` | Dziedziny z aktami ścieżki użytkownika; dziedzina **bez** takich aktów jest pomijana (np. „Student” dla użytkownika aplikacji). Na ścieżce Student pusta lista (Student wybiera przedmioty) |
+| `courses` | Tylko na ścieżce Student: przedmioty do wyboru (`id`, `name`, `slug`, `questionCount` = pytania aktów przedmiotu ze wszystkich źródeł, `selected`). Przedmiot bez pytań jest pomijany. Bez własnego wyboru wszystkie mają `selected: true`. Na pozostałych ścieżkach pusta lista |
 | `fields[].acts[].selected` | Czy akt jest w puli po zawężeniu; `questionCount` to pytania aktu ze wszystkich źródeł |
 | `fields[].acts[].kind` | `ACT` (akt prawny) albo `TOPIC` (zagadnienie, np. paremie) |
 | `sourceGroups` | Trzy grupy źródeł: `OWN_SHEETS` (arkusze wybranej ścieżki), `OTHER_SHEETS` (arkusze innych ścieżek), `AUTHORED` (pytania autorskie). `questionCount` to pytania grupy w aktach puli **przed** filtrem; 0 oznacza, że włączenie grupy nic nie da |
 
 ### `PUT /api/me/pool/acts` — zawężenie puli do aktów
 
-Zawęża pulę do wybranych aktów prawnych (trwale, na koncie). Zawężenie obowiązuje w Testach, w fiszkach, we własnych
+Zawęża pulę do wybranych aktów prawnych (trwale, na koncie). **Tylko dla aplikacji**: Student wybiera przedmioty
+([`PUT /api/me/pool/courses`](#put-apimepoolcourses--wybór-przedmiotów-studenta)), a wpisy o aktach są u niego ignorowane.
+Zawężenie obowiązuje w Testach, w fiszkach, we własnych
 testach, w „Moich błędach” i w statystykach (poza statystykami źródeł), ale **nie dotyczy egzaminu próbnego**.
 
 ```json
@@ -129,6 +134,32 @@ testach, w „Moich błędach” i w statystykach (poza statystykami źródeł),
 
 **Błędy:** `400` — „Wybrany akt prawny nie należy do Twojej puli pytań.” (numer spoza aktów ścieżki użytkownika),
 „lista aktów jest wymagana”, „za dużo wybranych aktów prawnych”.
+
+### `PUT /api/me/pool/courses` — wybór przedmiotów Studenta
+
+Wybiera przedmioty, z których uczy się Student (trwale, na koncie). Pulą są wszystkie pytania aktów wybranych przedmiotów;
+akty wspólne dla kilku przedmiotów liczą się raz. Wybór obowiązuje tak samo jak zawężenie do aktów: w Testach, fiszkach,
+własnych testach, „Moich błędach” i statystykach, ale **nie dotyczy egzaminu próbnego**.
+
+```json
+{ "courseIds": [3, 9] }
+```
+
+| Pole | Reguła |
+|------|--------|
+| `courseIds` | Wymagana lista (może być pusta), najwyżej 200 numerów |
+
+- **Pusta lista** albo zaznaczenie **wszystkich** przedmiotów zdejmuje wybór (`narrowed: false`): przedmioty dodane później
+  przez administratora pojawiają się wtedy same.
+- Wybrany przedmiot, którego administrator potem usunął albo opróżnił z aktów, jest ignorowany (wybór nie może wyciąć
+  całej puli).
+- Wybór **zostaje przy zmianie ścieżki** ([`PUT /api/me/track`](09-ustawienia.md#put-apimetrack--wybór-ścieżki)) i przy
+  zerowaniu postępów.
+
+**Odpowiedź `200`:** ten sam kształt co `GET /api/me/pool`.
+
+**Błędy:** `400` — „Przedmioty wybierasz na ścieżce Student.” (inna ścieżka), „Wybrany przedmiot nie istnieje albo nie ma
+jeszcze pytań.” (nic się wtedy nie zmienia), „lista przedmiotów jest wymagana”, „za dużo wybranych przedmiotów”.
 
 ### `PUT /api/me/pool/source-filter` — filtr źródeł
 
@@ -168,6 +199,7 @@ dla zalogowanego użytkownika. Liczą się tylko pytania z **puli** użytkownika
       ]
     }
   ],
+  "courses": [],
   "sources": [
     { "id": 31, "name": "Notarialna 2024", "kind": "EXAM_SHEET", "group": "OWN_SHEETS", "examYear": 2024,
       "questionCount": 150, "solvedCount": 70 },
@@ -182,10 +214,11 @@ dla zalogowanego użytkownika. Liczą się tylko pytania z **puli** użytkownika
 | `narrowed` | Czy pula jest zawężona przez użytkownika do wybranych aktów |
 | `questionCount` | Pytania, które użytkownik **może teraz rozwiązywać** |
 | `solvedCount` | Ile z nich rozwiązał co najmniej raz w teście |
+| `courses` | Tylko dla Studenta: wybrane (albo wszystkie) przedmioty z licznikami (`id`, `name`, `slug`, `questionCount`, `solvedCount`, `actIds`). Przedmioty się nakładają (ten sam akt w dwóch przedmiotach liczy się w obu), więc ich sumy nie dają puli. Przedmiot bez pytań jest pomijany. Dla aplikacji pusta lista |
 | `sources[].group` | `OWN_SHEETS`, `OTHER_SHEETS` albo `AUTHORED` (jak w filtrze źródeł) |
 | `sources[].kind` | `EXAM_SHEET` (arkusz egzaminu, `examYear` wypełniony) albo `AUTHORED` |
 
 Kolejność: **dziedziny** według `sortOrder` (potem nazwa po polsku), **akty** według `sortOrder` (potem nazwa),
 **źródła**: własne arkusze, arkusze innych ścieżek, na końcu pytania autorskie; w grupie od najnowszego roku. Liczniki
-dziedziny są sumą liczników jej aktów. **Dziedziny są zawsze wszystkie** (także puste, z zerami i pustą listą aktów),
-a źródła bez pytań w puli są pomijane.
+dziedziny są sumą liczników jej aktów. **Dziedziny bez aktów w puli użytkownika są pomijane** (np. „Student” u użytkownika aplikacji),
+tak samo źródła bez pytań w puli.

@@ -6,6 +6,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
+import pl.tutlaw.backend.course.Course;
+import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalField;
@@ -14,6 +16,7 @@ import pl.tutlaw.backend.pool.PoolService;
 import pl.tutlaw.backend.pool.SourceFilter;
 import pl.tutlaw.backend.question.CorrectOption;
 import pl.tutlaw.backend.question.Question;
+import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.dto.CustomTestRequest;
 import pl.tutlaw.backend.review.dto.CustomTestSelectionResponse;
@@ -51,6 +54,7 @@ public class CustomTestSessionService {
     private final QuestionRepository questionRepository;
     private final LegalFieldRepository fieldRepository;
     private final LegalActRepository actRepository;
+    private final CourseRepository courseRepository;
     private final PoolService poolService;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
@@ -62,15 +66,24 @@ public class CustomTestSessionService {
         CustomTestSelectionResponse selection = customTestService.select(request, authentication);
 
         List<Long> fieldIds = distinctIds(request.fieldIds());
-        List<Long> actIds = distinctIds(request.actIds());
+        List<Long> chosenActIds = distinctIds(request.actIds());
+        List<Long> courseIds = distinctIds(request.courseIds());
+        // Akty wybranych przedmiotów zapisujemy razem z aktami wybranymi wprost: test da się ułożyć ponownie z tych numerów.
+        List<Long> actIds = new ArrayList<>(chosenActIds);
+        if (!courseIds.isEmpty()) {
+            courseRepository.findActIdsByCourseIds(courseIds).stream()
+                    .filter(id -> !actIds.contains(id))
+                    .forEach(actIds::add);
+        }
 
         CustomTestSession session = new CustomTestSession();
         session.setUser(user);
         session.setStartedAt(LocalDateTime.now(clock));
         session.setKind(request.kind() == null ? CustomTestKind.ALL : request.kind());
-        session.setScopeLabel(CustomTestScopeLabel.describe(scopeNames(fieldIds, actIds)));
-        session.setFieldIds(joinIds(fieldIds));
-        session.setActIds(joinIds(actIds));
+        session.setScopeLabel(CustomTestScopeLabel.describe(scopeNames(courseIds, fieldIds, chosenActIds)));
+        session.setFieldIds(fitting(joinIds(fieldIds), FIELD_IDS_LENGTH));
+        session.setActIds(fitting(joinIds(actIds), ACT_IDS_LENGTH));
+        session.setCourseIds(fitting(joinIds(courseIds), COURSE_IDS_LENGTH));
         session.setSourceGroups(poolService.forUser(user.getId()).filter().serialize());
         session.setRequestedCount(selection.requested());
         session.setAvailableCount(selection.available());
@@ -164,7 +177,7 @@ public class CustomTestSessionService {
                     row.getTimeSpentSeconds(), question.getExplanation(), question.getLegalBasis(),
                     question.getValidAsOf(), question.getLegalAct().getName(),
                     question.getSource().getName(), question.getSource().getKind(),
-                    question.getSource().getExamYear());
+                    question.getSource().getExamYear(), LawChangeInfo.of(question));
         }).toList();
         return new CustomTestSessionDetailResponse(summaryOf(session, rows), questions);
     }
@@ -209,14 +222,22 @@ public class CustomTestSessionService {
         }
         return new CustomTestSessionSummaryResponse(
                 s.getId(), s.getStartedAt(), s.getFinishedAt(), s.isFinished(), s.getScopeLabel(), s.getKind(),
-                parseIds(s.getFieldIds()), parseIds(s.getActIds()),
+                parseIds(s.getFieldIds()), parseIds(s.getActIds()), parseIds(s.getCourseIds()),
                 sourceGroupsOf(s.getSourceGroups()),
                 s.getRequestedCount(), rows.size(), answered, correct, guessed, time);
     }
 
-    /** Nazwy wybranych dziedzin, potem aktów prawnych (w kolejności wyboru); nieistniejące numery są pomijane. */
-    private List<String> scopeNames(List<Long> fieldIds, List<Long> actIds) {
+    /**
+     * Nazwy wybranych przedmiotów, dziedzin i aktów prawnych (w tej kolejności, w kolejności wyboru); nieistniejące
+     * numery są pomijane.
+     */
+    private List<String> scopeNames(List<Long> courseIds, List<Long> fieldIds, List<Long> actIds) {
         List<String> names = new ArrayList<>();
+        if (!courseIds.isEmpty()) {
+            Map<Long, String> byId = courseRepository.findAllById(courseIds).stream()
+                    .collect(Collectors.toMap(Course::getId, Course::getName));
+            courseIds.stream().map(byId::get).filter(Objects::nonNull).forEach(names::add);
+        }
         if (!fieldIds.isEmpty()) {
             Map<Long, String> byId = fieldRepository.findAllById(fieldIds).stream()
                     .collect(Collectors.toMap(LegalField::getId, LegalField::getName));
@@ -228,7 +249,7 @@ public class CustomTestSessionService {
             actIds.stream().map(byId::get).filter(Objects::nonNull).forEach(names::add);
         }
         // Wybrano coś, czego już nie ma: lepsza ogólna nazwa niż "Cała pula".
-        if (names.isEmpty() && (!fieldIds.isEmpty() || !actIds.isEmpty())) {
+        if (names.isEmpty() && (!courseIds.isEmpty() || !fieldIds.isEmpty() || !actIds.isEmpty())) {
             names.add("Wybrane działy");
         }
         return names;
@@ -236,6 +257,20 @@ public class CustomTestSessionService {
 
     private static List<Long> distinctIds(List<Long> raw) {
         return raw == null ? List.of() : raw.stream().filter(Objects::nonNull).distinct().toList();
+    }
+
+    /** Długości kolumn field_ids, act_ids i course_ids w bazie. */
+    static final int FIELD_IDS_LENGTH = 2000;
+    static final int ACT_IDS_LENGTH = 2000;
+    static final int COURSE_IDS_LENGTH = 500;
+
+    /** Lista numerów mieszcząca się w kolumnie: za długą ucinamy na ostatnim całym numerze. */
+    static String fitting(String joined, int maxLength) {
+        if (joined.length() <= maxLength) {
+            return joined;
+        }
+        int cut = joined.lastIndexOf(',', maxLength);
+        return cut < 0 ? "" : joined.substring(0, cut);
     }
 
     static String joinIds(List<Long> ids) {

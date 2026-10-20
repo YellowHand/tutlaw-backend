@@ -6,17 +6,20 @@ Baza to **PostgreSQL 16**. Schemat tworzą wyłącznie migracje **Flyway** (`src
 uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność (`ddl-auto: validate`), niczego nie
 tworzy i nie zmienia.
 
-Są dwie migracje:
+Są trzy migracje:
 
-- `V1__init_schema.sql` — **cały schemat** (23 tabele, ograniczenia, indeksy). To nowa baza startowa (*baseline*): zastąpiła
+- `V1__init_schema.sql` — **cały schemat** (23 tabele; `V3` dodaje 24., ograniczenia, indeksy). To nowa baza startowa (*baseline*): zastąpiła
   dawne migracje V1–V25, a wraz z nią zniknął stary model (kategorie, przedmioty, podręczniki, rozdziały, karty, tagi).
 - `V2__reference_data.sql` — **dane słownikowe**, bez których aplikacja nie ruszy: 11 dziedzin, 6 ścieżek, puste terminy
   egzaminów pięciu aplikacji i źródło „Pytania autorskie”.
+- `V3__law_changes_and_user_courses.sql` — **zmiany w prawie** (dwie kolumny przy pytaniu i nowy rodzaj własnego testu),
+  **przedmioty wybierane przez Studenta** (tabela `user_courses`) i kolumna `course_ids` zapisanego własnego testu. Niczego
+  nie zmienia w istniejących danych: nowe kolumny są puste, nowa tabela jest pusta.
 
 Akty prawne, listy aktów ścieżek, przedmioty studenta, arkusze i pytania **nie są migracją**: wczytuje się je skryptami
 SQL z katalogu `baza/` (patrz [05](05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)).
 
-> Nie edytuj wykonanych migracji. Każda zmiana schematu to **nowy plik** `V3__...sql` itd., bo Flyway zapamiętuje sumę
+> Nie edytuj wykonanych migracji. Każda zmiana schematu to **nowy plik** `V4__...sql` itd., bo Flyway zapamiętuje sumę
 > kontrolną każdej wykonanej migracji (tabela `flyway_schema_history`). Bazę z dawnym schematem (V1–V25) trzeba
 > **utworzyć od nowa** (pusty schemat `public`): migracje się nie uzgodnią, a konta użytkowników z dawnej bazy nie są
 > przenoszone.
@@ -39,6 +42,8 @@ erDiagram
     tracks ||--o{ user_settings : "track_id"
     users ||--o{ user_pool_acts : "zawężenie puli"
     legal_acts ||--o{ user_pool_acts : ""
+    users ||--o{ user_courses : "przedmioty wybrane przez Studenta"
+    courses ||--o{ user_courses : ""
     users ||--o{ user_question_states : "stan nauki (osobno TEST i FLASHCARD)"
     questions ||--o{ user_question_states : ""
     users ||--o{ review_logs : "historia odpowiedzi"
@@ -62,10 +67,11 @@ Trzy grupy tabel:
 1. **Katalog i treść (wspólne dla wszystkich):** `legal_fields`, `legal_acts`, `tracks`, `track_acts`, `courses`,
    `course_acts`, `question_sources`, `questions`, `exam_terms`.
 2. **Dane użytkownika (osobne dla każdego konta):** `users`, tokeny (aktywacji, resetu hasła i odświeżające),
-   `user_settings`, `user_pool_acts`, `user_question_states`, `review_logs`, `flashcard_additions`, `question_reports`,
+   `user_settings`, `user_pool_acts`, `user_courses`, `user_question_states`, `review_logs`, `flashcard_additions`, `question_reports`,
    `custom_test_sessions` (z pytaniami), `exam_attempts`, `study_time_daily`.
-3. **Ustawiane przez administratora:** `exam_terms` (terminy egzaminów), `track_acts` i `course_acts` (które akty należą
-   do ścieżki albo przedmiotu) oraz ukrywanie pytań (`questions.hidden`, `questions.flashcard_hidden`).
+3. **Ustawiane przez administratora:** `exam_terms` (terminy egzaminów), `courses`, `track_acts` i `course_acts` (które
+   akty należą do ścieżki albo przedmiotu), ukrywanie pytań (`questions.hidden`, `questions.flashcard_hidden`) oraz zmiany
+   w prawie (`questions.law_changed_at`, `questions.law_change_note`).
 
 ## Model: dziedzina → akt prawny → pytanie, ścieżki i pula
 
@@ -79,7 +85,8 @@ Trzy grupy tabel:
   2024”) albo jedyne źródło „Pytania autorskie” (`AUTHORED`).
 - **Ścieżka** (`tracks`) to jedna z pięciu aplikacji (`EXAM`) albo **Student** (`STUDENT`, jedna). Aplikacja ma własne
   arkusze i listę aktów (`track_acts`). Student nie ma ani arkuszy, ani listy aktów: jego akty to akty wszystkich
-  przedmiotów (`courses` → `course_acts`), a przedmioty tylko dzielą akty na kursy.
+  wybranych przedmiotów (`user_courses` → `courses` → `course_acts`; bez wyboru: wszystkich przedmiotów), a przedmioty tylko
+  dzielą akty na kursy. Student widzi w aplikacji **przedmioty**, nie listę aktów.
 - **Pula użytkownika** to reguła, a nie ręczne przypisanie: pytania z **jego własnych arkuszy ALBO z aktów jego
   ścieżki**. Pytania z cudzych arkuszy i pytania autorskie wchodzą do puli przez wspólne akty. Użytkownik może pulę
   **zawęzić** do wybranych aktów (`user_pool_acts`) i **przefiltrować źródła** w Testach (`user_settings.include_*`).
@@ -151,7 +158,12 @@ z pytań arkuszy).
 | `slug` | varchar(100), unikalny | |
 | `sort_order` | int ≥ 0, domyślnie 100 | CHECK `chk_courses_sort_order` |
 
-Przedmiot nie ma własnych pytań: to lista aktów (`course_acts`). Wybór przedmiotu w aplikacji zawęża pulę do jego aktów.
+Przedmiot nie ma własnych pytań: to lista aktów (`course_acts`). **Administrator tworzy przedmioty i przypisuje do nich akty
+skryptem SQL** (przykłady w katalogu `baza/` i niżej w „Przydatnych zapytaniach”); aplikacja nie ma panelu do tego. Student
+wybiera przedmioty (`user_courses`), a jego pulą są wszystkie pytania aktów wybranych przedmiotów. Ten sam akt może należeć
+do kilku przedmiotów (np. Kodeks karny w „Prawie karnym” i w „Prawie karnym materialnym”): jego pytania wchodzą do puli raz.
+Przedmiot bez aktów albo bez pytań jest w aplikacji pomijany. **Płatne i darmowe przedmioty to przyszła funkcja** (nie ma
+jej w schemacie ani w kodzie; patrz [07](07-znane-ograniczenia.md)).
 
 ### `question_sources` — źródła pytań
 
@@ -184,6 +196,8 @@ odpowiedź z wyjaśnieniem i podstawą prawną.
 | `explanation` | text, opcjonalny | Wyjaśnienie pokazywane po odpowiedzi i na odwrocie fiszki |
 | `legal_basis` | varchar(500), opcjonalny | Podstawa prawna, np. „art. 148 § 1 k.k.” (nie może być pusta: CHECK `chk_questions_legal_basis_not_blank`) |
 | `valid_as_of` | date, opcjonalny | „Stan prawny na dzień” |
+| `law_changed_at` | date, opcjonalny | Dzień, od którego treść pytania uwzględnia **zmianę w prawie** (dzień wejścia zmiany w życie, a gdy treść pytania poprawiono później, dzień poprawki). Od tego dnia pytanie wraca jako zaległe u każdego, kto odpowiadał na nie wcześniej, a przez rok trafia do kategorii „Zmiany w prawie”. Data z przyszłości jeszcze nic nie zmienia. Indeks częściowy `idx_questions_law_changed` |
+| `law_change_note` | varchar(500), opcjonalny | Krótki opis zmiany pokazywany przy pytaniu (np. „nowelizacja art. 415 k.c. od 1.10.2026”). Wymaga `law_changed_at` i nie może być pusty (CHECK `chk_questions_law_change_note`) |
 | `hidden` | boolean, domyślnie false | Ukryte pytanie znika wszystkim (testy, fiszki, liczniki, egzamin); historia odpowiedzi zostaje |
 | `flashcard_hidden` | boolean, domyślnie false | Ukryta **fiszka**: pytanie zostaje w testach, ale nikt nie ma z niego fiszki |
 | `created_at` | timestamp | Data wczytania (nigdzie niepokazywana) |
@@ -281,6 +295,14 @@ Wiersze (`id`, `user_id`, `legal_act_id`, oba klucze obce `ON DELETE CASCADE`) o
 (`user_id`, `legal_act_id`) jest unikalna (`uq_user_pool_acts`); indeks `idx_user_pool_acts_act`. Wpisy spoza aktów
 ścieżki są ignorowane, a zmiana ścieżki czyści wszystkie. Zawężenie **nie dotyczy** egzaminu próbnego.
 
+### `user_courses` — przedmioty wybrane przez Studenta
+
+Wiersze (`id`, `user_id`, `course_id`, oba klucze obce `ON DELETE CASCADE`) oznaczają przedmioty, z których uczy się
+użytkownik na ścieżce **Student**. **Brak wpisów = wszystkie przedmioty** (przedmioty dodane później widać od razu). Para
+(`user_id`, `course_id`) jest unikalna (`uq_user_courses`); indeks `idx_user_courses_course`. Wpisy zostają przy zmianie
+ścieżki (powrót na Studenta nie wymaga ponownego wyboru), a na ścieżce aplikacji są ignorowane. Przedmiot, którego już nie
+ma albo który nie ma aktów, jest pomijany przy liczeniu puli. Student **nie używa** `user_pool_acts`.
+
 ### `user_question_states` — stan nauki pytania w jednym trybie
 
 Wiersz powstaje przy **pierwszej odpowiedzi** na pytanie w danym trybie; do tej pory pytanie jest w tym trybie „nowe”.
@@ -355,7 +377,7 @@ Powtórki, „Popraw błędy” i egzamin próbny tu nie trafiają. Sesje znikaj
 
 | Tabela | Kolumny | Uwagi |
 |--------|---------|-------|
-| `custom_test_sessions` | `id`, `user_id` (ON DELETE CASCADE), `started_at`, `finished_at` (NULL = nieukończony), `kind` (`ALL`, `NEW`, `MISTAKES`, `DUE`), `scope_label` (nazwa zakresu w chwili układania), `field_ids`, `act_ids` (numery po przecinku; oba puste = cała pula), `source_groups` (filtr źródeł z tej chwili: `OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED` po przecinku, albo NULL), `requested_count`, `available_count` | CHECK `chk_custom_test_sessions_kind`; CHECK `chk_custom_test_sessions_counts` (`requested_count` 1–150, `available_count` ≥ 1). Indeks `idx_custom_test_sessions_user_started` (`user_id`, `started_at DESC`) pod listę „Moje testy”. Z `field_ids` i `act_ids` frontend układa test ponownie |
+| `custom_test_sessions` | `id`, `user_id` (ON DELETE CASCADE), `started_at`, `finished_at` (NULL = nieukończony), `kind` (`ALL`, `NEW`, `MISTAKES`, `DUE`, `LAW_CHANGE`), `scope_label` (nazwa zakresu w chwili układania), `field_ids`, `act_ids` (numery po przecinku; `act_ids` zawiera też akty wybranych przedmiotów), `course_ids` (numery wybranych przedmiotów po przecinku, domyślnie pusty; wszystkie trzy puste = cała pula), `source_groups` (filtr źródeł z tej chwili: `OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED` po przecinku, albo NULL), `requested_count`, `available_count` | CHECK `chk_custom_test_sessions_kind`; CHECK `chk_custom_test_sessions_counts` (`requested_count` 1–150, `available_count` ≥ 1). Indeks `idx_custom_test_sessions_user_started` (`user_id`, `started_at DESC`) pod listę „Moje testy”. Z `field_ids` i `act_ids` frontend układa test ponownie |
 | `custom_test_session_questions` | `id`, `session_id` (ON DELETE CASCADE), `question_id` (ON DELETE CASCADE), `position`, `selected_option` (`A`/`B`/`C` pod oryginalnym kluczem z bazy), `was_correct`, `was_guessed`, `time_spent_seconds`, `answered_at` | Wiersz bez odpowiedzi ma `answered_at = NULL` (CHECK `chk_custom_test_session_questions_answer` pilnuje, że `selected_option`, `was_correct` i `answered_at` są puste razem; `chk_custom_test_session_questions_option` dopuszcza A/B/C). Para (`session_id`, `position`) i para (`session_id`, `question_id`) są unikalne (`uq_custom_test_session_questions_position`, `uq_custom_test_session_questions_question`). Indeks `idx_custom_test_session_questions_question` |
 
 ### `exam_attempts` — podejścia do egzaminu próbnego
@@ -406,7 +428,7 @@ użytkownika: [04](04-nauka-testy-fiszki-fsrs.md#fiszki-z-pytań-i-odblokowywani
 | **Pytanie** | Jego stan nauki u wszystkich użytkowników, historia odpowiedzi, zgłoszenia, ręczne dodania i pozycja w zapisanych własnych testach (`ON DELETE CASCADE`) |
 | **Ścieżkę** | Jej listę aktów (`track_acts`) i termin egzaminu (`exam_terms`). Baza odmówi, dopóki ścieżka ma arkusze (`question_sources.track_id`) albo jest wybrana w `user_settings.track_id` |
 | **Akt prawny** | Jego wpisy w `track_acts`, `course_acts` i `user_pool_acts`. Baza odmówi, dopóki akt ma pytania |
-| **Przedmiot** | Jego wpisy w `course_acts` |
+| **Przedmiot** | Jego wpisy w `course_acts` i `user_courses` |
 
 Dziedziny i źródła nie mają kaskady: baza odmówi usunięcia, dopóki coś do nich należy. Aplikacja nie ma zresztą
 endpointów do usuwania treści (tylko ukrywanie pytań).
@@ -429,6 +451,7 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 |----------|--------------|
 | V1 | Cały schemat (23 tabele): konta i tokeny, katalog (dziedziny, akty prawne, ścieżki, przedmioty studenta, źródła pytań), pytania, ustawienia i pula użytkownika, stan nauki per pytanie i tryb, historia odpowiedzi, fiszki dodane ręcznie, zgłoszenia, własne testy, egzaminy próbne, czas nauki. Nowa baza startowa zamiast dawnych V1–V25 |
 | V2 | Dane słownikowe: 11 dziedzin, 6 ścieżek, puste terminy egzaminów pięciu aplikacji, źródło „Pytania autorskie” |
+| V3 | Zmiany w prawie (`questions.law_changed_at`, `law_change_note`, rodzaj własnego testu `LAW_CHANGE`), przedmioty wybierane przez Studenta (`user_courses`), `custom_test_sessions.course_ids` |
 
 Dawne migracje V1–V25 (model kategorii, przedmiotów, podręczników i kart) zostały zastąpione i **nie ma ścieżki
 przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje skryptami z katalogu `baza/`.
@@ -436,7 +459,7 @@ przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje 
 ## Przydatne zapytania SQL (ręczna administracja)
 
 Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1 i V2. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
+pasują do schematu z migracji V1–V3. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
 pytania, szablon importu, kontrola) są w katalogu `baza/` razem z instrukcją.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się
@@ -463,6 +486,47 @@ INSERT INTO track_acts (track_id, legal_act_id)
 SELECT t.id, a.id FROM tracks t, legal_acts a
 WHERE t.slug = 'notarialna' AND a.slug = 'kodeks-cywilny'
 ON CONFLICT DO NOTHING;
+```
+
+**Przedmioty Studenta: utworzenie i przypisanie aktów.** Przedmiot to nazwa i lista aktów; ten sam akt może być w kilku
+przedmiotach. Student widzi tylko przedmioty (z liczbą pytań) i uczy się ze wszystkich pytań ich aktów.
+
+```sql
+INSERT INTO courses (name, slug, sort_order) VALUES ('Prawo karne', 'prawo-karne', 10)
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO course_acts (course_id, legal_act_id)
+SELECT c.id, a.id FROM courses c, legal_acts a
+WHERE c.slug = 'prawo-karne' AND a.slug IN ('kodeks-karny', 'kodeks-postepowania-karnego')
+ON CONFLICT DO NOTHING;
+
+-- odpięcie aktu od przedmiotu (pytania zostają, znikają tylko z puli studentów tego przedmiotu)
+DELETE FROM course_acts
+WHERE course_id = (SELECT id FROM courses WHERE slug = 'prawo-karne')
+  AND legal_act_id = (SELECT id FROM legal_acts WHERE slug = 'kodeks-postepowania-karnego');
+```
+
+**Zmiana w prawie przy pytaniu.** Data to dzień wejścia zmiany w życie (albo późniejszy dzień poprawienia treści pytania);
+opis jest opcjonalny. Aplikacja przestawia terminy powtórek sama przy starcie i po północy (00:10), więc nowe daty
+zaczynają działać najpóźniej następnej nocy; chcąc od razu, uruchom ten sam `UPDATE` ręcznie (niżej) albo zrestartuj
+backend.
+
+```sql
+UPDATE questions
+SET law_changed_at = DATE '2026-10-01', law_change_note = 'nowelizacja art. 415 k.c.'
+WHERE id IN (123, 124);
+
+-- zdjęcie znacznika (opis wymaga daty, więc najpierw opis)
+UPDATE questions SET law_change_note = NULL, law_changed_at = NULL WHERE id = 123;
+
+-- natychmiastowy zwrot do nauki (to samo robi LawChangeService): pytania po zmianie, na które odpowiadano wcześniej,
+-- stają się zaległe; zawieszone zostają zawieszone
+UPDATE user_question_states s
+SET due_date = now(), version = s.version + 1
+FROM questions q
+WHERE q.id = s.question_id AND NOT s.suspended AND s.due_date > now()
+  AND q.law_changed_at IS NOT NULL AND q.law_changed_at <= current_date
+  AND s.last_review_at < q.law_changed_at;
 ```
 
 **Ukrycie i odkrycie pytania** (znika wszystkim; historia odpowiedzi zostaje) albo samej fiszki:

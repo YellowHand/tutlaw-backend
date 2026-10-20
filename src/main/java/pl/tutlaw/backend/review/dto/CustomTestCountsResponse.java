@@ -8,6 +8,7 @@ package pl.tutlaw.backend.review.dto;
  * @param newQuestions  jeszcze nierozwiązywane
  * @param mistakes      z błędną ostatnią odpowiedzią (z ostatnich dni, jak „Moje błędy")
  * @param due           z minionym terminem powtórki
+ * @param lawChanges   ze zmianą w prawie z ostatniego roku
  */
-public record CustomTestCountsResponse(int all, int newQuestions, int mistakes, int due) {
+public record CustomTestCountsResponse(int all, int newQuestions, int mistakes, int due, int lawChanges) {
 }

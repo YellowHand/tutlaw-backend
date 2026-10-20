@@ -9,7 +9,9 @@ import java.util.List;
  * Zapisany własny test na liście "Moje testy": konfiguracja z chwili układania i wynik do tej pory.
  *
  * @param finishedAt     kiedy odpowiedziano na ostatnie pytanie; {@code null} = test nieukończony
- * @param fieldIds       wybrane dziedziny (z nich i z {@code actIds} da się ułożyć test ponownie; oba puste = cała pula)
+ * @param fieldIds       wybrane dziedziny (z nich, z {@code actIds} i {@code courseIds} da się ułożyć test ponownie;
+ *                       wszystkie puste = cała pula)
+ * @param courseIds      wybrane przedmioty studenta (ich akty są też w {@code actIds})
  * @param sourceGroups   grupy źródeł obowiązujące, gdy układano test (OWN_SHEETS, OTHER_SHEETS, AUTHORED); wszystkie
  *                       trzy, gdy filtr był domyślny
  * @param requestedCount o ile pytań prosił użytkownik
@@ -27,6 +29,7 @@ public record CustomTestSessionSummaryResponse(
         CustomTestKind kind,
         List<Long> fieldIds,
         List<Long> actIds,
+        List<Long> courseIds,
         List<String> sourceGroups,
         int requestedCount,
         int questionCount,

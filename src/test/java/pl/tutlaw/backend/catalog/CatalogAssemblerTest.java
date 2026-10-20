@@ -50,16 +50,17 @@ class CatalogAssemblerTest {
     }
 
     @Test
-    void everyFieldIsListedEvenWithoutActsInThePool_orderedBySortOrderThenName() {
+    void fieldsWithoutActsInThePoolAreLeftOut_theRestOrderedBySortOrderThenName() {
         List<String> slugs = assemble().fields().stream().map(FieldNode::slug).toList();
 
-        assertThat(slugs).containsExactly("cywilne", "karne", "student");
-        assertThat(assemble().fields().get(0).acts()).isEmpty();
+        // „cywilne" nie ma aktów w puli, więc użytkownik w ogóle go nie widzi
+        assertThat(slugs).containsExactly("karne", "student");
+        assertThat(assemble().fields()).noneMatch(field -> field.acts().isEmpty());
     }
 
     @Test
     void actsAreGroupedUnderTheirField_andOnlyThoseFromThePoolAppear() {
-        FieldNode karne = assemble().fields().get(1);
+        FieldNode karne = assemble().fields().get(0);
 
         // k.p.k. nie jest w puli tej ścieżki (nie ma go na liście aktów), więc nie ma go w drzewie
         assertThat(karne.acts()).extracting(ActNode::slug).containsExactly("kk", "kks");
@@ -67,7 +68,7 @@ class CatalogAssemblerTest {
 
     @Test
     void topicsAreActsToo_underTheStudentField() {
-        FieldNode student = assemble().fields().get(2);
+        FieldNode student = assemble().fields().get(1);
 
         assertThat(student.acts()).hasSize(1);
         assertThat(student.acts().get(0).kind()).isEqualTo(LegalActKind.TOPIC);
@@ -76,7 +77,7 @@ class CatalogAssemblerTest {
 
     @Test
     void actCountsAreQuestionsAndSolvedOnes() {
-        ActNode kk = assemble().fields().get(1).acts().get(0);
+        ActNode kk = assemble().fields().get(0).acts().get(0);
 
         assertThat(kk.name()).isEqualTo("Kodeks karny");
         assertThat(kk.shortName()).isEqualTo("k.k.");
@@ -86,7 +87,7 @@ class CatalogAssemblerTest {
 
     @Test
     void fieldTotalsAreSumsOfTheirActs() {
-        FieldNode karne = assemble().fields().get(1);
+        FieldNode karne = assemble().fields().get(0);
 
         assertThat(karne.questionCount()).isEqualTo(130);
         assertThat(karne.solvedCount()).isEqualTo(43);
@@ -150,6 +151,43 @@ class CatalogAssemblerTest {
 
         assertThat(response.narrowed()).isTrue();
         assertThat(assemble().narrowed()).isFalse();
+    }
+
+    // ---------------------------------------------------------------- przedmioty studenta
+
+    private static CatalogAssembler.CourseRow course(long id, String name, int sortOrder, Long... actIds) {
+        return new CatalogAssembler.CourseRow(id, name, "przedmiot-" + id, sortOrder, List.of(actIds));
+    }
+
+    @Test
+    void courseCountsAreTheSumOfTheirActs_andSolvedNeverExceedsTotal() {
+        List<TestCatalogResponse.CourseNode> courses = CatalogAssembler.courseNodes(
+                List.of(course(1, "Prawo karne", 10, 10L, 11L)),
+                Map.of(10L, 100L, 11L, 30L), Map.of(10L, 40L, 11L, 90L));
+
+        assertThat(courses).hasSize(1);
+        assertThat(courses.get(0).questionCount()).isEqualTo(130);
+        assertThat(courses.get(0).solvedCount()).isEqualTo(70); // 40 + min(90, 30)
+        assertThat(courses.get(0).actIds()).containsExactly(10L, 11L);
+    }
+
+    @Test
+    void overlappingCoursesAreCountedSeparately_andOrderedBySortOrderThenName() {
+        List<TestCatalogResponse.CourseNode> courses = CatalogAssembler.courseNodes(
+                List.of(course(2, "Zbiorczy", 30, 10L, 11L), course(3, "Karne", 10, 10L), course(4, "Ąbc", 10, 11L)),
+                Map.of(10L, 100L, 11L, 30L), Map.of());
+
+        assertThat(courses).extracting(TestCatalogResponse.CourseNode::name).containsExactly("Ąbc", "Karne", "Zbiorczy");
+        assertThat(courses).extracting(TestCatalogResponse.CourseNode::questionCount).containsExactly(30, 100, 130);
+    }
+
+    @Test
+    void aCourseWithoutQuestionsIsLeftOut() {
+        List<TestCatalogResponse.CourseNode> courses = CatalogAssembler.courseNodes(
+                List.of(course(1, "Pusty", 10, 10L), course(2, "Bez aktów", 20)),
+                Map.of(), Map.of());
+
+        assertThat(courses).isEmpty();
     }
 
     @Test

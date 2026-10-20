@@ -70,6 +70,13 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 - **Nie ma ręcznie pisanych fiszek.** Fiszka jest trybem nauki istniejącego pytania (przód to pytanie, tył to poprawna
   odpowiedź z wyjaśnieniem i podstawą prawną). Dawne fiszki o dowolnej treści zniknęły razem ze starym schematem.
 - **Pytanie należy do jednego aktu prawnego.** Pytanie dotyczące dwóch ustaw trzeba przypisać do jednej z nich.
+- **To samo pytanie w dwóch arkuszach to dwa wiersze** (dwa osobne stany nauki, dwie osobne zmiany w prawie). To świadoma
+  decyzja: powtórzenia między arkuszami są rzadkie, a ich scalanie utrudniłoby wczytywanie treści.
+- **Przedmioty i zmiany w prawie wpisuje się SQL-em.** Nie ma ekranu administratora do tworzenia przedmiotów,
+  przypisywania im aktów ani oznaczania pytań zmienionych w prawie. Data zmiany zaczyna działać najpóźniej następnej nocy
+  (00:10) albo po restarcie, chyba że administrator uruchomi ręcznie `UPDATE` z dokumentacji.
+- **Płatne i darmowe przedmioty to przyszła funkcja.** Dziś student może wybrać dowolny przedmiot; podział na darmowe i
+  płatne (z ograniczeniem wyboru) trzeba będzie dodać razem z płatnościami (schemat `courses` nie ma na to pola).
 - **Prawo i postępowanie cywilne nie są rozdzielone** (decyzja projektowa): to jedna dziedzina z kilkoma aktami.
 - **Zgłoszenia błędów rozpatruje się zapytaniem SQL.** Użytkownik nie widzi statusu swoich zgłoszeń.
 - **Mail jest zwykłym tekstem** (bez HTML i bez logo).
@@ -94,7 +101,10 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 - **Tryby Testy i Fiszki mają niezależne stany FSRS.** Odpowiedź w teście nie przesuwa terminu fiszki tego samego
   pytania i odwrotnie. To decyzja projektowa, ale statystyki bez parametru `mode` liczą takie pytanie dwa razy.
 - **Filtr źródeł nie dotyczy fiszek**, a zawężenie puli do aktów nie dotyczy egzaminu próbnego.
-- **Zmiana ścieżki czyści zawężenie puli i filtr źródeł** (akty jednej ścieżki nie muszą należeć do drugiej).
+- **Zmiana ścieżki czyści zawężenie puli aktami i filtr źródeł** (akty jednej ścieżki nie muszą należeć do drugiej),
+  ale **nie rusza postępów** ani wybranych przedmiotów Studenta. Postępy zeruje się osobno (WYZERUJ).
+- **Zmiana w prawie nie cofa postępu pytania**, tylko przestawia termin na „teraz”: pytanie wraca raz i po odpowiedzi
+  planuje się jak zwykle. Pytanie zawieszone zostaje zawieszone (użytkownik świadomie je wyłączył).
 - **„Powtórz moje błędy” analizuje do 20 000 ostatnich odpowiedzi** z 30 dni i bierze do 1000 błędnych pytań.
 
 ### Bezpieczeństwo i działanie
@@ -134,7 +144,7 @@ Dziś nie ma problemu, ale przy bardzo dużej bazie (setki tysięcy pytań) kilk
 
 Uczciwie o weryfikacji tej dokumentacji:
 
-- Dokumentacja powstała z **czytania kodu źródłowego i migracji** (wszystkie endpointy, DTO i serwisy Etapu 32). Liczby w przykładzie FSRS (stabilność,
+- Dokumentacja powstała z **czytania kodu źródłowego i migracji** (wszystkie endpointy, DTO i serwisy Etapów 32 i 33). Liczby w przykładzie FSRS (stabilność,
   odstępy, szanse przypomnienia, zakresy rozrzutu terminów) zostały **obliczone prawdziwym kodem silnika** (`FsrsEngine`
   i `SchedulingRules` skompilowane samodzielnie).
 - **Nie uruchamiałem backendu jako aplikacji Springa** (Spring, Hibernate): w środowisku, w którym powstawała
@@ -143,7 +153,7 @@ Uczciwie o weryfikacji tej dokumentacji:
   aplikacji: pierwsze uruchomienie na prawdziwej bazie (Flyway, walidacja Hibernate, wiązanie zapytań Spring Data) może
   jeszcze ujawnić błąd, którego te testy nie widzą. Przed pierwszym użyciem uruchom backend i sprawdź
   `/actuator/health`.
-- **Migracje `V1` i `V2` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
+- **Migracje `V1`–`V3` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
   `ON_ERROR_STOP`). Opisy działania endpointów pochodzą z kodu i testów jednostkowych, a nie z obserwacji
   działającego serwera.
 - **Przykłady JSON są ilustracyjne**: kształt pól pochodzi z klas DTO, ale wartości są wymyślone.

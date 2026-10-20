@@ -42,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -379,6 +380,29 @@ class LearningSettingsServiceTest {
         verify(poolActRepository).deleteByUserId(5L);
         assertThat(response.examDate()).isNull(); // termin nieogłoszony
         assertThat(response.plan()).isNull();
+    }
+
+    @Test
+    void chooseTrack_neverTouchesTheLearningProgress() {
+        // „Twoje postępy zostają": stany nauki i historia odpowiedzi są per pytanie, a nie per ścieżka
+        UserSettings existing = new UserSettings(5L);
+        existing.setTrackId(NOTARIALNA);
+        loggedIn();
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
+        // dwie ścieżki w jednym teście: stub po dowolnym id, bo ścisłe stuby nie lubią różnych argumentów
+        when(trackRepository.findById(ArgumentMatchers.anyLong())).thenAnswer(call -> Optional.of(
+                (Long) call.getArgument(0) == STUDENT
+                        ? track(STUDENT, "student", "Student", TrackKind.STUDENT)
+                        : track(NOTARIALNA, "notarialna", "Notarialna", TrackKind.EXAM)));
+
+        service.chooseTrack(new ChooseTrackRequest(STUDENT), authentication);
+        service.chooseTrack(new ChooseTrackRequest(NOTARIALNA), authentication);
+
+        for (Object repo : List.of(stateRepository, reviewLogs)) {
+            assertThat(mockingDetails(repo).getInvocations())
+                    .extracting(invocation -> invocation.getMethod().getName())
+                    .noneMatch(name -> name.startsWith("delete") || name.startsWith("save") || name.startsWith("remove"));
+        }
     }
 
     @Test

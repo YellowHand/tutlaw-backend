@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse;
 import pl.tutlaw.backend.common.GroupCount;
+import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalField;
@@ -43,6 +44,7 @@ class TestCatalogServiceTest {
     @Mock private QuestionRepository questionRepository;
     @Mock private ReviewLogRepository reviewLogRepository;
     @Mock private CurrentUserResolver currentUserResolver;
+    @Mock private CourseRepository courseRepository;
     private final Authentication authentication = mock(Authentication.class);
 
     private Pool pool = Pools.all();
@@ -51,7 +53,7 @@ class TestCatalogServiceTest {
     @BeforeEach
     void setUp() {
         service = new TestCatalogService(fieldRepository, actRepository, sourceRepository, questionRepository,
-                reviewLogRepository, currentUserResolver, Pools.holding(() -> pool));
+                reviewLogRepository, currentUserResolver, Pools.holding(() -> pool), courseRepository);
         User user = new User();
         user.setId(5L);
         when(currentUserResolver.resolve(authentication)).thenReturn(user);

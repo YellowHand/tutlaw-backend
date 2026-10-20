@@ -1,4 +1,4 @@
-# API: ustawienia (`/api/me/settings`, `/api/me/track`, `/api/me/theme`, `/api/me/interface`, `/api/me/study-time`, `/api/exam-terms`)
+# API: ustawienia (`/api/me/settings`, `/api/me/track`, `/api/me/theme`, `/api/me/interface`, `/api/me/study-time`, `/api/me/study-progress`, `/api/exam-terms`)
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
@@ -109,8 +109,11 @@ Student nie ma terminu egzaminu ani planu dnia (`examDate` i `plan` są `null`).
 Identyfikatory ścieżek podaje [`GET /api/tracks`](03-tresci.md#get-apitracks).
 
 **Zmiana ścieżki** (inna niż dotychczasowa) **czyści zawężenie puli do aktów i przywraca filtr źródeł** (wszystkie trzy
-grupy włączone), bo oba dotyczyły poprzedniej ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia. Stan nauki
-(terminy powtórek, historia) zostaje: należy do pytań, nie do ścieżki.
+grupy włączone), bo oba dotyczyły poprzedniej ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia. **Postępy
+zostają**: stan nauki (terminy powtórek), historia odpowiedzi, własne testy, egzaminy i czas nauki należą do pytań i
+konta, nie do ścieżki. Zostają też wybrane przedmioty Studenta (`user_courses`), więc powrót na ścieżkę Student nie
+wymaga ponownego wyboru. Kto chce zacząć od zera, zeruje postępy osobno
+([`DELETE /api/me/study-progress`](#get-apimestudy-progress-delete-apimestudy-progress--zerowanie-postępów)).
 
 **Odpowiedź `200`**: ten sam kształt co `GET /api/me/settings`, już po zapisie. **Błędy `400`:** „Nie ma takiej
 ścieżki.”, „wybierz ścieżkę” (brak `trackId`).
@@ -170,6 +173,38 @@ bez ruchu; porcje wysyła co około 30 sekund (przy zamykaniu karty przez `fetch
 **Odpowiedź:** `204 No Content`. **Błędy:** `400` („liczba sekund musi wynosić od 1 do 300”). Suma z jednego dnia nie
 przekracza 24 godzin. To inna miara niż czas odpowiedzi na pytanie (`timeSpentSeconds` przy odpowiedzi); obie widać w
 [Podsumowaniu nauki](08-statystyki.md#get-apistatisticslearning-summary).
+
+### `GET /api/me/study-progress`, `DELETE /api/me/study-progress` — zerowanie postępów
+
+Zerowanie to osobna, świadoma operacja: użytkownik zaczyna naukę od zera, ale zostaje przy koncie, wybranej ścieżce,
+ustawieniach nauki (limity, retencja), wybranych przedmiotach i zawężeniu puli oraz zgłoszeniach błędów w pytaniach.
+Znikają: stany nauki obu trybów, historia odpowiedzi, pytania dodane ręcznie do fiszek, własne testy („Moje testy”),
+egzaminy próbne i czas nauki. **Operacja jest nieodwracalna.**
+
+`GET` pokazuje, **ile czego zniknie** (do okna potwierdzenia), niczego nie zmieniając:
+
+```json
+{ "testQuestions": 120, "flashcards": 45, "answers": 1100, "manualFlashcards": 9, "customTests": 14, "exams": 3, "studyTimeSeconds": 36000 }
+```
+
+| Pole | Znaczenie |
+|------|-----------|
+| `testQuestions`, `flashcards` | Pytania w nauce w trybie testu i fiszek (stany FSRS) |
+| `answers` | Zapisane odpowiedzi (historia we wszystkich trybach) |
+| `manualFlashcards` | Pytania dodane do fiszek ręcznie |
+| `customTests`, `exams` | Własne testy z „Moich testów” i podejścia do egzaminu próbnego |
+| `studyTimeSeconds` | Łączny czas nauki |
+
+`DELETE` kasuje te dane **zalogowanego** użytkownika (nigdy cudze) i odpowiada liczbami **sprzed** kasowania (ten sam
+kształt). Wymaga potwierdzenia w treści:
+
+```json
+{ "confirm": "WYZERUJ" }
+```
+
+Słowo musi brzmieć dokładnie `WYZERUJ` (wielkość liter ma znaczenie, spacje wokół są ignorowane). Frontend prosi użytkownika
+o wpisanie go w oknie potwierdzenia. **Błędy `400`:** „Wpisz słowo WYZERUJ, żeby wyzerować postępy.” (brak albo inne
+słowo; wtedy niczego nie kasujemy), „potwierdzenie jest wymagane” (brak pola).
 
 ## Terminy egzaminów
 

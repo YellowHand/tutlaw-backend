@@ -6,12 +6,14 @@ import pl.tutlaw.backend.track.dto.TrackSummary;
 import java.util.List;
 
 /**
- * Pula pytań użytkownika do okna „Pula pytań": ścieżka, zawężenie do aktów i filtr źródeł.
+ * Pula pytań użytkownika do okna „Pula pytań": ścieżka, zawężenie do aktów (student: do przedmiotów) i filtr źródeł.
  *
  * @param track         wybrana ścieżka ({@code null}, gdy jeszcze nie wybrano)
- * @param narrowed      czy użytkownik zawęził pulę do wybranych aktów (bez zawężenia obowiązują wszystkie akty ścieżki)
+ * @param narrowed      czy użytkownik zawęził pulę do wybranych aktów albo, na ścieżce Student, do wybranych przedmiotów
+ *                      (bez zawężenia obowiązują wszystkie akty ścieżki albo wszystkie przedmioty)
  * @param questionCount pytania w puli po zawężeniu i filtrze źródeł
- * @param fields        dziedziny z aktami ścieżki do zaznaczenia (dziedziny bez aktów ścieżki mają pustą listę)
+ * @param fields        dziedziny z aktami ścieżki do zaznaczenia; dziedziny bez aktów w puli użytkownika są pomijane
+ * @param courses       przedmioty do wyboru na ścieżce Student (na pozostałych ścieżkach pusta lista)
  * @param sourceGroups  trzy grupy źródeł (własne arkusze, arkusze innych ścieżek, pytania autorskie)
  */
 public record PoolResponse(
@@ -19,8 +21,16 @@ public record PoolResponse(
         boolean narrowed,
         int questionCount,
         List<FieldNode> fields,
+        List<CourseNode> courses,
         List<SourceGroupNode> sourceGroups
 ) {
+
+    /**
+     * Przedmiot studenta do zaznaczenia; {@code questionCount} to pytania jego aktów ze wszystkich źródeł, a
+     * {@code selected} mówi, czy przedmiot jest w puli (bez własnego wyboru studenta w puli są wszystkie przedmioty).
+     */
+    public record CourseNode(Long id, String name, String slug, int questionCount, boolean selected) {
+    }
 
     public record FieldNode(Long id, String name, String slug, List<ActNode> acts) {
     }

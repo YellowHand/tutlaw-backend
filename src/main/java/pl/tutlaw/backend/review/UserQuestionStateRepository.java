@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import pl.tutlaw.backend.common.GroupCount;
 import pl.tutlaw.backend.pool.PoolJpql;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -23,6 +24,14 @@ import java.util.Optional;
 public interface UserQuestionStateRepository extends JpaRepository<UserQuestionState, Long> {
 
     Optional<UserQuestionState> findByUserIdAndQuestionIdAndMode(Long userId, Long questionId, ReviewMode mode);
+
+    /** Ile pytań użytkownik ma w nauce w trybie (stany, także zawieszone). */
+    long countByUserIdAndMode(Long userId, ReviewMode mode);
+
+    /** Kasuje cały stan nauki użytkownika w obu trybach (zerowanie postępów). Zwraca liczbę usuniętych stanów. */
+    @Modifying
+    @Query("DELETE FROM UserQuestionState s WHERE s.user.id = :userId")
+    int deleteAllByUser(@Param("userId") Long userId);
 
     /**
      * Numer pytania, termin, stabilność i data ostatniej powtórki – wystarcza do zbudowania kolejki (w tym do
@@ -151,6 +160,28 @@ public interface UserQuestionStateRepository extends JpaRepository<UserQuestionS
     int deleteByUserIdAndModeAndQuestionIds(
             @Param("userId") Long userId, @Param("mode") ReviewMode mode,
             @Param("questionIds") Collection<Long> questionIds);
+
+    /**
+     * Zmiana w prawie: pytania, których zmiana weszła w życie ({@code law_changed_at <= :today}) po ostatniej
+     * odpowiedzi użytkownika, wracają jako zaległe (termin powtórki = {@code :now}), w obu trybach. Ruszamy tylko
+     * stany z terminem w przyszłości i niezawieszone, więc ponowne wywołanie niczego nie zmienia, a pytanie
+     * powtórzone po zmianie ({@code last_review_at >= law_changed_at}) już nie wraca. Pytania, których użytkownik
+     * jeszcze nie rozwiązywał, są nowe niezależnie od zmiany. Zwiększa {@code version}, żeby równoległa odpowiedź
+     * dostała konflikt zamiast po cichu nadpisać nowy termin. Zwraca liczbę przestawionych stanów.
+     */
+    @Modifying
+    @Query(value = """
+            UPDATE user_question_states
+            SET due_date = :now, version = user_question_states.version + 1
+            FROM questions q
+            WHERE q.id = user_question_states.question_id
+            AND q.law_changed_at IS NOT NULL
+            AND q.law_changed_at <= :today
+            AND user_question_states.suspended = false
+            AND user_question_states.due_date > :now
+            AND user_question_states.last_review_at < q.law_changed_at
+            """, nativeQuery = true)
+    int requeueAfterLawChange(@Param("now") LocalDateTime now, @Param("today") LocalDate today);
 
     /** Wszystkie stany użytkownika wraz z treścią pytania, do eksportu jego danych. */
     @Query("""

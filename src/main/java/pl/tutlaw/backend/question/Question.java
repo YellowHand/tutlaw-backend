@@ -66,6 +66,19 @@ public class Question {
     private LocalDate validAsOf;
 
     /**
+     * Dzień, od którego treść pytania uwzględnia zmianę w prawie (dzień wejścia zmiany w życie albo późniejszy dzień
+     * aktualizacji pytania). Od tego dnia pytanie wraca jako zaległe u każdego, kto odpowiadał na nie wcześniej
+     * ({@code LawChangeService}), a przez rok trafia do kategorii „Zmiany w prawie". Data z przyszłości jeszcze nic
+     * nie zmienia. Wczytywana skryptem SQL (katalog baza/).
+     */
+    @Column(name = "law_changed_at")
+    private LocalDate lawChangedAt;
+
+    /** Krótki opis zmiany pokazywany przy pytaniu (np. „nowelizacja art. 415 k.c.") albo {@code null}. Wymaga daty. */
+    @Column(name = "law_change_note", length = 500)
+    private String lawChangeNote;
+
+    /**
      * Ukryte pytanie nie pojawia się nikomu (testy, fiszki, liczniki, egzamin), a historia odpowiedzi zostaje.
      */
     @Column(nullable = false)

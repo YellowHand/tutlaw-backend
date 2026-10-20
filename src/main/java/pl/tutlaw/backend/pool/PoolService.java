@@ -14,8 +14,10 @@ import pl.tutlaw.backend.track.Track;
 import pl.tutlaw.backend.track.TrackRepository;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -23,8 +25,10 @@ import java.util.Set;
  * <ul>
  *   <li><b>aplikacja</b>: pytania z jej własnych arkuszy ALBO z aktów prawnych z jej listy (ustawianej przez
  *       administratora); pytania autorskie i pytania z arkuszy innych aplikacji trafiają do puli przez wspólne akty;</li>
- *   <li><b>Student</b>: akty wszystkich przedmiotów (przedmioty pokazują tylko ich podział);</li>
- *   <li><b>zawężenie</b>: użytkownik może zawęzić pulę do wybranych aktów (trwale, poza egzaminem próbnym);</li>
+ *   <li><b>Student</b>: akty wybranych przez niego przedmiotów (bez wyboru: wszystkich przedmiotów); przedmiot to akty
+ *       przypisane przez administratora, a student wybiera przedmioty, nie akty;</li>
+ *   <li><b>zawężenie</b>: użytkownik aplikacji może zawęzić pulę do wybranych aktów (trwale, poza egzaminem
+ *       próbnym); student zawęża przedmiotami;</li>
  *   <li><b>filtr źródeł</b>: własne arkusze / arkusze innych aplikacji / pytania autorskie (dotyczy Testów).</li>
  * </ul>
  * Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
@@ -40,6 +44,7 @@ public class PoolService {
     private final QuestionSourceRepository sourceRepository;
     private final QuestionRepository questionRepository;
     private final UserPoolActRepository poolActRepository;
+    private final UserCourseRepository userCourseRepository;
 
     @Transactional(readOnly = true)
     public Pool forUser(Long userId) {
@@ -58,15 +63,42 @@ public class PoolService {
         return build(userId, track, filter);
     }
 
+    /**
+     * Przedmioty studenta: akty każdego przedmiotu, który ma akty, oraz przedmioty w puli (wybrane przez studenta albo
+     * wszystkie). Wybór, z którego nic nie zostało (przedmiot skasowany albo bez aktów), nie może wyciąć całej puli.
+     */
+    @Transactional(readOnly = true)
+    public StudentCourses studentCourses(Long userId) {
+        Map<Long, List<Long>> actsByCourse = new LinkedHashMap<>();
+        for (CourseRepository.CourseAct pair : courseRepository.findCourseActs()) {
+            actsByCourse.computeIfAbsent(pair.getCourseId(), k -> new ArrayList<>()).add(pair.getActId());
+        }
+        Set<Long> chosen = new LinkedHashSet<>();
+        for (Long id : userCourseRepository.findCourseIdsByUserId(userId)) {
+            if (actsByCourse.containsKey(id)) {
+                chosen.add(id);
+            }
+        }
+        boolean narrowed = !chosen.isEmpty() && !chosen.containsAll(actsByCourse.keySet());
+        Set<Long> inPool = chosen.isEmpty() ? new LinkedHashSet<>(actsByCourse.keySet()) : chosen;
+        return new StudentCourses(actsByCourse, inPool, narrowed);
+    }
+
     /** Numery aktów ścieżki bez zawężenia użytkownika. Bez ścieżki: wszystkie akty. */
     @Transactional(readOnly = true)
-    public Set<Long> baseActIds(Track track) {
+    public Set<Long> baseActIds(Long userId, Track track) {
+        return baseActIds(track, track != null && track.isStudent() ? studentCourses(userId) : null);
+    }
+
+    private Set<Long> baseActIds(Track track, StudentCourses studentCourses) {
         if (track == null) {
             return new LinkedHashSet<>(actRepository.findAllIds());
         }
         Set<Long> ids = new LinkedHashSet<>();
         if (track.isStudent()) {
-            ids.addAll(courseRepository.findAllActIds());
+            for (Long courseId : studentCourses.inPool()) {
+                ids.addAll(studentCourses.actsByCourse().get(courseId));
+            }
             return ids;
         }
         ids.addAll(trackRepository.findActIds(track.getId()));
@@ -79,18 +111,22 @@ public class PoolService {
     }
 
     private Pool build(Long userId, Track track, SourceFilter filter) {
-        Set<Long> base = baseActIds(track);
+        boolean studentTrack = track != null && track.isStudent();
+        StudentCourses courses = studentTrack ? studentCourses(userId) : null;
+        Set<Long> base = baseActIds(track, courses);
 
-        List<Long> chosen = poolActRepository.findActIdsByUserId(userId);
+        // Student zawęża pulę przedmiotami (już w bazie); zawężenie do aktów dotyczy tylko ścieżek-aplikacji.
         List<Long> narrowing = new ArrayList<>();
-        for (Long id : chosen) {
-            if (base.contains(id)) {
-                narrowing.add(id);
+        if (!studentTrack) {
+            for (Long id : poolActRepository.findActIdsByUserId(userId)) {
+                if (base.contains(id)) {
+                    narrowing.add(id);
+                }
             }
         }
         // Zawężenie, z którego po zmianie list przez administratora nic nie zostało, nie może wyciąć całej puli.
-        boolean narrowed = !narrowing.isEmpty();
-        Set<Long> effective = narrowed ? new LinkedHashSet<>(narrowing) : base;
+        boolean narrowed = studentTrack ? courses.narrowed() : !narrowing.isEmpty();
+        Set<Long> effective = narrowing.isEmpty() ? base : new LinkedHashSet<>(narrowing);
 
         List<Long> ownSheets = track == null || track.isStudent()
                 ? List.of() : sourceRepository.findIdsByTrackId(track.getId());

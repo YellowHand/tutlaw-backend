@@ -1,6 +1,7 @@
 -- Reset postępów nauki: stan nauki pytań (osobno testy i fiszki), historia odpowiedzi, ręczne dodania do fiszek,
 -- zapisane własne testy, egzaminy próbne i czas nauki. Konta, ustawienia, wybrana ścieżka, zawężenie puli,
--- zgłoszenia błędów i cała treść (pytania, akty, arkusze) zostają.
+-- wybrane przedmioty Studenta (user_courses), zgłoszenia błędów i cała treść (pytania, akty, arkusze, zmiany w prawie)
+-- zostają. To ten sam zakres, który użytkownik zeruje sam w aplikacji (Konto → „Wyzeruj postępy”, słowo WYZERUJ).
 --
 -- KIEDY: na środowisku testowym, gdy chcesz zacząć naukę od zera, albo po zmianie algorytmu powtórek.
 -- UWAGA: operacja jest NIEODWRACALNA. Nie uruchamia się sama, żadna migracja jej nie wywołuje.

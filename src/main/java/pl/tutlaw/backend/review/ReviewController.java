@@ -80,14 +80,16 @@ public class ReviewController {
 
     /**
      * Własny test, krok 1: ile pytań każdego rodzaju (wszystkie, nowe, błędy, zaległe) jest w wybranym zakresie.
-     * Zakres to suma dziedzin ({@code fieldIds}) i aktów prawnych ({@code actIds}); bez żadnego cała pula.
+     * Zakres to suma dziedzin ({@code fieldIds}), aktów prawnych ({@code actIds}) i przedmiotów studenta
+     * ({@code courseIds}); bez żadnego cała pula.
      */
     @GetMapping("/custom-test/counts")
     public CustomTestCountsResponse getCustomTestCounts(
             @RequestParam(required = false) List<Long> fieldIds,
             @RequestParam(required = false) List<Long> actIds,
+            @RequestParam(required = false) List<Long> courseIds,
             Authentication authentication) {
-        return customTestService.counts(fieldIds, actIds, authentication);
+        return customTestService.counts(fieldIds, actIds, courseIds, authentication);
     }
 
     /**

@@ -96,6 +96,7 @@ Poza zmiennymi środowiskowymi plik `src/main/resources/application.yml` zawiera
 | `app.fsrs.new-test-questions-per-day` | `40` | Domyślny dzienny limit nowych pytań testowych (i dolna granica limitu automatycznego) |
 | `app.fsrs.max-reviews-per-day` | `100` | Domyślny dzienny limit zaległych powtórek (osobno dla fiszek i testów) |
 | `app.review.leech-threshold` | `8` | Od ilu błędów pytanie uchodzi za „trudne” |
+| `app.questions.recent-change-days` | `365` | Do ilu dni po wejściu w życie zmiana w prawie uchodzi za „świeżą” (kategoria „Zmiany w prawie” we własnym teście) |
 | `management.endpoint.health.show-details` | `always` | Pełne szczegóły w `/actuator/health` |
 
 Każdy użytkownik może nadpisać limity i retencję we własnych ustawieniach
@@ -104,11 +105,12 @@ zmienili.
 
 ## Baza danych i migracje
 
-- Schemat tworzą wyłącznie migracje (`src/main/resources/db/migration`): `V1__init_schema.sql` (cały schemat) i
-  `V2__reference_data.sql` (dane słownikowe). Opis tabel: [02](02-baza-danych.md).
+- Schemat tworzą wyłącznie migracje (`src/main/resources/db/migration`): `V1__init_schema.sql` (cały schemat),
+  `V2__reference_data.sql` (dane słownikowe) i `V3__law_changes_and_user_courses.sql` (zmiany w prawie, przedmioty
+  Studenta). Opis tabel: [02](02-baza-danych.md).
 - Dawne migracje `V1`–`V25` zostały zastąpione nowym stanem wyjściowym, więc **bazę ze starego modelu trzeba założyć od
   nowa** (konta użytkowników też). Nie ma migracji przenoszącej dane.
-- Nowa zmiana schematu = nowy plik `V3__krotki_opis.sql`. Nie edytuj wykonanych migracji.
+- Nowa zmiana schematu = nowy plik `V4__krotki_opis.sql`. Nie edytuj wykonanych migracji.
 - **Kopia zapasowa bazy:** `docker exec tutlaw-postgres pg_dump -U <POSTGRES_USER> <POSTGRES_DB> > kopia.sql`.
 - **Reset postępów nauki** (nieodwracalne): `docs/reset-study-progress.sql`.
 - **Pusta baza od nowa** (kasuje wszystko, także treść): `docker compose down -v` usuwa kontener i wolumen z danymi;
@@ -124,6 +126,7 @@ pytania wczytuje się **skryptami SQL**. Skrypty są w katalogu `baza/` (poza re
 |------|----------|
 | `01-wyczysc-baze.sql` | Czyści treść i historię nauki, zostawia konta i dane słownikowe (do ponownego zaczęcia od zera) |
 | `02-katalog-aktow-i-sciezek.sql` | Akty prawne i zagadnienia w 11 dziedzinach, listy aktów pięciu ścieżek egzaminacyjnych, przedmioty ścieżki Student |
+| `06-przedmioty-i-zmiany-w-prawie.sql` | Przykłady do wykonania ręcznie: nowy przedmiot z aktami, odpięcie aktu, zmiana w prawie przy pytaniu i natychmiastowy zwrot pytań do nauki |
 | `03-pytania-przykladowe.sql` | Arkusze i pytania **przykładowe** do testów aplikacji (wymagają weryfikacji merytorycznej przed publikacją) |
 | `04-import-szablon.sql` | Szablon do wczytywania własnych pytań (funkcje `pg_temp.pytanie`, `pg_temp.arkusz`, `pg_temp.zrodlo`) |
 | `05-kontrola.sql` | Raport tylko do odczytu: pytania według dziedzin, aktów i arkuszy oraz pula każdej ścieżki |
@@ -139,7 +142,8 @@ docker exec tutlaw-postgres psql -U tutlaw_user -d tutlaw -v ON_ERROR_STOP=1 -f 
 
 Każdy skrypt działa w jednej transakcji i sam sprawdza, czy ma co robić; przy problemie zatrzymuje się z komunikatem i
 niczego nie zmienia. Szablon `04` domyślnie kończy się `ROLLBACK` i drukuje raport, więc nic nie zostaje zapisane,
-dopóki nie zmienisz go na `COMMIT`. Ukrycie pytania lub samej fiszki i zmiana terminu egzaminu to pojedyncze polecenia SQL
+dopóki nie zmienisz go na `COMMIT`. Przedmioty Studenta i zmiany w prawie to też zwykłe polecenia SQL (`06`; opis w [02](02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja)).
+Ukrycie pytania lub samej fiszki i zmiana terminu egzaminu to pojedyncze polecenia SQL
 (przykłady w [API: pytania, administracja](api/04-pytania-admin.md)). Struktura tabel i przydatne zapytania:
 [02](02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja).
 

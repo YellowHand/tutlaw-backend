@@ -4,6 +4,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
+import pl.tutlaw.backend.course.Course;
+import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalField;
@@ -51,6 +53,7 @@ class CustomTestSessionServiceTest {
     private final CurrentUserResolver resolver = mock(CurrentUserResolver.class);
     private final LegalFieldRepository fields = mock(LegalFieldRepository.class);
     private final LegalActRepository acts = mock(LegalActRepository.class);
+    private final CourseRepository courses = mock(CourseRepository.class);
     private final QuestionRepository questionRepository = mock(QuestionRepository.class);
 
     private Pool pool = Pools.all();
@@ -74,7 +77,7 @@ class CustomTestSessionServiceTest {
             return found;
         });
         service = new CustomTestSessionService(selector, sessionRepo(), questionRepo(), questionRepository,
-                fields, acts, Pools.holding(() -> pool), resolver, clock);
+                fields, acts, courses, Pools.holding(() -> pool), resolver, clock);
     }
 
     private static User user(long id) {
@@ -170,7 +173,7 @@ class CustomTestSessionServiceTest {
     }
 
     private Long startTest(List<Long> questionIds) {
-        return startTest(questionIds, new CustomTestRequest(null, null, CustomTestKind.ALL, 10));
+        return startTest(questionIds, new CustomTestRequest(null, null, null, CustomTestKind.ALL, 10));
     }
 
     private void answer(Long sessionId, long questionId, CorrectOption selected, boolean correct, boolean guessed, Double time) {
@@ -181,6 +184,13 @@ class CustomTestSessionServiceTest {
         LegalField f = QuestionRefs.field(id);
         f.setName(name);
         return f;
+    }
+
+    private static Course course(long id, String name) {
+        Course c = new Course();
+        c.setId(id);
+        c.setName(name);
+        return c;
     }
 
     private static LegalAct act(long id, String name) {
@@ -197,7 +207,7 @@ class CustomTestSessionServiceTest {
         when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks cywilny")));
         pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
 
-        CustomTestRequest request = new CustomTestRequest(List.of(2L), Arrays.asList(9L, 9L, null),
+        CustomTestRequest request = new CustomTestRequest(List.of(2L), Arrays.asList(9L, 9L, null), null,
                 CustomTestKind.MISTAKES, 20);
         Long id = startTest(List.of(7L, 3L, 11L), request);
 
@@ -230,8 +240,66 @@ class CustomTestSessionServiceTest {
     }
 
     @Test
+    void aTestFromSubjectsStoresTheSubjectsAndTheirActsAndNamesTheScopeAfterThem() {
+        Course karne = course(10L, "Prawo karne");
+        Course cywilne = course(12L, "Prawo cywilne");
+        when(courses.findAllById(List.of(10L, 12L))).thenReturn(List.of(cywilne, karne));
+        when(courses.findActIdsByCourseIds(List.of(10L, 12L))).thenReturn(List.of(4L, 5L, 4L, 9L));
+        when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks cywilny")));
+
+        CustomTestRequest request = new CustomTestRequest(null, List.of(9L), List.of(10L, 12L, 10L),
+                CustomTestKind.LAW_CHANGE, 10);
+        startTest(List.of(1L, 2L), request);
+
+        CustomTestSession saved = sessions.get(0);
+        assertThat(saved.getKind()).isEqualTo(CustomTestKind.LAW_CHANGE);
+        assertThat(saved.getCourseIds()).isEqualTo("10,12");
+        // akty wybrane wprost najpierw, potem akty przedmiotów bez powtórzeń
+        assertThat(saved.getActIds()).isEqualTo("9,4,5");
+        // nazwy w kolejności wyboru: przedmioty, potem akty wybrane wprost (nie akty przedmiotów)
+        assertThat(saved.getScopeLabel()).isEqualTo("Prawo karne, Prawo cywilne i Kodeks cywilny");
+    }
+
+    @Test
+    void aTestWithoutSubjectsStoresNoCourseIds() {
+        startTest(List.of(1L));
+
+        assertThat(sessions.get(0).getCourseIds()).isEmpty();
+    }
+
+    @Test
+    void aSubjectThatNoLongerExistsFallsBackToAGeneralLabel() {
+        CustomTestRequest request = new CustomTestRequest(null, null, List.of(77L), CustomTestKind.ALL, 10);
+        when(courses.findAllById(List.of(77L))).thenReturn(List.of());
+        when(courses.findActIdsByCourseIds(List.of(77L))).thenReturn(List.of());
+
+        startTest(List.of(1L), request);
+
+        assertThat(sessions.get(0).getScopeLabel()).isEqualTo("Wybrane działy");
+        assertThat(sessions.get(0).getCourseIds()).isEqualTo("77");
+    }
+
+    @Test
+    void idListsAreCutOnAWholeNumberToFitTheirColumns() {
+        assertThat(CustomTestSessionService.fitting("1,2,3", 500)).isEqualTo("1,2,3");
+        assertThat(CustomTestSessionService.fitting("", 500)).isEmpty();
+        assertThat(CustomTestSessionService.fitting("11,22,33", 7)).isEqualTo("11,22");
+        assertThat(CustomTestSessionService.fitting("11,22,33", 5)).isEqualTo("11,22");
+        assertThat(CustomTestSessionService.fitting("11,22,33", 4)).isEqualTo("11");
+        assertThat(CustomTestSessionService.fitting("123456789", 4)).isEmpty();
+
+        String longList = java.util.stream.LongStream.rangeClosed(1_000_000, 1_000_200)
+                .mapToObj(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        String fitted = CustomTestSessionService.fitting(longList, CustomTestSessionService.COURSE_IDS_LENGTH);
+        assertThat(fitted.length()).isLessThanOrEqualTo(CustomTestSessionService.COURSE_IDS_LENGTH);
+        assertThat(longList).startsWith(fitted);
+        assertThat(fitted).doesNotEndWith(",");
+        assertThat(CustomTestSessionService.parseIds(fitted)).allMatch(id -> id >= 1_000_000);
+    }
+
+    @Test
     void selectionFailureSavesNothing() {
-        CustomTestRequest request = new CustomTestRequest(null, null, CustomTestKind.NEW, 10);
+        CustomTestRequest request = new CustomTestRequest(null, null, null, CustomTestKind.NEW, 10);
         when(selector.select(request, authentication)).thenThrow(new IllegalArgumentException("Brak pytań"));
 
         assertThatThrownBy(() -> service.draw(request, authentication)).isInstanceOf(IllegalArgumentException.class);
@@ -242,7 +310,7 @@ class CustomTestSessionServiceTest {
 
     @Test
     void unknownSelectedItemsFallBackToAGeneralLabel() {
-        CustomTestRequest request = new CustomTestRequest(List.of(77L), null, CustomTestKind.ALL, 10);
+        CustomTestRequest request = new CustomTestRequest(List.of(77L), null, null, CustomTestKind.ALL, 10);
         when(fields.findAllById(List.of(77L))).thenReturn(List.of());
 
         startTest(List.of(1L), request);
@@ -354,7 +422,7 @@ class CustomTestSessionServiceTest {
         when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks pracy")));
         pool = Pools.of(new SourceFilter(false, true, false), 1, 2);
 
-        startTest(List.of(1L), new CustomTestRequest(List.of(2L, 4L), List.of(9L), CustomTestKind.DUE, 10));
+        startTest(List.of(1L), new CustomTestRequest(List.of(2L, 4L), List.of(9L), null, CustomTestKind.DUE, 10));
 
         CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
         assertThat(summary.fieldIds()).containsExactly(2L, 4L);

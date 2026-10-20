@@ -2,6 +2,7 @@ package pl.tutlaw.backend.catalog;
 
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.ActNode;
+import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.CourseNode;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.FieldNode;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.SourceNode;
 import pl.tutlaw.backend.common.PolishSort;
@@ -36,7 +37,7 @@ final class CatalogAssembler {
     }
 
     /**
-     * @param fields         wszystkie dziedziny
+     * @param fields         wszystkie dziedziny (te bez aktów w puli są pomijane)
      * @param actsInPool     tylko akty z puli użytkownika
      * @param sources        źródła dozwolone filtrem źródeł
      * @param ownSheetIds    arkusze wybranej ścieżki
@@ -66,6 +67,9 @@ final class CatalogAssembler {
                     .sorted(Comparator.comparingInt(ActRow::sortOrder).thenComparing(ActRow::name, PolishSort.byName()))
                     .map(act -> actNode(act, totalByAct, solvedByAct))
                     .toList();
+            if (actNodes.isEmpty()) {
+                continue; // dziedzina bez aktów w puli niczego nie daje użytkownikowi
+            }
             fieldNodes.add(new FieldNode(
                     field.id(), field.name(), field.slug(),
                     sum(actNodes, ActNode::questionCount), sum(actNodes, ActNode::solvedCount), actNodes));
@@ -81,7 +85,36 @@ final class CatalogAssembler {
             sourceNodes.add(new SourceNode(
                     source.id(), source.name(), source.kind(), groupOf(source, ownSheetIds), source.examYear(), total, solved));
         }
-        return new TestCatalogResponse(narrowed, fieldNodes, sourceNodes);
+        return new TestCatalogResponse(narrowed, fieldNodes, List.of(), sourceNodes);
+    }
+
+    /** Przedmiot z aktami do liczenia pytań. */
+    record CourseRow(Long id, String name, String slug, int sortOrder, List<Long> actIds) {
+    }
+
+    /**
+     * Przedmioty studenta z licznikami z ich aktów. Przedmioty bez żadnego pytania są pomijane. Akty mogą należeć do
+     * kilku przedmiotów, więc przedmioty liczone są osobno (suma przedmiotów może przekraczać liczbę pytań w puli).
+     */
+    static List<CourseNode> courseNodes(List<CourseRow> courses, Map<Long, Long> totalByAct, Map<Long, Long> solvedByAct) {
+        List<CourseNode> nodes = new ArrayList<>();
+        for (CourseRow course : courses.stream()
+                .sorted(Comparator.comparingInt(CourseRow::sortOrder).thenComparing(CourseRow::name, PolishSort.byName())
+                        .thenComparing(CourseRow::id))
+                .toList()) {
+            int total = 0;
+            int solved = 0;
+            for (Long actId : course.actIds()) {
+                int actTotal = totalByAct.getOrDefault(actId, 0L).intValue();
+                total += actTotal;
+                solved += Math.min(solvedByAct.getOrDefault(actId, 0L).intValue(), actTotal);
+            }
+            if (total == 0) {
+                continue;
+            }
+            nodes.add(new CourseNode(course.id(), course.name(), course.slug(), total, solved, List.copyOf(course.actIds())));
+        }
+        return nodes;
     }
 
     /** Grupa filtra źródeł, do której należy źródło. */

@@ -1,6 +1,7 @@
 package pl.tutlaw.backend.exam.dto;
 
 import pl.tutlaw.backend.question.CorrectOption;
+import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.source.SourceKind;
 
 import java.time.LocalDate;
@@ -27,6 +28,7 @@ public record ExamResultResponse(
      * Jedno pytanie z raportu, w kolejności egzaminu. Wyjaśnienie i podstawa prawna bywają puste.
      *
      * @param selectedOption null = bez odpowiedzi
+     * @param lawChange      zmiana w prawie dotykająca pytania ({@code null}, gdy jej nie ma)
      */
     public record QuestionResult(
             Long questionId,
@@ -44,7 +46,8 @@ public record ExamResultResponse(
             SourceKind sourceKind,
             Integer examYear,
             String actName,
-            String actShortName
+            String actShortName,
+            LawChangeInfo lawChange
     ) {
     }
 }

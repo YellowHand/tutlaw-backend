@@ -5,15 +5,18 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.catalog.CatalogAssembler.ActRow;
+import pl.tutlaw.backend.catalog.CatalogAssembler.CourseRow;
 import pl.tutlaw.backend.catalog.CatalogAssembler.FieldRow;
 import pl.tutlaw.backend.catalog.CatalogAssembler.SourceRow;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse;
 import pl.tutlaw.backend.common.GroupCount;
+import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalFieldRepository;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.pool.StudentCourses;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
 import pl.tutlaw.backend.source.QuestionSourceRepository;
@@ -37,6 +40,7 @@ public class TestCatalogService {
     private final ReviewLogRepository reviewLogRepository;
     private final CurrentUserResolver currentUserResolver;
     private final PoolService poolService;
+    private final CourseRepository courseRepository;
 
     /**
      * Całe drzewo Testów jednym wywołaniem. Tabele dziedzin, aktów i źródeł są małe, a liczniki pytań pochodzą
@@ -61,12 +65,31 @@ public class TestCatalogService {
                 .map(s -> new SourceRow(s.getId(), s.getName(), s.getKind(), s.getExamYear()))
                 .toList();
 
-        return CatalogAssembler.assemble(
+        Map<Long, Long> totalByAct = toMap(questionRepository.countByAct(pool.actIds(), pool.sourceIds()));
+        Map<Long, Long> solvedByAct = toMap(
+                reviewLogRepository.countSolvedTestQuestionsByAct(user.getId(), pool.actIds(), pool.sourceIds()));
+        TestCatalogResponse tree = CatalogAssembler.assemble(
                 pool.narrowed(), fields, acts, sources, new HashSet<>(pool.ownSheetIds()),
-                toMap(questionRepository.countByAct(pool.actIds(), pool.sourceIds())),
-                toMap(reviewLogRepository.countSolvedTestQuestionsByAct(user.getId(), pool.actIds(), pool.sourceIds())),
+                totalByAct, solvedByAct,
                 toMap(questionRepository.countBySource(pool.actIds(), pool.sourceIds())),
                 toMap(reviewLogRepository.countSolvedTestQuestionsBySource(user.getId(), pool.actIds(), pool.sourceIds())));
+        if (!pool.isStudent()) {
+            return tree;
+        }
+        return new TestCatalogResponse(
+                tree.narrowed(), tree.fields(), studentCourses(user.getId(), totalByAct, solvedByAct), tree.sources());
+    }
+
+    /** Przedmioty z puli studenta (wybrane albo wszystkie) z licznikami pytań z ich aktów. */
+    private List<TestCatalogResponse.CourseNode> studentCourses(
+            Long userId, Map<Long, Long> totalByAct, Map<Long, Long> solvedByAct) {
+        StudentCourses courses = poolService.studentCourses(userId);
+        List<CourseRow> rows = courseRepository.findAllByOrderBySortOrderAscIdAsc().stream()
+                .filter(c -> courses.inPool().contains(c.getId()))
+                .map(c -> new CourseRow(c.getId(), c.getName(), c.getSlug(), c.getSortOrder(),
+                        courses.actsByCourse().getOrDefault(c.getId(), List.of())))
+                .toList();
+        return CatalogAssembler.courseNodes(rows, totalByAct, solvedByAct);
     }
 
     static ActRow toRow(LegalAct act) {

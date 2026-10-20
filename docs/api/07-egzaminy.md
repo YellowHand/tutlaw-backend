@@ -115,7 +115,8 @@ Progu zaliczenia ani zakresu klient nie wysyła: nieznane pola (np. `passThresho
       "selectedOption": "B", "correctOption": "B", "correct": true,
       "explanation": "…", "legalBasis": "art. 26 § 1 k.k.", "validAsOf": "2026-01-01",
       "sourceName": "Notarialna 2024", "sourceKind": "EXAM_SHEET", "examYear": 2024,
-      "actName": "Kodeks karny", "actShortName": "k.k."
+      "actName": "Kodeks karny", "actShortName": "k.k.",
+      "lawChange": null
     }
   ]
 }
@@ -129,7 +130,7 @@ Progu zaliczenia ani zakresu klient nie wysyła: nieznane pola (np. `passThresho
 | `attempt.passed` | Zaliczone, gdy liczba poprawnych odpowiedzi jest co najmniej równa `passPoints` (liczby całkowite) |
 | `excludedCount` | Pytania z listy, których nie dało się ocenić (usunięte lub już niedostępne); nie wchodzą do wyniku |
 | `bySource` | Wynik w obrębie źródeł pytań (np. „Notarialna 2024”, „Pytania autorskie”), od największego |
-| `questions` | Każde pytanie w kolejności egzaminu, z poprawną odpowiedzią, wyjaśnieniem, podstawą prawną (`legalBasis`, `validAsOf`) i aktem prawnym |
+| `questions` | Każde pytanie w kolejności egzaminu, z poprawną odpowiedzią, wyjaśnieniem, podstawą prawną (`legalBasis`, `validAsOf`), aktem prawnym i znacznikiem zmiany w prawie (`lawChange`, jak w [05](05-nauka.md#get-apireviewflashcard-queue--kolejka-fiszek)) |
 
 Punktacja: 1 punkt za poprawną odpowiedź, bez punktów ujemnych, brak odpowiedzi = 0.
 

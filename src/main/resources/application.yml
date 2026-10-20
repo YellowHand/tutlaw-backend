@@ -42,6 +42,9 @@ app:
   review:
     # Od ilu błędów pytanie uchodzi za „trudne" (podpowiedź, żeby je zawiesić albo zgłosić). Niczego nie zawiesza samo.
     leech-threshold: 8
+  questions:
+    # Do ilu dni po wejściu w życie zmiana w prawie uchodzi za „świeżą" (kategoria „Zmiany w prawie" we własnym teście).
+    recent-change-days: 365
 
 management:
   endpoint:

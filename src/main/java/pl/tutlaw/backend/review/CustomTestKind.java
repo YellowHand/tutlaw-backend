@@ -12,5 +12,7 @@ public enum CustomTestKind {
     /** Pytania, w których ostatnia odpowiedź w teście była błędna (z ostatnich 30 dni): jak „Moje błędy". */
     MISTAKES,
     /** Pytania z minionym terminem powtórki. */
-    DUE
+    DUE,
+    /** Pytania ze zmianą w prawie z ostatniego roku (zob. {@code LawChangePolicy}). */
+    LAW_CHANGE
 }

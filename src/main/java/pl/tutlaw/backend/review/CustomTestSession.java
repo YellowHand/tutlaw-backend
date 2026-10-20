@@ -49,6 +49,10 @@ public class CustomTestSession {
     @Column(name = "act_ids", nullable = false, length = 2000)
     private String actIds = "";
 
+    /** Numery wybranych przedmiotów studenta, oddzielone przecinkami (puste: nie wybrano przedmiotów). */
+    @Column(name = "course_ids", nullable = false, length = 500)
+    private String courseIds = "";
+
     /**
      * Filtr źródeł w chwili układania testu: kody grup (OWN_SHEETS, OTHER_SHEETS, AUTHORED) oddzielone przecinkami
      * albo null (wszystkie). Zob. {@code SourceFilter#serialize}.

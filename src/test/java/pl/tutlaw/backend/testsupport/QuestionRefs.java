@@ -8,6 +8,7 @@ import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.source.QuestionSource;
 import pl.tutlaw.backend.source.SourceKind;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -84,6 +85,7 @@ public final class QuestionRefs {
         long fieldId = question.getLegalAct().getLegalField().getId();
         long sourceId = question.getSource().getId();
         boolean flashcardHidden = question.isFlashcardHidden();
+        LocalDate lawChangedAt = question.getLawChangedAt();
         return new QuestionRef() {
             @Override
             public Long getId() {
@@ -108,6 +110,11 @@ public final class QuestionRefs {
             @Override
             public Boolean getFlashcardHidden() {
                 return flashcardHidden;
+            }
+
+            @Override
+            public LocalDate getLawChangedAt() {
+                return lawChangedAt;
             }
         };
     }

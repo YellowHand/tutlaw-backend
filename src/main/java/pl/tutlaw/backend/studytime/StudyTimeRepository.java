@@ -30,6 +30,11 @@ public interface StudyTimeRepository extends JpaRepository<StudyTimeDaily, Study
     @Query("SELECT COALESCE(SUM(d.seconds), 0L) FROM StudyTimeDaily d WHERE d.userId = :userId")
     long sumAll(@Param("userId") Long userId);
 
+    /** Kasuje cały czas nauki użytkownika (zerowanie postępów). Zwraca liczbę usuniętych dni. */
+    @Modifying
+    @Query("DELETE FROM StudyTimeDaily d WHERE d.userId = :userId")
+    int deleteAllByUser(@Param("userId") Long userId);
+
     /** Wszystkie dni użytkownika, od najnowszego (do eksportu danych). */
     @Query("SELECT d FROM StudyTimeDaily d WHERE d.userId = :userId ORDER BY d.studyDay DESC")
     List<StudyTimeDaily> findAllForUser(@Param("userId") Long userId);

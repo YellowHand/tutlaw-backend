@@ -48,7 +48,8 @@ Parametry: zakres oraz opcjonalne `extraNewCards`, `extraDueReviews` (zob. niże
     "sourceKind": "EXAM_SHEET",
     "examYear": 2024,
     "lapses": 2,
-    "leech": false
+    "leech": false,
+    "lawChange": { "changedAt": "2026-10-01", "note": "nowelizacja art. 25 k.k." }
   }
 ]
 ```
@@ -56,7 +57,9 @@ Parametry: zakres oraz opcjonalne `extraNewCards`, `extraDueReviews` (zob. niże
 Fiszka ma tę samą treść co pytanie testowe: **przód** (`front`) to treść pytania, **tył** (`back`) to tekst poprawnej
 opcji, a pod nim `explanation` i `legalBasis` (każde z nich bywa `null`). `lapses` i `leech` opisują stan **sprzed tej
 sesji** (dla nowej fiszki 0 i `false`); na odwrocie pozwalają zaproponować zawieszenie pytania, z którym użytkownik od
-dawna sobie nie radzi.
+dawna sobie nie radzi. `lawChange` (też w kolejce testów, w odpowiedzi na pytanie, w szczegółach własnego testu i w
+wyniku egzaminu) to znacznik zmiany w prawie: `{ "changedAt": data wejścia zmiany w życie, "note": krótki opis albo null }`
+albo `null`, gdy pytania zmiana nie dotyczy. Frontend pokazuje z niego plakietkę „Zmiana w prawie: data”.
 
 W kolejce są tylko pytania z **odblokowaną fiszką**: użytkownik pomylił je w teście bez zaznaczenia „Nie jestem pewien”
 albo dodał je ręcznie ([`POST /api/questions/{questionId}/flashcard`](06-zawieszanie-fiszki-zgloszenia.md#post-apiquestionsquestionidflashcard--dodaj)).
@@ -82,7 +85,8 @@ Parametry jak wyżej. Zaległe i nowe pytania są losowo mieszane (zaległe na p
     "actShortName": "k.k.",
     "sourceName": "Notarialna 2024",
     "sourceKind": "EXAM_SHEET",
-    "examYear": 2024
+    "examYear": 2024,
+    "lawChange": null
   }
 ]
 ```
@@ -132,14 +136,17 @@ i aktów prawnych; bez żadnego z nich cała pula.
 |----------|------|
 | `fieldIds` | Dziedziny: `fieldIds=1&fieldIds=2` albo `fieldIds=1,2`. Opcjonalne |
 | `actIds` | Akty prawne, jak wyżej. Opcjonalne. Pytanie z dziedziny i z jej aktu liczy się raz |
+| `courseIds` | Przedmioty Studenta, jak wyżej. Opcjonalne. Przedmiot zastępuje jego akty; przedmiot bez aktów **nie** poszerza zakresu do całej puli (zakres jest wtedy pusty) |
 
 ```json
-{ "all": 1240, "newQuestions": 800, "mistakes": 12, "due": 45 }
+{ "all": 1240, "newQuestions": 800, "mistakes": 12, "due": 45, "lawChanges": 7 }
 ```
 
 Liczby dotyczą pytań z puli użytkownika, **niezawieszonych** i ze **źródeł z filtra**. Rodzaje nakładają się: to samo
 pytanie może być zaległe i błędne, więc suma nie musi dawać `all`. `mistakes` to te same pytania co w „Moich błędach”
-(ostatnia odpowiedź błędna, ostatnie 30 dni), ale w wybranym zakresie i bez limitu 50 na sesję.
+(ostatnia odpowiedź błędna, ostatnie 30 dni), ale w wybranym zakresie i bez limitu 50 na sesję. `lawChanges` to pytania,
+w których zmiana w prawie weszła w życie w ostatnich 365 dniach (`app.questions.recent-change-days`) i już obowiązuje;
+pytanie ze zmianą z przyszłości albo starszą niż rok nie jest liczone.
 
 ### `POST /api/review/custom-test` — własny test: losowanie pytań
 
@@ -153,6 +160,7 @@ porzucony w połowie zostaje na liście jako nieukończony. Sesję otwiera się 
 {
   "fieldIds": [2, 3],
   "actIds": [41],
+  "courseIds": [],
   "kind": "NEW",
   "questionCount": 50
 }
@@ -160,8 +168,9 @@ porzucony w połowie zostaje na liście jako nieukończony. Sesję otwiera się 
 
 | Pole | Opis |
 |------|------|
-| `fieldIds`, `actIds` | Zakres jak wyżej (najwyżej po 200 numerów); oba puste = cała pula |
-| `kind` | `ALL` (domyślnie), `NEW` (jeszcze nierozwiązywane), `MISTAKES` (ostatnia odpowiedź błędna), `DUE` (po terminie powtórki) |
+| `fieldIds`, `actIds` | Zakres jak wyżej (najwyżej po 200 numerów); oba puste (i brak `courseIds`) = cała pula |
+| `courseIds` | Przedmioty Studenta (najwyżej 50 numerów). Zakres to **suma** dziedzin, aktów i aktów wskazanych przedmiotów |
+| `kind` | `ALL` (domyślnie), `NEW` (jeszcze nierozwiązywane), `MISTAKES` (ostatnia odpowiedź błędna), `DUE` (po terminie powtórki), `LAW_CHANGE` (zmiana w prawie z ostatniego roku) |
 | `questionCount` | Ile pytań (wymagane): **10, 20, 50, 100 albo 150**. Własnej liczby nie ma. Wyjątek: gdy pytań w zakresie jest **mniej niż 10**, jedyny wybór to wszystkie z nich (liczba równa liczbie dostępnych) |
 
 ```json
@@ -191,6 +200,7 @@ trafiają (egzaminy mają własną historię).
     "kind": "NEW",
     "fieldIds": [1],
     "actIds": [],
+    "courseIds": [],
     "sourceGroups": ["OWN_SHEETS", "AUTHORED"],
     "requestedCount": 20,
     "questionCount": 20,
@@ -206,7 +216,7 @@ trafiają (egzaminy mają własną historię).
 |------|-----------|
 | `finished`, `finishedAt` | Test jest ukończony, gdy odpowiedziano na ostatnie pytanie; inaczej `finished = false`, `finishedAt = null` („Nieukończony”) |
 | `scopeLabel` | Nazwa zakresu zapisana w chwili układania (np. „Kodeks karny i Kodeks cywilny”, „Cała pula”), żeby lista była czytelna po zmianie nazw |
-| `fieldIds`, `actIds` | Wybrany zakres; oba puste = cała pula. Z nich frontend układa test ponownie („Ułóż ponownie z tymi ustawieniami”) |
+| `fieldIds`, `actIds`, `courseIds` | Wybrany zakres; wszystkie puste = cała pula. `actIds` zawiera też akty wybranych przedmiotów. Z nich frontend układa test ponownie („Ułóż ponownie z tymi ustawieniami”) |
 | `sourceGroups` | Grupy źródeł obowiązujące, gdy układano test (`OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED`); wszystkie trzy, gdy filtr był domyślny. Pozwala pokazać uwagę, gdy teraz obowiązuje inny filtr |
 | `requestedCount`, `questionCount` | O ile pytań prosił użytkownik i ile wylosowano |
 | `answeredCount`, `correctCount`, `guessedCount` | Odpowiedzi, poprawne i z zaznaczeniem „Nie jestem pewien” |
@@ -225,7 +235,8 @@ Podsumowanie (`summary`, jak wyżej) i wszystkie pytania w kolejności, w jakiej
       "optionA": "…", "optionB": "…", "optionC": "…",
       "correctOption": "B", "selectedOption": "A", "correct": false, "guessed": false, "timeSeconds": 12.5,
       "explanation": "…", "legalBasis": "art. 26 § 1 k.k.", "validAsOf": "2026-10-01",
-      "actName": "Kodeks karny", "sourceName": "Notarialna 2024", "sourceKind": "EXAM_SHEET", "examYear": 2024
+      "actName": "Kodeks karny", "sourceName": "Notarialna 2024", "sourceKind": "EXAM_SHEET", "examYear": 2024,
+      "lawChange": null
     }
   ]
 }
@@ -329,7 +340,8 @@ fiszkę otwartą w sesji, kończy ją normalnie.
   "leech": false,
   "flashcardUnlocked": true,
   "flashcard": "ADDED_BY_MISTAKE",
-  "newQuestion": false
+  "newQuestion": false,
+  "lawChange": { "changedAt": "2026-10-01", "note": "nowelizacja art. 26 k.k." }
 }
 ```
 
@@ -343,6 +355,7 @@ fiszkę otwartą w sesji, kończy ją normalnie.
 | `flashcardUnlocked` | `true` tylko wtedy, gdy **ta** odpowiedź właśnie dodała fiszkę pytania do Fiszek (pierwszy pewny błąd w tym pytaniu) |
 | `flashcard` | Stan fiszki pytania po tej odpowiedzi: `UNAVAILABLE` (administrator ukrył fiszkę), `AVAILABLE` (można ją dodać przyciskiem „Dodaj do fiszek”), `ADDED_MANUALLY`, `ADDED_BY_MISTAKE` |
 | `newQuestion` | `true`, gdy to była pierwsza odpowiedź na to pytanie w teście (nowe pytanie); do podsumowania sesji |
+| `lawChange` | Zmiana w prawie przy pytaniu (`changedAt`, `note`) albo `null` |
 
 Jak serwer zamienia odpowiedź na ocenę pamięci (poprawna i pewna = „Znam”, w pozostałych przypadkach „Nie pamiętam”):
 [04](../04-nauka-testy-fiszki-fsrs.md#odpowiedź-w-teście-krok-po-kroku).

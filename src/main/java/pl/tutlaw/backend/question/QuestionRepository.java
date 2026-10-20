@@ -21,7 +21,7 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
      */
     @Query("""
             SELECT q.id AS id, q.legalAct.id AS legalActId, q.legalAct.legalField.id AS legalFieldId,
-                   q.source.id AS sourceId, q.flashcardHidden AS flashcardHidden
+                   q.source.id AS sourceId, q.flashcardHidden AS flashcardHidden, q.lawChangedAt AS lawChangedAt
             FROM Question q
             WHERE\s""" + PoolJpql.QUESTION)
     List<QuestionRef> findRefsInPool(

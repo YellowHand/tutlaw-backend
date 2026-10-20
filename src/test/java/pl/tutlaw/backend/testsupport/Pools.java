@@ -4,6 +4,7 @@ import org.mockito.Mockito;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
 import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.pool.StudentCourses;
 import pl.tutlaw.backend.track.TrackKind;
 
 import java.util.ArrayList;
@@ -49,11 +50,30 @@ public final class Pools {
                 base.ownSheetIds(), base.sourceIds(), base.allSourceIds());
     }
 
+    /** Pula Studenta (ścieżka 9) z podanymi aktami, bez zawężenia i z wszystkimi źródłami. */
+    public static Pool student(long... actIds) {
+        List<Long> acts = new ArrayList<>();
+        for (long id : actIds) {
+            acts.add(id);
+        }
+        return new Pool(9L, TrackKind.STUDENT, acts, acts, false, SourceFilter.ALL, List.of(), ALL_SOURCES, ALL_SOURCES);
+    }
+
     /** Atrapa serwisu puli, która zawsze oddaje bieżącą wartość z {@code pool} (test może ją zmieniać w trakcie). */
     public static PoolService holding(Supplier<Pool> pool) {
+        return holding(pool, () -> {
+            throw new UnsupportedOperationException("PoolService.studentCourses");
+        });
+    }
+
+    /** Jak {@link #holding(Supplier)}, z przedmiotami Studenta oddawanymi z {@code courses}. */
+    public static PoolService holding(Supplier<Pool> pool, Supplier<StudentCourses> courses) {
         return Mockito.mock(PoolService.class, invocation -> {
             if (invocation.getMethod().getName().equals("forUser")) {
                 return pool.get();
+            }
+            if (invocation.getMethod().getName().equals("studentCourses")) {
+                return courses.get();
             }
             throw new UnsupportedOperationException("PoolService." + invocation.getMethod().getName());
         });

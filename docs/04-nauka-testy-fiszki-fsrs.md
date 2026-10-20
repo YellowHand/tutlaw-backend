@@ -19,7 +19,9 @@ Kod, o którym tu mowa, leży głównie w pakietach `pool`, `review`, `review.fs
 10. [Dodatkowe sesje: „Powtórz moje błędy” i „Przerób błędy”](#dodatkowe-sesje-powtórz-moje-błędy-i-przerób-błędy)
 11. [Egzamin próbny](#egzamin-próbny)
 12. [Filtr źródeł pytań](#filtr-źródeł-pytań)
-13. [Zabezpieczenia spójności](#zabezpieczenia-spójności)
+13. [Zmiany w prawie](#zmiany-w-prawie)
+14. [Zmiana ścieżki i zerowanie postępów](#zmiana-ścieżki-i-zerowanie-postępów)
+15. [Zabezpieczenia spójności](#zabezpieczenia-spójności)
 
 ---
 
@@ -51,16 +53,21 @@ dostępie do pytań. Zasada jest **regułą**, a nie ręcznym przypisaniem pyta�
 1. **Ścieżka** (`user_settings.track_id`): pytania z jej **własnych arkuszy ALBO z aktów prawnych z jej listy**
    (`track_acts`). Pytania autorskie i pytania z arkuszy innych ścieżek trafiają do puli przez wspólne akty.
    Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
-2. **Student**: akty wszystkich przedmiotów (`course_acts`). Przedmioty dzielą akty na kursy; zagadnienia spoza prawa
-   (paremie, logika) to akty rodzaju `TOPIC`, a ich pytania są zwykłymi pytaniami.
-3. **Zawężenie do aktów** (`user_pool_acts`): użytkownik może trwale zawęzić pulę do wybranych aktów (przy Studencie: do
-   wybranych przedmiotów). Brak wpisów = cała pula ścieżki. Zawężenie **nie dotyczy egzaminu próbnego**.
+2. **Student**: akty **wybranych przez niego przedmiotów** (`user_courses` → `course_acts`); bez wyboru akty wszystkich
+   przedmiotów. Przedmioty dzielą akty na kursy; ten sam akt w kilku przedmiotach daje pytania raz. Zagadnienia spoza
+   prawa (paremie, logika) to akty rodzaju `TOPIC`, a ich pytania są zwykłymi pytaniami. Wybrany przedmiot, którego już
+   nie ma albo który nie ma aktów, jest pomijany (wybór nie może wyciąć całej puli). Student widzi w aplikacji wyłącznie
+   przedmioty, nie listę aktów.
+3. **Zawężenie** (aplikacje: `user_pool_acts`, Student: wybór przedmiotów w `user_courses`): użytkownik może trwale zawęzić
+   pulę do wybranych aktów (Student: do wybranych przedmiotów; zawężenie aktami jest u Studenta ignorowane). Brak wpisów
+   = cała pula ścieżki. Zawężenie **nie dotyczy egzaminu próbnego**.
 4. **Filtr źródeł** (`user_settings.include_*`): trzy grupy `OWN_SHEETS` (arkusze wybranej ścieżki), `OTHER_SHEETS`
    (arkusze innych ścieżek), `AUTHORED` (pytania autorskie); co najmniej jedna musi być włączona. Filtr dotyczy
    pytań testowych (patrz [Filtr źródeł pytań](#filtr-źródeł-pytań)).
 
-Każdy użytkownik widzi **wszystkie dziedziny**, ale w każdej tylko **akty ze swojej puli**. Zmiana ścieżki czyści
-zawężenie i przywraca filtr źródeł.
+Użytkownik widzi dziedziny, w których ma **akty w swojej puli**, i w każdej tylko te akty (dziedzina bez jego aktów, np.
+„Student” u użytkownika aplikacji, jest pomijana). Zmiana ścieżki czyści zawężenie aktami i przywraca filtr źródeł;
+wybrane przedmioty Studenta zostają.
 
 ```mermaid
 flowchart TD
@@ -383,8 +390,8 @@ Obie sesje (i „Własny test” poniżej) to zwykłe sesje testowe: odpowiedzi 
 ## Własny test
 
 Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera dowolne **dziedziny i akty
-prawne** (zakres to ich suma, bez powtórzeń; bez wyboru cała pula), **które pytania** mają w niej być (wszystkie, nowe, z błędną ostatnią
-odpowiedzią, zaległe) i **liczbę pytań**: **10, 20, 50, 100 albo 150** (własnej liczby ani wyboru lat egzaminu nie ma).
+prawne** (Student: **przedmioty**; zakres to ich suma, bez powtórzeń; bez wyboru cała pula), **które pytania** mają w niej być
+(wszystkie, nowe, z błędną ostatnią odpowiedzią, zaległe, ze zmianą w prawie z ostatniego roku) i **liczbę pytań**: **10, 20, 50, 100 albo 150** (własnej liczby ani wyboru lat egzaminu nie ma).
 Gdy w zakresie jest mniej niż 10 pytań, jedyny wybór to wszystkie z nich. Podgląd „Dostępnych: N” dla każdego rodzaju
 daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
 
@@ -398,6 +405,9 @@ daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
   Lista (`GET /api/custom-tests/sessions`, 50 ostatnich) i szczegóły z odpowiedziami (`/{id}`) służą ekranowi „Moje
   testy”, z którego da się ułożyć test ponownie z tymi samymi ustawieniami. Powtórki, „Popraw błędy” i egzamin nie są
   zapisywane jako własne testy. Własne testy liczą się osobno od egzaminów w „Podsumowaniu nauki”.
+- **Zakres**: dziedziny, akty i **przedmioty** (Student), w sumie bez powtórzeń. Przedmiot oznacza wszystkie jego akty;
+  przedmiot bez aktów nie poszerza zakresu do całej puli. Zapisany test pamięta wybrane przedmioty (`course_ids`) i
+  ich akty (`act_ids`).
 - **Pula**: pytania z puli użytkownika (jego akty po zawężeniu), nieukryte, **niezawieszone** w testach i ze źródeł
   z filtra źródeł.
 - **Dobór przy ograniczonej liczbie**: `MISTAKES` bierze najświeższe błędy (jak „Moje błędy”, tylko w wybranym zakresie
@@ -460,6 +470,56 @@ Użytkownik może zawęzić Testy do wybranych **grup źródeł**: własne arkus
   Testach, własnych testów, planu do egzaminu, statystyk testów i losowania egzaminu. **Fiszek nie dotyczy.**
 - Statystyki według źródeł (`GET /api/statistics/sources`) filtra nie uwzględniają: zawsze pokazują całą pulę ścieżki.
 - Wyjątek: ocena zakończonego egzaminu (`submit`) filtra nie stosuje, bo ocenia to, co zostało pokazane.
+
+## Zmiany w prawie
+
+Prawo się zmienia, a pytania trzeba wtedy poprawić. Administrator zapisuje przy takim pytaniu **datę zmiany**
+(`questions.law_changed_at`) i opcjonalnie **krótki opis** (`law_change_note`). Jako datę wpisuje dzień wejścia zmiany w
+życie, a gdy treść pytania poprawił później, dzień tej poprawki: o tym, kto ma pytanie powtórzyć, decyduje to, czy jego
+ostatnia odpowiedź była **przed** tą datą. Zmianę z datą z przyszłości aplikacja pokazuje, ale niczego jeszcze nie
+przestawia. Daty wpisuje się skryptem SQL ([przykład](02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja)).
+
+Dwa skutki dla użytkownika:
+
+1. **Pytanie wraca jako zaległe.** Każdy, kto odpowiadał na pytanie **przed** datą zmiany, dostaje je z powrotem do
+   powtórki (`LawChangeService`, w obu trybach: Testy i Fiszki). Technicznie to przestawienie terminu stanu nauki na
+   „teraz” (`due_date = now`, `version + 1`) dla stanów, które nie są zawieszone, mają termin w przyszłości i ostatnią
+   odpowiedź sprzed zmiany. Pytanie powtórzone **po** zmianie już nie wraca (jego ostatnia odpowiedź jest późniejsza),
+   więc przebieg jest **idempotentny** i można go powtarzać. Robi to `LawChangeJob`: **raz przy starcie aplikacji** (po
+   wdrożeniu nowych pytań) i **codziennie o 00:10** (kiedy zaczynają obowiązywać zmiany z datą „na dziś”). Nowa data
+   zaczyna więc działać najpóźniej następnej nocy; chcąc od razu, uruchom ten sam `UPDATE` ręcznie albo zrestartuj
+   backend. Błąd przebiegu nie zatrzymuje aplikacji (następny przebieg nadrobi). Pytania nowe dla użytkownika (bez stanu
+   nauki) nie potrzebują przestawiania: i tak są nowe.
+2. **Kategoria „Zmiany w prawie” we własnym teście** (`kind = LAW_CHANGE`): pytania, w których zmiana weszła w życie nie
+   wcześniej niż `app.questions.recent-change-days` dni temu (domyślnie **365**) i już obowiązuje (`LawChangePolicy`).
+   Okno liczy się w chwili zapytania, więc pytanie wypada z kategorii samo po roku. Kategoria ma licznik
+   `lawChanges` w `GET /api/review/custom-test/counts` i podlega puli, filtrowi źródeł i wyborowi zakresu jak inne rodzaje.
+   Zawieszonych pytań nie obejmuje żaden rodzaj.
+
+Przy każdym pytaniu, które ma zapisaną zmianę, aplikacja pokazuje plakietkę **„Zmiana w prawie: data”** z opisem
+(`lawChange` w odpowiedziach API), także po upływie roku (to informacja o treści pytania, a nie o kategorii). Pytania
+powtarzające się w dwóch arkuszach to osobne wiersze: zmianę trzeba wpisać przy każdym z nich.
+
+## Zmiana ścieżki i zerowanie postępów
+
+**Postępy należą do użytkownika i pytań, nie do ścieżki.** Stan nauki (`user_question_states`), historia odpowiedzi
+(`review_logs`), własne testy, egzaminy i czas nauki nie są związane ze ścieżką, więc **zmiana ścieżki ich nie rusza**
+(`LearningSettingsService.chooseTrack`; pilnuje tego test). Zmiana czyści tylko zawężenie puli do aktów
+(`user_pool_acts`) i przywraca filtr źródeł; wybrane przedmioty Studenta zostają. Pytania wspólne dla dwóch ścieżek (przez
+wspólne akty) mają jeden stan nauki, więc odpowiedź udzielona na jednej ścieżce liczy się na drugiej.
+
+Kto chce zacząć od zera, **zeruje postępy** (`StudyProgressService`, `DELETE /api/me/study-progress`, w aplikacji: okno
+zmiany ścieżki z opcją „Zacznij od zera” i Konto → „Wyzeruj postępy”). To świadoma, **nieodwracalna** operacja:
+
+- znikają: stany nauki obu trybów, historia odpowiedzi, pytania dodane ręcznie do fiszek (więc żadna fiszka nie jest już
+  odblokowana), własne testy („Moje testy”), egzaminy próbne i czas nauki;
+- zostają: konto, wybrana ścieżka, ustawienia nauki (limity, retencja, wygląd), wybrane przedmioty i zawężenie puli,
+  harmonogram (termin egzaminu pochodzi z `exam_terms`), zgłoszenia błędów i cała treść;
+- wymaga wpisania słowa **WYZERUJ** (serwer też je sprawdza; bez niego niczego nie kasuje), a przed potwierdzeniem aplikacja
+  pokazuje, ile czego zniknie (`GET /api/me/study-progress`). Nie ma kroku „pobierz swoje dane”.
+
+Ten sam zakres danych usuwa skrypt `docs/reset-study-progress.sql` (dla wszystkich albo jednego użytkownika, do użytku
+administratora).
 
 ## Zabezpieczenia spójności
 
