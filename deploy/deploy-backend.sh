@@ -12,7 +12,7 @@
 #
 # Co robi: buduje JAR, wysyła go jako nowe „wydanie” w /opt/gradusiuris/releases/<data>, buduje obraz, uruchamia, czeka aż
 # aplikacja będzie zdrowa. Jeśli nie będzie, wraca do poprzedniego wydania. Zostawia 5 ostatnich wydań (do szybkiego cofnięcia).
-# Migracje bazy (Flyway) wykonują się same przy starcie aplikacji. Sekretów NIE wysyła: leżą tylko na serwerze (.env.prod).
+# Migracje bazy (Flyway) wykonują się same przy starcie aplikacji. Sekretów NIE wysyła: leżą tylko na serwerze (.env.stary.prod).
 set -euo pipefail
 
 : "${SSH_TARGET:?Ustaw SSH_TARGET, np. SSH_TARGET=ubuntu@api.gradusiuris.pl}"

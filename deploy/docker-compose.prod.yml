@@ -1,7 +1,7 @@
 # Środowisko PRODUKCYJNE na serwerze (EC2): backend + Caddy (HTTPS z automatycznym certyfikatem Let's Encrypt).
 # Baza jest poza tym plikiem (Amazon RDS). Plik leży na serwerze w /opt/gradusiuris/ i jest wysyłany przez deploy-backend.sh.
 #
-# Sekrety są w pliku /opt/gradusiuris/.env.prod (tworzysz go ręcznie raz, wzór: .env.prod.example). Nigdy nie trafia do gita.
+# Sekrety są w pliku /opt/gradusiuris/.env.stary.prod (tworzysz go ręcznie raz, wzór: .env.stary.prod.example). Nigdy nie trafia do gita.
 services:
   backend:
     build:
@@ -10,12 +10,12 @@ services:
     image: gradusiuris-backend
     container_name: gradusiuris-backend
     restart: unless-stopped
-    env_file: .env.prod
+    env_file: .env.stary.prod
     expose:
       - "8080"          # tylko dla Caddy w sieci Dockera; z zewnątrz backend nie jest widoczny
     mem_limit: 1g
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      test: [ "CMD", "curl", "-fsS", "http://localhost:8080/actuator/health" ]
       interval: 15s
       timeout: 5s
       retries: 5
