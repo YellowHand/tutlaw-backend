@@ -206,8 +206,7 @@ class ExamServiceTest {
     }
 
     @Test
-    void start_drawsOnlyFromTheSelectedSourceGroups() {
-        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
+    void start_drawsFromEverySource() {
         List<Question> all = List.of(
                 inSource(1, QuestionRefs.AUTHORED),
                 inSource(2, QuestionRefs.OWN_SHEET),
@@ -219,22 +218,11 @@ class ExamServiceTest {
         ExamStartResponse response = service.start(authentication);
 
         assertThat(response.questions()).extracting(TestQueueItemResponse::questionId)
-                .containsExactlyInAnyOrder(1L, 2L, 4L);
+                .containsExactlyInAnyOrder(1L, 2L, 3L, 4L, 5L);
     }
 
     @Test
-    void start_whenTheFilterExcludesEverythingTheErrorPointsAtTheFilter() {
-        pool = Pools.of(new SourceFilter(false, true, false), 1, 2);
-        givenPool(List.of(inSource(1, QuestionRefs.AUTHORED), inSource(2, QuestionRefs.OWN_SHEET)), List.of());
-
-        assertThatThrownBy(() -> service.start(authentication))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("filtr źródeł");
-    }
-
-    @Test
-    void start_withNoQuestionsAtAllKeepsTheOriginalMessage() {
-        pool = Pools.of(new SourceFilter(false, true, false), 1, 2);
+    void start_withNoQuestionsAtAllSaysThereAreNone() {
         givenPool(List.of(), List.of());
 
         assertThatThrownBy(() -> service.start(authentication))

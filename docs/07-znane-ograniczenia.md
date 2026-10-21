@@ -100,8 +100,8 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
   w tym trybie, więc Testy i Fiszki zawiesza się osobno).
 - **Tryby Testy i Fiszki mają niezależne stany FSRS.** Odpowiedź w teście nie przesuwa terminu fiszki tego samego
   pytania i odwrotnie. To decyzja projektowa, ale statystyki bez parametru `mode` liczą takie pytanie dwa razy.
-- **Filtr źródeł nie dotyczy fiszek**, a zawężenie puli do aktów nie dotyczy egzaminu próbnego.
-- **Zmiana ścieżki czyści zawężenie puli aktami i filtr źródeł** (akty jednej ścieżki nie muszą należeć do drugiej),
+- **Źródło pytań wybiera się tylko w kreatorze testu**; fiszki, egzamin próbny, szybkie zestawy i „Losuj z całej puli” biorą wszystkie źródła. Zawężenie puli do aktów nie dotyczy egzaminu próbnego.
+- **Zmiana ścieżki czyści zawężenie puli aktami** (akty jednej ścieżki nie muszą należeć do drugiej),
   ale **nie rusza postępów** ani wybranych przedmiotów Studenta. Postępy zeruje się osobno (WYZERUJ).
 - **Zmiana w prawie nie cofa postępu pytania**, tylko przestawia termin na „teraz”: pytanie wraca raz i po odpowiedzi
   planuje się jak zwykle. Pytanie zawieszone zostaje zawieszone (użytkownik świadomie je wyłączył).
@@ -153,7 +153,7 @@ Uczciwie o weryfikacji tej dokumentacji:
   aplikacji: pierwsze uruchomienie na prawdziwej bazie (Flyway, walidacja Hibernate, wiązanie zapytań Spring Data) może
   jeszcze ujawnić błąd, którego te testy nie widzą. Przed pierwszym użyciem uruchom backend i sprawdź
   `/actuator/health`.
-- **Migracje `V1`–`V3` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
+- **Migracje `V1`–`V4` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
   `ON_ERROR_STOP`). Opisy działania endpointów pochodzą z kodu i testów jednostkowych, a nie z obserwacji
   działającego serwera.
 - **Przykłady JSON są ilustracyjne**: kształt pól pochodzi z klas DTO, ale wartości są wymyślone.

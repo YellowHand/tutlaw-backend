@@ -2,7 +2,7 @@ package pl.tutlaw.backend.review;
 
 /**
  * Które pytania z wybranych działów wchodzą do własnego testu. Pytania zawieszone i spoza puli użytkownika
- * (akty jego ścieżki, filtr źródeł w Testach) nie wchodzą nigdy, niezależnie od rodzaju.
+ * (akty jego ścieżki, wybrane źródło) nie wchodzą nigdy, niezależnie od rodzaju.
  */
 public enum CustomTestKind {
     /** Wszystkie dostępne pytania. */

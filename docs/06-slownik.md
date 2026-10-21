@@ -17,7 +17,8 @@ ułożone alfabetycznie.
 | **Fiszka** | **Tryb nauki pytania**, a nie osobna treść: przód to pytanie, tył to poprawna odpowiedź z wyjaśnieniem i podstawą prawną. Ma własny stan FSRS, osobny od stanu w Testach. Pojawia się w Fiszkach po pewnym błędzie w teście albo po ręcznym dodaniu | `user_question_states.mode = 'FLASHCARD'`, pakiet `flashcard` |
 | **Fiszka dodana ręcznie** | Fiszka, którą użytkownik sam dodał przyciskiem „Dodaj do fiszek”; można ją usunąć („Usuń z fiszek”) | `flashcard_additions`, `FlashcardStatus.ADDED_MANUALLY` |
 | **Fiszka odblokowana** | Fiszka dostępna w Fiszkach użytkownika: po pewnym błędzie (`ADDED_BY_MISTAKE`, nie da się wycofać) albo po ręcznym dodaniu | `FlashcardUnlockService`, `FlashcardStatus` |
-| **Filtr źródeł** | Ustawienie użytkownika zawężające Testy, egzamin i plan do wybranych grup źródeł: własne arkusze, arkusze innych aplikacji, pytania autorskie. Nie dotyczy fiszek | `user_settings.source_filter`, `SourceFilter`, `SourceGroups` |
+| **Źródło pytań w teście** (`SourceMode`) | Wybór przy każdym teście w kreatorze: wszystkie źródła, Ministerstwo Sprawiedliwości (arkusze egzaminacyjne) albo autorskie. Zastąpił trwały filtr źródeł na koncie | `SourceMode`, `SourceFilter`, `SourceGroups` |
+| **Rozdział** | Część aktu prawnego (np. „XIX. Przestępstwa przeciwko życiu i zdrowiu”); pytanie ma najwyżej jeden rozdział. Test można zawęzić do wybranych rozdziałów | `act_sections`, `questions.section_id` |
 | **FSRS-6** | Algorytm powtórek rozłożonych w czasie (21 parametrów). Wylicza, kiedy pytanie ma wrócić | `review.fsrs.FsrsEngine` |
 | **Fuzz (rozrzut terminów)** | Losowe przesunięcie terminu o kilka dni, żeby pytania uczone tego samego dnia nie wracały naraz | `SchedulingRules.fuzz`, `IntervalFuzzer` |
 | **Guessed (zgadywane)** | Zaznaczenie „Nie jestem pewien” przy odpowiedzi w teście | `guessed`, `review_logs.was_guessed` |

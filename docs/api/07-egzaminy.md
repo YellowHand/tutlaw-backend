@@ -5,8 +5,8 @@
 Egzamin próbny ma **stały format**: zawsze **150 pytań** z całej puli użytkownika (pytania jego ścieżki i jego własnych
 arkuszy), a zaliczenie jest od **100 punktów**. Pytania losuje serwer, serwer też ocenia egzamin i sam ustala próg.
 Użytkownik nie wybiera ani zakresu, ani liczby pytań, ani progu (żądania ich nie przyjmują). Zawężenie puli do
-wybranych aktów prawnych egzaminu **nie dotyczy** (prawdziwy egzamin też obejmuje wszystko), a filtr źródeł już tak.
-Ćwiczenie z jednego działu to osobna funkcja, [własny test](05-nauka.md), która niczego nie zalicza. Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek,
+wybranych aktów prawnych egzaminu **nie dotyczy** (prawdziwy egzamin też obejmuje wszystko), a źródła pytań egzamin nie zawęża
+(zawsze wszystkie). Ćwiczenie z jednego działu to osobna funkcja, [test z kreatora](05-nauka.md), która niczego nie zalicza. Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek,
 dziennika odpowiedzi ani dziennych limitów. Zasady punktacji i zaliczenia:
 [04](../04-nauka-testy-fiszki-fsrs.md#egzamin-próbny). Wszystkie endpointy wymagają tokenu.
 
@@ -30,8 +30,7 @@ sequenceDiagram
 (zakres, `questionCount`) jest ignorowane.
 
 Serwer losuje **150** pytań: z **puli** użytkownika (akty jego ścieżki albo jego arkusze, **bez** zawężenia do
-wybranych aktów), niewyciszone (nieukryte przez administratora), niezawieszone w testach i ze **źródeł wybranych w
-filtrze źródeł**. Niczego nie zapisuje. Każde pytanie ma jedną poprawną odpowiedź (A, B albo C); poprawnej nie ma w
+wybranych aktów), niewyciszone (nieukryte przez administratora), niezawieszone w testach, ze **wszystkich źródeł**. Niczego nie zapisuje. Każde pytanie ma jedną poprawną odpowiedź (A, B albo C); poprawnej nie ma w
 odpowiedzi tego endpointu.
 
 Gdy w materiale jest mniej niż 150 takich pytań, egzamin ma tyle, ile jest, a próg maleje proporcjonalnie
@@ -66,8 +65,7 @@ Gdy w materiale jest mniej niż 150 takich pytań, egzamin ma tyle, ile jest, a 
 | `questions` | Bywa krótsze niż `requestedCount`. Pytania **nie zawierają** poprawnych odpowiedzi |
 | `questions[].sourceKind` | `EXAM_SHEET` (arkusz egzaminu z danego roku, `examYear` wypełnione) albo `AUTHORED` (pytanie autorskie, `examYear` = `null`) |
 
-**Błędy:** `400` — „Nie ma teraz pytań, które możesz rozwiązać na egzaminie.” albo, gdy pytania są, ale wszystkie spoza
-filtra: „Nie ma pytań z wybranych źródeł. Zmień filtr źródeł w Testach.”
+**Błędy:** `400` — „Nie ma teraz pytań, które możesz rozwiązać na egzaminie.”
 
 ## `POST /api/exams/submit` — ocena egzaminu
 
@@ -138,7 +136,7 @@ Punktacja: 1 punkt za poprawną odpowiedź, bez punktów ujemnych, brak odpowied
 pytań nie jest już dostępne („Żadne z przesłanych pytań nie jest już dostępne, więc nie ma czego oceniać.”), błędne
 pola (komunikaty po polsku, np. „zbyt wiele pytań (egzamin ma najwyżej 150)”).
 
-Ocena **nie stosuje filtra źródeł**: ocenia to, co zostało pokazane w `start`. Serwer nie pamięta, które pytania
+Ocena ocenia to, co zostało pokazane w `start`. Serwer nie pamięta, które pytania
 wydał w `start`, więc zaliczenie dotyczy zestawu przesłanego w `submit` (to ćwiczenie dla samego użytkownika, nie
 egzamin z uprawnieniami).
 

@@ -28,7 +28,6 @@ public record LearningSettingsResponse(
         double desiredRetention,
         TrackSummary track,
         LocalDate examDate,
-        boolean shuffleOptions,
         Theme theme,
         Long daysToExam,
         boolean examPassed,

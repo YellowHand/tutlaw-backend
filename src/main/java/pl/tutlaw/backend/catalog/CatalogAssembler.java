@@ -4,18 +4,14 @@ import pl.tutlaw.backend.catalog.dto.TestCatalogResponse;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.ActNode;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.CourseNode;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.FieldNode;
-import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.SourceNode;
+import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.SectionNode;
 import pl.tutlaw.backend.common.PolishSort;
 import pl.tutlaw.backend.legal.LegalActKind;
-import pl.tutlaw.backend.pool.SourceFilter;
-import pl.tutlaw.backend.pool.SourceGroups;
-import pl.tutlaw.backend.source.SourceKind;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 
@@ -30,7 +26,7 @@ final class CatalogAssembler {
     record ActRow(Long id, Long fieldId, String name, String shortName, String slug, LegalActKind kind, int sortOrder) {
     }
 
-    record SourceRow(Long id, String name, SourceKind kind, Integer examYear) {
+    record SectionRow(Long id, Long actId, String name, int sortOrder) {
     }
 
     private CatalogAssembler() {
@@ -39,25 +35,22 @@ final class CatalogAssembler {
     /**
      * @param fields         wszystkie dziedziny (te bez aktów w puli są pomijane)
      * @param actsInPool     tylko akty z puli użytkownika
-     * @param sources        źródła dozwolone filtrem źródeł
-     * @param ownSheetIds    arkusze wybranej ścieżki
-     * @param totalByAct     pytania w akcie (z dozwolonych źródeł)
+     * @param sections       rozdziały aktów z puli
+     * @param totalByAct     pytania w akcie (z wybranego źródła)
      * @param solvedByAct    z nich rozwiązane co najmniej raz w teście
-     * @param totalBySource  pytania w źródle (z aktów puli)
-     * @param solvedBySource z nich rozwiązane co najmniej raz w teście
+     * @param totalBySection pytania w rozdziale (z wybranego źródła); rozdział bez pytań jest pomijany
      */
     static TestCatalogResponse assemble(
             boolean narrowed,
             List<FieldRow> fields,
             List<ActRow> actsInPool,
-            List<SourceRow> sources,
-            Set<Long> ownSheetIds,
+            List<SectionRow> sections,
             Map<Long, Long> totalByAct,
             Map<Long, Long> solvedByAct,
-            Map<Long, Long> totalBySource,
-            Map<Long, Long> solvedBySource
+            Map<Long, Long> totalBySection
     ) {
         Map<Long, List<ActRow>> actsByField = actsInPool.stream().collect(Collectors.groupingBy(ActRow::fieldId));
+        Map<Long, List<SectionRow>> sectionsByAct = sections.stream().collect(Collectors.groupingBy(SectionRow::actId));
 
         List<FieldNode> fieldNodes = new ArrayList<>();
         for (FieldRow field : fields.stream()
@@ -65,7 +58,7 @@ final class CatalogAssembler {
                 .toList()) {
             List<ActNode> actNodes = actsByField.getOrDefault(field.id(), List.of()).stream()
                     .sorted(Comparator.comparingInt(ActRow::sortOrder).thenComparing(ActRow::name, PolishSort.byName()))
-                    .map(act -> actNode(act, totalByAct, solvedByAct))
+                    .map(act -> actNode(act, totalByAct, solvedByAct, sectionsByAct.getOrDefault(act.id(), List.of()), totalBySection))
                     .toList();
             if (actNodes.isEmpty()) {
                 continue; // dziedzina bez aktów w puli niczego nie daje użytkownikowi
@@ -74,18 +67,7 @@ final class CatalogAssembler {
                     field.id(), field.name(), field.slug(),
                     sum(actNodes, ActNode::questionCount), sum(actNodes, ActNode::solvedCount), actNodes));
         }
-
-        List<SourceNode> sourceNodes = new ArrayList<>();
-        for (SourceRow source : sources.stream().sorted(sourceOrder(ownSheetIds)).toList()) {
-            int total = totalBySource.getOrDefault(source.id(), 0L).intValue();
-            if (total == 0) {
-                continue; // źródło bez pytań w puli użytkownika niczego mu nie daje
-            }
-            int solved = Math.min(solvedBySource.getOrDefault(source.id(), 0L).intValue(), total);
-            sourceNodes.add(new SourceNode(
-                    source.id(), source.name(), source.kind(), groupOf(source, ownSheetIds), source.examYear(), total, solved));
-        }
-        return new TestCatalogResponse(narrowed, fieldNodes, List.of(), sourceNodes);
+        return new TestCatalogResponse(narrowed, fieldNodes, List.of());
     }
 
     /** Przedmiot z aktami do liczenia pytań. */
@@ -117,32 +99,20 @@ final class CatalogAssembler {
         return nodes;
     }
 
-    /** Grupa filtra źródeł, do której należy źródło. */
-    static String groupOf(SourceRow source, Set<Long> ownSheetIds) {
-        return SourceGroups.of(source.kind(), source.id(), ownSheetIds);
-    }
-
-    /** Własne arkusze, potem arkusze innych ścieżek, na końcu pytania autorskie; w grupie od najnowszego roku. */
-    private static Comparator<SourceRow> sourceOrder(Set<Long> ownSheetIds) {
-        return Comparator
-                .comparingInt((SourceRow s) -> rank(groupOf(s, ownSheetIds)))
-                .thenComparing((SourceRow s) -> s.examYear() == null ? 0 : -s.examYear())
-                .thenComparing(SourceRow::name, PolishSort.byName())
-                .thenComparing(SourceRow::id);
-    }
-
-    private static int rank(String group) {
-        return switch (group) {
-            case SourceFilter.OWN_SHEETS -> 0;
-            case SourceFilter.OTHER_SHEETS -> 1;
-            default -> 2;
-        };
-    }
-
-    private static ActNode actNode(ActRow act, Map<Long, Long> total, Map<Long, Long> solved) {
+    private static ActNode actNode(
+            ActRow act, Map<Long, Long> total, Map<Long, Long> solved,
+            List<SectionRow> sections, Map<Long, Long> totalBySection) {
         int totalCount = total.getOrDefault(act.id(), 0L).intValue();
         int solvedCount = Math.min(solved.getOrDefault(act.id(), 0L).intValue(), totalCount);
-        return new ActNode(act.id(), act.name(), act.shortName(), act.slug(), act.kind(), totalCount, solvedCount);
+        List<SectionNode> sectionNodes = sections.stream()
+                .sorted(Comparator.comparingInt(SectionRow::sortOrder)
+                        .thenComparing(SectionRow::name, PolishSort.byName())
+                        .thenComparing(SectionRow::id))
+                .map(section -> new SectionNode(
+                        section.id(), section.name(), totalBySection.getOrDefault(section.id(), 0L).intValue()))
+                .filter(section -> section.questionCount() > 0) // rozdział bez pytań (w tym źródle) nic nie daje
+                .toList();
+        return new ActNode(act.id(), act.name(), act.shortName(), act.slug(), act.kind(), totalCount, solvedCount, sectionNodes);
     }
 
     private static <T> int sum(List<T> nodes, ToIntFunction<T> value) {

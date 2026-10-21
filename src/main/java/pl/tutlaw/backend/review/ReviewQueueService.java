@@ -56,7 +56,7 @@ public class ReviewQueueService {
     private final LeechPolicy leechPolicy;
     /** Które pytania mają odblokowaną fiszkę (pewny błąd albo ręczne dodanie do fiszek). */
     private final FlashcardUnlockService unlockService;
-    /** Pula pytań użytkownika (akty ścieżki, zawężenie, filtr źródeł). */
+    /** Pula pytań użytkownika (akty ścieżki, zawężenie, wszystkie źródła). */
     private final PoolService poolService;
 
     @Autowired
@@ -185,7 +185,7 @@ public class ReviewQueueService {
         return stateRepository.countDue(user.getId(), mode, endOfTomorrow, pool.actIds(), pool.sourceIds());
     }
 
-    /** Pula trybu: testy widzą filtr źródeł, fiszki nie (wynikają z błędów w testach). */
+    /** Pula trybu (akty ścieżki z zawężeniem, wszystkie źródła). */
     private Pool poolFor(ReviewMode mode, Long userId) {
         Pool pool = poolService.forUser(userId);
         return mode == ReviewMode.FLASHCARD ? pool.forFlashcards() : pool;

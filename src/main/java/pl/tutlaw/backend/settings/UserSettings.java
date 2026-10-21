@@ -66,24 +66,6 @@ public class UserSettings {
     @Column(name = "question_timer_hidden", nullable = false)
     private boolean questionTimerHidden = false;
 
-    /** Czy w testach mieszać kolejność odpowiedzi A/B/C (domyślnie tak). */
-    @Column(name = "shuffle_options", nullable = false)
-    private boolean shuffleOptions = true;
-
-    /**
-     * Filtr źródeł pytań w Testach: własne arkusze (arkusze wybranej aplikacji), arkusze innych aplikacji i pytania
-     * autorskie. Domyślnie wszystkie trzy; zawsze zaznaczone jest co najmniej jedno (pilnuje tego baza).
-     * Zapisywany i odczytywany przez {@code SourceFilterService}.
-     */
-    @Column(name = "include_own_sheets", nullable = false)
-    private boolean includeOwnSheets = true;
-
-    @Column(name = "include_other_sheets", nullable = false)
-    private boolean includeOtherSheets = true;
-
-    @Column(name = "include_authored", nullable = false)
-    private boolean includeAuthored = true;
-
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 

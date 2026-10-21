@@ -267,7 +267,7 @@ Z limitu logowania korzystają też zmiana hasła i usunięcie konta (błędne h
 **`GET /api/users/me/export`** zwraca jeden plik JSON z **wszystkimi danymi**, które serwis trzyma o użytkowniku:
 konto (bez hasła i tokenów), stan nauki każdego pytania (osobno w trybie Testy i Fiszki), pełną historię odpowiedzi,
 wysłane zgłoszenia, podsumowania egzaminów, zapisane własne testy, czas nauki dzień po dniu, ręczne dodania do fiszek i
-ustawienia nauki (wybrana ścieżka, zawężenie puli do aktów, filtr źródeł, limity). Dokładny kształt pliku:
+ustawienia nauki (wybrana ścieżka, zawężenie puli do aktów, limity). Dokładny kształt pliku:
 [API: konto zalogowanego](api/02-konto.md).
 
 **`DELETE /api/users/me`** (z hasłem w treści żądania) usuwa konto **razem z całą historią nauki**. Kasowanie

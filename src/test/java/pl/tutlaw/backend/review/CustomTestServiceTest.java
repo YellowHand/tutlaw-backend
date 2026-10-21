@@ -9,7 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.course.CourseRepository;
 import pl.tutlaw.backend.pool.Pool;
-import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.question.LawChangePolicy;
 import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.question.QuestionRepository;
@@ -129,11 +129,19 @@ class CustomTestServiceTest {
     }
 
     private static CustomTestRequest request(CustomTestKind kind, int count) {
-        return new CustomTestRequest(null, null, null, kind, count);
+        return new CustomTestRequest(null, null, null, null, null, kind, count);
+    }
+
+    private static CustomTestRequest request(SourceMode source, CustomTestKind kind, int count) {
+        return new CustomTestRequest(null, null, null, null, source, kind, count);
     }
 
     private CustomTestCountsResponse counts() {
-        return service.counts(null, null, null, authentication);
+        return service.counts(null, null, null, null, null, authentication);
+    }
+
+    private CustomTestCountsResponse counts(SourceMode source) {
+        return service.counts(null, null, null, null, source, authentication);
     }
 
     private static Set<Long> set(List<Long> ids) {
@@ -187,11 +195,11 @@ class CustomTestServiceTest {
                 ref(6, 12, 4, QuestionRefs.OWN_SHEET))); // poza zakresem
 
         CustomTestCountsResponse counts = service.counts(
-                java.util.Arrays.asList(2L, 2L, null), List.of(7L, 8L), null, authentication);
+                java.util.Arrays.asList(2L, 2L, null), List.of(7L, 8L), null, null, null, authentication);
 
         assertThat(counts.all()).isEqualTo(4);
         assertThat(set(service.select(
-                new CustomTestRequest(List.of(2L), List.of(7L, 8L), null, CustomTestKind.ALL, 10), authentication).questionIds()))
+                new CustomTestRequest(List.of(2L), List.of(7L, 8L), null, null, null, CustomTestKind.ALL, 10), authentication).questionIds()))
                 .containsExactlyInAnyOrder(1L, 2L, 3L, 4L);
     }
 
@@ -199,21 +207,136 @@ class CustomTestServiceTest {
     void scope_withOnlyActs_ignoresFields() {
         wholePool(List.of(ref(1, 7, 3, QuestionRefs.OWN_SHEET), ref(2, 8, 3, QuestionRefs.OWN_SHEET)));
 
-        assertThat(service.counts(null, List.of(7L), null, authentication).all()).isEqualTo(1);
-        assertThat(service.counts(List.of(), List.of(), null, authentication).all()).isEqualTo(2);
+        assertThat(service.counts(null, List.of(7L), null, null, null, authentication).all()).isEqualTo(1);
+        assertThat(service.counts(List.of(), List.of(), null, null, null, authentication).all()).isEqualTo(2);
     }
 
-    // ---------------------------------------------------------------- filtry
+    // ---------------------------------------------------------------- rozdziały
 
     @Test
-    void sourceFilter_removesQuestionsFromOtherSourceGroups() {
+    void sections_narrowTheScopeToTheirQuestions() {
         wholePool(List.of(
+                ref(1, 10, 2, QuestionRefs.OWN_SHEET),   // rozdział 200 aktu 10
+                ref(2, 10, 2, QuestionRefs.OWN_SHEET),   // rozdział 201 aktu 10
+                ref(3, 10, 2, QuestionRefs.OWN_SHEET),   // akt 10 bez rozdziału
+                ref(4, 11, 2, QuestionRefs.OWN_SHEET))); // inny akt
+        when(questionRepository.findIdsBySectionIds(List.of(200L))).thenReturn(List.of(1L));
+
+        CustomTestCountsResponse counts = service.counts(null, null, null, List.of(200L), null, authentication);
+
+        assertThat(counts.all()).isEqualTo(1);
+        assertThat(service.select(
+                new CustomTestRequest(null, null, null, List.of(200L), null, CustomTestKind.ALL, 10), authentication)
+                .questionIds()).containsExactly(1L);
+    }
+
+    @Test
+    void sections_areUnitedWithWholeActsAndFields() {
+        wholePool(List.of(
+                ref(1, 10, 2, QuestionRefs.OWN_SHEET),   // rozdział 200 aktu 10
+                ref(2, 10, 2, QuestionRefs.OWN_SHEET),   // akt 10 bez rozdziału: poza zakresem
+                ref(3, 7, 3, QuestionRefs.OWN_SHEET),    // akt 7 wybrany w całości
+                ref(4, 12, 5, QuestionRefs.OWN_SHEET),   // dziedzina 5 wybrana w całości
+                ref(5, 13, 6, QuestionRefs.OWN_SHEET))); // poza zakresem
+        when(questionRepository.findIdsBySectionIds(List.of(200L))).thenReturn(List.of(1L));
+
+        CustomTestRequest request = new CustomTestRequest(
+                List.of(5L), List.of(7L), null, List.of(200L), null, CustomTestKind.ALL, 10);
+
+        assertThat(set(service.select(request, authentication).questionIds())).containsExactlyInAnyOrder(1L, 3L, 4L);
+    }
+
+    @Test
+    void sections_withoutAnyQuestion_doNotWidenTheScopeToTheWholePool() {
+        wholePool(refs(1, 5));
+        when(questionRepository.findIdsBySectionIds(List.of(999L))).thenReturn(List.of());
+
+        assertThat(service.counts(null, null, null, List.of(999L), null, authentication).all()).isZero();
+        assertThatThrownBy(() -> service.select(
+                new CustomTestRequest(null, null, null, List.of(999L), null, CustomTestKind.ALL, 10), authentication))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void sections_areNotLookedUpWhenNoneAreChosen() {
+        wholePool(refs(1, 3));
+
+        assertThat(counts().all()).isEqualTo(3);
+        assertThat(service.counts(null, null, null, List.of(), null, authentication).all()).isEqualTo(3);
+        verify(questionRepository, never()).findIdsBySectionIds(ArgumentMatchers.<java.util.Collection<Long>>any());
+    }
+
+    @Test
+    void sections_aQuestionOutsideThePoolIsNotLetInBySection() {
+        // pytanie 9 jest w rozdziale, ale poza pulą użytkownika (repozytorium puli go nie zwraca)
+        wholePool(List.of(ref(1, 10, 2, QuestionRefs.OWN_SHEET)));
+        when(questionRepository.findIdsBySectionIds(List.of(200L))).thenReturn(List.of(1L, 9L));
+
+        assertThat(service.counts(null, null, null, List.of(200L), null, authentication).all()).isEqualTo(1);
+    }
+
+    // ---------------------------------------------------------------- źródło
+
+    private static List<QuestionRef> oneFromEachSource() {
+        return List.of(
                 ref(1, 1, 1, QuestionRefs.OWN_SHEET),
                 ref(2, 1, 1, QuestionRefs.OTHER_SHEET),
-                ref(3, 1, 1, QuestionRefs.AUTHORED)));
-        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
+                ref(3, 1, 1, QuestionRefs.AUTHORED));
+    }
 
-        assertThat(counts().all()).isEqualTo(2);
+    @Test
+    void source_allIsTheDefault_andTakesEveryGroup() {
+        wholePool(oneFromEachSource());
+
+        assertThat(counts().all()).isEqualTo(3);
+        assertThat(counts(SourceMode.ALL).all()).isEqualTo(3);
+    }
+
+    @Test
+    void source_ministry_takesBothKindsOfExamSheetsAndNoAuthoredQuestions() {
+        wholePool(oneFromEachSource());
+
+        assertThat(counts(SourceMode.MINISTRY).all()).isEqualTo(2);
+        assertThat(set(service.select(request(SourceMode.MINISTRY, CustomTestKind.ALL, 10), authentication).questionIds()))
+                .containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void source_authored_takesOnlyAuthoredQuestions() {
+        wholePool(oneFromEachSource());
+
+        assertThat(counts(SourceMode.AUTHORED).all()).isEqualTo(1);
+        assertThat(service.select(request(SourceMode.AUTHORED, CustomTestKind.ALL, 10), authentication).questionIds())
+                .containsExactly(3L);
+    }
+
+    @Test
+    void source_appliesToEveryKind() {
+        wholePool(List.of(
+                QuestionRefs.refOf(withLawChange(QuestionRefs.question(1, 1, 1, QuestionRefs.OWN_SHEET))),
+                QuestionRefs.refOf(withLawChange(QuestionRefs.question(2, 1, 1, QuestionRefs.AUTHORED))),
+                ref(3, 1, 1, QuestionRefs.OWN_SHEET),
+                ref(4, 1, 1, QuestionRefs.AUTHORED)));
+        schedule(overdue(1, 5), overdue(2, 5));
+        when(mistakesService.recentMistakeQuestionIds(5L)).thenReturn(List.of(1L, 2L));
+
+        CustomTestCountsResponse authored = counts(SourceMode.AUTHORED);
+
+        assertThat(authored.all()).isEqualTo(2);          // 2, 4
+        assertThat(authored.newQuestions()).isEqualTo(1); // 4
+        assertThat(authored.due()).isEqualTo(1);          // 2
+        assertThat(authored.mistakes()).isEqualTo(1);     // 2
+        assertThat(authored.lawChanges()).isEqualTo(1);   // 2
+    }
+
+    @Test
+    void source_combinesWithTheScope() {
+        wholePool(List.of(
+                ref(1, 7, 3, QuestionRefs.OWN_SHEET),
+                ref(2, 7, 3, QuestionRefs.AUTHORED),
+                ref(3, 8, 3, QuestionRefs.AUTHORED)));
+
+        assertThat(service.counts(null, List.of(7L), null, null, SourceMode.AUTHORED, authentication).all()).isEqualTo(1);
     }
 
     @Test
@@ -261,13 +384,12 @@ class CustomTestServiceTest {
     }
 
     @Test
-    void lawChange_isStillSubjectToTheSourceFilter() {
+    void lawChange_isStillSubjectToTheChosenSource() {
         wholePool(List.of(
                 QuestionRefs.refOf(withLawChange(QuestionRefs.question(1, 1, 1, QuestionRefs.OWN_SHEET))),
-                QuestionRefs.refOf(withLawChange(QuestionRefs.question(2, 1, 1, QuestionRefs.OTHER_SHEET)))));
-        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
+                QuestionRefs.refOf(withLawChange(QuestionRefs.question(2, 1, 1, QuestionRefs.AUTHORED)))));
 
-        assertThat(counts().lawChanges()).isEqualTo(1);
+        assertThat(counts(SourceMode.MINISTRY).lawChanges()).isEqualTo(1);
     }
 
     private static pl.tutlaw.backend.question.Question withLawChange(pl.tutlaw.backend.question.Question question) {
@@ -286,11 +408,11 @@ class CustomTestServiceTest {
                 ref(4, 8, 3, QuestionRefs.OWN_SHEET))); // poza zakresem
         when(courseRepository.findActIdsByCourseIds(List.of(10L))).thenReturn(List.of(4L, 5L));
 
-        CustomTestCountsResponse counts = service.counts(null, List.of(7L), List.of(10L), authentication);
+        CustomTestCountsResponse counts = service.counts(null, List.of(7L), List.of(10L), null, null, authentication);
 
         assertThat(counts.all()).isEqualTo(3);
         assertThat(set(service.select(
-                new CustomTestRequest(null, List.of(7L), List.of(10L), CustomTestKind.ALL, 10), authentication).questionIds()))
+                new CustomTestRequest(null, List.of(7L), List.of(10L), null, null, CustomTestKind.ALL, 10), authentication).questionIds()))
                 .containsExactlyInAnyOrder(1L, 2L, 3L);
     }
 
@@ -299,9 +421,9 @@ class CustomTestServiceTest {
         wholePool(refs(1, 5));
         when(courseRepository.findActIdsByCourseIds(List.of(13L))).thenReturn(List.of());
 
-        assertThat(service.counts(null, null, List.of(13L), authentication).all()).isZero();
+        assertThat(service.counts(null, null, List.of(13L), null, null, authentication).all()).isZero();
         assertThatThrownBy(() -> service.select(
-                new CustomTestRequest(null, null, List.of(13L), CustomTestKind.ALL, 10), authentication))
+                new CustomTestRequest(null, null, List.of(13L), null, null, CustomTestKind.ALL, 10), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -311,7 +433,7 @@ class CustomTestServiceTest {
         // dwa przedmioty z aktem 4 w obu
         when(courseRepository.findActIdsByCourseIds(List.of(10L, 12L))).thenReturn(List.of(4L, 5L));
 
-        assertThat(service.counts(null, null, List.of(10L, 12L), authentication).all()).isEqualTo(2);
+        assertThat(service.counts(null, null, List.of(10L, 12L), null, null, authentication).all()).isEqualTo(2);
     }
 
     // ---------------------------------------------------------------- losowanie
@@ -346,7 +468,7 @@ class CustomTestServiceTest {
         schedule(overdue(1, 10));
 
         CustomTestSelectionResponse response = service.select(
-                new CustomTestRequest(null, null, null, null, 10), authentication);
+                new CustomTestRequest(null, null, null, null, null, null, 10), authentication);
 
         assertThat(response.questionIds()).hasSize(5);
     }
@@ -443,13 +565,12 @@ class CustomTestServiceTest {
     }
 
     @Test
-    void select_hintsAtTheFilterWhenItRemovedEverything() {
+    void select_hintsAtTheSourceWhenItRemovedEverything() {
         wholePool(List.of(ref(1, 1, 1, QuestionRefs.OTHER_SHEET)));
-        pool = Pools.of(new SourceFilter(true, false, false), 1, 2);
 
-        assertThatThrownBy(() -> service.select(request(CustomTestKind.ALL, 10), authentication))
+        assertThatThrownBy(() -> service.select(request(SourceMode.AUTHORED, CustomTestKind.ALL, 10), authentication))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("filtr źródeł");
+                .hasMessageContaining("Wybierz inne źródło");
     }
 
     @Test

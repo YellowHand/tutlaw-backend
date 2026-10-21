@@ -1,14 +1,13 @@
 package pl.tutlaw.backend.catalog.dto;
 
 import pl.tutlaw.backend.legal.LegalActKind;
-import pl.tutlaw.backend.source.SourceKind;
 
 import java.util.List;
 
 /**
- * Drzewo do ekranu Testów: dziedzina → akt prawny, oraz osobno źródła (arkusze egzaminów i pytania autorskie),
- * z licznikami pytań dla zalogowanego użytkownika. Dziedziny bez aktów w puli użytkownika są pomijane, a akty to tylko
- * te z jego puli (jego ścieżka i ewentualne zawężenie); liczą się pytania z wybranych źródeł (filtr źródeł). Student
+ * Drzewo do kreatora Testów: dziedzina → akt prawny → rozdział, z licznikami pytań dla zalogowanego użytkownika.
+ * Dziedziny bez aktów w puli użytkownika są pomijane, a akty to tylko te z jego puli (jego ścieżka i ewentualne
+ * zawężenie); liczą się pytania z wybranego źródła ({@code SourceMode}: wszystkie, Ministerstwo, autorskie). Student
  * dostaje dodatkowo listę swoich przedmiotów ({@code courses}).
  * <ul>
  *   <li>{@code questionCount}: pytania, które użytkownik może teraz rozwiązywać,</li>
@@ -19,7 +18,7 @@ import java.util.List;
  * @param courses  przedmioty w puli studenta (na pozostałych ścieżkach pusta lista)
  */
 public record TestCatalogResponse(
-        boolean narrowed, List<FieldNode> fields, List<CourseNode> courses, List<SourceNode> sources) {
+        boolean narrowed, List<FieldNode> fields, List<CourseNode> courses) {
 
     /**
      * Przedmiot studenta z licznikami pytań z jego aktów (z dozwolonych źródeł). {@code actIds} to jego akty,
@@ -35,20 +34,19 @@ public record TestCatalogResponse(
     ) {
     }
 
+    /**
+     * @param sections rozdziały aktu, w których jest co rozwiązywać (puste, gdy akt nie ma rozdziałów). Pytania bez
+     *                 rozdziału są tylko w akcie jako całości, więc suma rozdziałów może być mniejsza niż
+     *                 {@code questionCount}
+     */
     public record ActNode(
             Long id, String name, String shortName, String slug, LegalActKind kind,
-            int questionCount, int solvedCount
+            int questionCount, int solvedCount,
+            List<SectionNode> sections
     ) {
     }
 
-    /**
-     * Źródło pytań (arkusz albo pytania autorskie).
-     *
-     * @param group OWN_SHEETS (arkusze wybranej ścieżki), OTHER_SHEETS (arkusze innych ścieżek) albo AUTHORED
-     */
-    public record SourceNode(
-            Long id, String name, SourceKind kind, String group, Integer examYear,
-            int questionCount, int solvedCount
-    ) {
+    /** Rozdział aktu z liczbą pytań (z wybranego źródła). */
+    public record SectionNode(Long id, String name, int questionCount) {
     }
 }

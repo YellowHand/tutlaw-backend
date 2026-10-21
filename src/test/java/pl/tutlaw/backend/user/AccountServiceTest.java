@@ -7,6 +7,7 @@ import pl.tutlaw.backend.common.exception.UnauthorizedException;
 import pl.tutlaw.backend.exam.ExamAttempt;
 import pl.tutlaw.backend.exam.ExamAttemptRepository;
 import pl.tutlaw.backend.flashcard.FlashcardAdditionRepository;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.pool.UserPoolActRepository;
 import pl.tutlaw.backend.report.QuestionReportReason;
 import pl.tutlaw.backend.report.QuestionReportRepository;
@@ -177,7 +178,7 @@ class AccountServiceTest {
             CustomTestSessionService customTests = org.mockito.Mockito.mock(CustomTestSessionService.class);
             org.mockito.Mockito.when(customTests.listAll(1L)).thenReturn(List.of(new CustomTestSessionSummaryResponse(
                     7L, T.minusDays(2), T.minusDays(2).plusMinutes(20), true, "Prawo karne", CustomTestKind.NEW,
-                    List.of(2L), List.of(), List.of(), List.of("OWN_SHEETS", "AUTHORED"),
+                    List.of(2L), List.of(), List.of(), List.of(), SourceMode.ALL,
                     20, 20, 20, 15, 2, 300.0)));
 
             service = new AccountService(
@@ -311,7 +312,6 @@ class AccountServiceTest {
         stored.setMaxReviewsPerDay(300);
         stored.setTrackId(4L);
         stored.setTheme(Theme.LIGHT);
-        stored.setShuffleOptions(false);
         f.storedSettings = stored;
 
         AccountExportResponse.LearningSettings settings = f.service.export(f.jan).learningSettings();
@@ -323,8 +323,6 @@ class AccountServiceTest {
         // ścieżka idzie do eksportu jako czytelny adres (slug), a nie numer z bazy
         assertThat(settings.track()).isEqualTo("notarialna");
         assertThat(settings.theme()).isEqualTo(Theme.LIGHT);
-        assertThat(settings.shuffleOptions()).isFalse();
-        assertThat(settings.sourceFilter()).isNull(); // brak filtra = wszystkie grupy źródeł
         assertThat(settings.poolActIds()).isEmpty();  // brak zawężenia puli
     }
 
@@ -337,18 +335,15 @@ class AccountServiceTest {
     }
 
     @Test
-    void exportContainsTheSourceFilterAndThePoolNarrowing() {
+    void exportContainsThePoolNarrowing() {
         Fixture f = new Fixture();
         UserSettings stored = new UserSettings(1L);
         stored.setTrackId(4L);
-        stored.setIncludeOtherSheets(false);
-        stored.setIncludeAuthored(false);
         f.storedSettings = stored;
         f.poolActIds = List.of(3L, 8L);
 
         AccountExportResponse.LearningSettings settings = f.service.export(f.jan).learningSettings();
 
-        assertThat(settings.sourceFilter()).isEqualTo("OWN_SHEETS");
         assertThat(settings.poolActIds()).containsExactly(3L, 8L);
     }
 

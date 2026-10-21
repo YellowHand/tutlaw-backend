@@ -40,6 +40,30 @@ public final class Pools {
         return of(SourceFilter.ALL, 1, 2);
     }
 
+    /**
+     * Ta sama pula z innym filtrem źródeł: tak jak robi to prawdziwy {@code PoolService.forUser(userId, filter)}
+     * ({@code sourceIds} to źródła dozwolone przez filtr; źródło 3 to pytania autorskie, źródła własne ścieżki
+     * wskazuje {@code ownSheetIds}, pozostałe arkusze to „inne").
+     */
+    public static Pool withFilter(Pool base, SourceFilter filter) {
+        List<Long> allowed = new ArrayList<>();
+        for (Long source : ALL_SOURCES) {
+            boolean ok;
+            if (source == QuestionRefs.AUTHORED) {
+                ok = filter.authored();
+            } else if (base.ownSheetIds().contains(source)) {
+                ok = filter.ownSheets();
+            } else {
+                ok = filter.otherSheets();
+            }
+            if (ok) {
+                allowed.add(source);
+            }
+        }
+        return new Pool(base.trackId(), base.trackKind(), base.baseActIds(), base.actIds(), base.narrowed(), filter,
+                base.ownSheetIds(), allowed.isEmpty() ? List.of(Pool.NO_SUCH_ID) : allowed, base.allSourceIds());
+    }
+
     /** Zawężenie do podanych aktów (z puli {@code base}). */
     public static Pool narrowedTo(Pool base, long... actIds) {
         List<Long> acts = new ArrayList<>();
@@ -70,7 +94,10 @@ public final class Pools {
     public static PoolService holding(Supplier<Pool> pool, Supplier<StudentCourses> courses) {
         return Mockito.mock(PoolService.class, invocation -> {
             if (invocation.getMethod().getName().equals("forUser")) {
-                return pool.get();
+                // forUser(userId, filter) liczy pulę z wybranych grup źródeł, forUser(userId) ze wszystkich
+                return invocation.getArguments().length == 2
+                        ? withFilter(pool.get(), (SourceFilter) invocation.getArgument(1))
+                        : pool.get();
             }
             if (invocation.getMethod().getName().equals("studentCourses")) {
                 return courses.get();

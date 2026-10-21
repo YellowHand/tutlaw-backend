@@ -89,8 +89,8 @@ class LearningSettingsServiceTest {
         when(currentUserResolver.resolve(authentication)).thenReturn(user());
     }
 
-    private static UpdateLearningSettingsRequest request(Integer flashcards, Integer tests, Integer reviews, Double retention, Boolean shuffle) {
-        return new UpdateLearningSettingsRequest(flashcards, tests, reviews, retention, shuffle);
+    private static UpdateLearningSettingsRequest request(Integer flashcards, Integer tests, Integer reviews, Double retention) {
+        return new UpdateLearningSettingsRequest(flashcards, tests, reviews, retention);
     }
 
     private static Track track(long id, String slug, String name, TrackKind kind) {
@@ -139,7 +139,6 @@ class LearningSettingsServiceTest {
         assertThat(e.trackId()).isNull();
         assertThat(e.examDate()).isNull();
         assertThat(e.daysToExam()).isNull();
-        assertThat(e.shuffleOptions()).isTrue();
         assertThat(e.retentionBoosted()).isFalse();
         assertThat(e.newTestQuestionsAuto()).isTrue(); // bez własnego limitu obowiązuje automatyczny
     }
@@ -149,7 +148,6 @@ class LearningSettingsServiceTest {
         UserSettings stored = new UserSettings(5L);
         stored.setNewFlashcardsPerDay(5);
         stored.setMaxReviewsPerDay(80);
-        stored.setShuffleOptions(false);
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
 
         EffectiveSettings e = service.effectiveFor(5L);
@@ -157,7 +155,6 @@ class LearningSettingsServiceTest {
         assertThat(e.newFlashcardsPerDay()).isEqualTo(5);
         assertThat(e.newTestQuestionsPerDay()).isEqualTo(40);
         assertThat(e.maxReviewsPerDay()).isEqualTo(80);
-        assertThat(e.shuffleOptions()).isFalse();
         assertThat(e.newTestQuestionsAuto()).isTrue();
     }
 
@@ -266,7 +263,7 @@ class LearningSettingsServiceTest {
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.empty());
 
-        LearningSettingsResponse response = service.update(request(10, 60, 150, 0.85, false), authentication);
+        LearningSettingsResponse response = service.update(request(10, 60, 150, 0.85), authentication);
 
         ArgumentCaptor<UserSettings> captor = ArgumentCaptor.forClass(UserSettings.class);
         verify(repository).save(captor.capture());
@@ -276,7 +273,6 @@ class LearningSettingsServiceTest {
         assertThat(saved.getNewTestQuestionsPerDay()).isEqualTo(60);
         assertThat(saved.getMaxReviewsPerDay()).isEqualTo(150);
         assertThat(saved.getDesiredRetention()).isEqualTo(0.85);
-        assertThat(saved.isShuffleOptions()).isFalse();
         assertThat(saved.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 12, 0));
 
         assertThat(response.maxReviewsPerDay()).isEqualTo(150);
@@ -286,35 +282,32 @@ class LearningSettingsServiceTest {
     }
 
     @Test
-    void update_nullsMeanDefaults_andNullShuffleMeansYes() {
+    void update_nullsMeanDefaults() {
         UserSettings existing = new UserSettings(5L);
         existing.setNewFlashcardsPerDay(3);
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
 
-        LearningSettingsResponse response = service.update(request(null, null, null, null, null), authentication);
+        LearningSettingsResponse response = service.update(request(null, null, null, null), authentication);
 
         assertThat(existing.getNewFlashcardsPerDay()).isNull();
-        assertThat(existing.isShuffleOptions()).isTrue();
         assertThat(response.newFlashcardsPerDay()).isEqualTo(20);
         assertThat(response.examDate()).isNull();
         assertThat(response.plan()).isNull();
     }
 
     @Test
-    void update_doesNotChangeTheChosenTrackNorTheSourceFilterNorTheNarrowing() {
+    void update_doesNotChangeTheChosenTrackNorTheNarrowing() {
         UserSettings existing = withExam(TODAY.plusDays(90));
-        existing.setIncludeOtherSheets(false);
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
         trackExists(NOTARIALNA, "notarialna", "Notarialna", TrackKind.EXAM);
         givenQuestionsInPool(0);
         when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
 
-        LearningSettingsResponse response = service.update(request(null, 50, null, null, true), authentication);
+        LearningSettingsResponse response = service.update(request(null, 50, null, null), authentication);
 
         assertThat(existing.getTrackId()).isEqualTo(NOTARIALNA);
-        assertThat(existing.isIncludeOtherSheets()).isFalse();
         verify(poolActRepository, never()).deleteByUserId(any());
         assertThat(response.track().slug()).isEqualTo("notarialna");
         assertThat(response.daysToExam()).isEqualTo(90L);
@@ -324,11 +317,11 @@ class LearningSettingsServiceTest {
     void update_rejectsRetentionOutsideTheAllowedRange() {
         loggedIn();
 
-        assertThatThrownBy(() -> service.update(request(null, null, null, 0.5, null), authentication))
+        assertThatThrownBy(() -> service.update(request(null, null, null, 0.5), authentication))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("retencja");
-        assertThatThrownBy(() -> service.update(request(null, null, null, 0.99, null), authentication))
+        assertThatThrownBy(() -> service.update(request(null, null, null, 0.99), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.update(request(null, null, null, Double.NaN, null), authentication))
+        assertThatThrownBy(() -> service.update(request(null, null, null, Double.NaN), authentication))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(repository, never()).save(any());
     }
@@ -361,11 +354,9 @@ class LearningSettingsServiceTest {
     }
 
     @Test
-    void chooseTrack_changingTheTrack_clearsTheNarrowingAndResetsTheSourceFilter() {
+    void chooseTrack_changingTheTrack_clearsTheNarrowing() {
         UserSettings existing = new UserSettings(5L);
         existing.setTrackId(NOTARIALNA);
-        existing.setIncludeOwnSheets(false);
-        existing.setIncludeAuthored(false);
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
         trackExists(KOMORNICZA, "komornicza", "Komornicza", TrackKind.EXAM);
@@ -374,9 +365,6 @@ class LearningSettingsServiceTest {
         LearningSettingsResponse response = service.chooseTrack(new ChooseTrackRequest(KOMORNICZA), authentication);
 
         assertThat(existing.getTrackId()).isEqualTo(KOMORNICZA);
-        assertThat(existing.isIncludeOwnSheets()).isTrue();
-        assertThat(existing.isIncludeOtherSheets()).isTrue();
-        assertThat(existing.isIncludeAuthored()).isTrue();
         verify(poolActRepository).deleteByUserId(5L);
         assertThat(response.examDate()).isNull(); // termin nieogłoszony
         assertThat(response.plan()).isNull();
@@ -409,7 +397,6 @@ class LearningSettingsServiceTest {
     void chooseTrack_chosenAgain_changesNothing() {
         UserSettings existing = new UserSettings(5L);
         existing.setTrackId(NOTARIALNA);
-        existing.setIncludeOtherSheets(false);
         existing.setNewTestQuestionsPerDay(77);
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
@@ -418,7 +405,6 @@ class LearningSettingsServiceTest {
 
         service.chooseTrack(new ChooseTrackRequest(NOTARIALNA), authentication);
 
-        assertThat(existing.isIncludeOtherSheets()).isFalse(); // filtr i zawężenie zostają
         assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
         verify(poolActRepository, never()).deleteByUserId(any());
     }
@@ -428,7 +414,6 @@ class LearningSettingsServiceTest {
         UserSettings existing = new UserSettings(5L);
         existing.setNewTestQuestionsPerDay(77);
         existing.setNewFlashcardsPerDay(9);
-        existing.setShuffleOptions(false);
         existing.setTheme(Theme.LIGHT);
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
@@ -439,7 +424,6 @@ class LearningSettingsServiceTest {
 
         assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
         assertThat(existing.getNewFlashcardsPerDay()).isEqualTo(9);
-        assertThat(existing.isShuffleOptions()).isFalse();
         assertThat(existing.getTheme()).isEqualTo(Theme.LIGHT);
     }
 
@@ -614,14 +598,14 @@ class LearningSettingsServiceTest {
     }
 
     @Test
-    void get_planCountsOnlyQuestionsFromTheUsersPool_thatIsItsActsAndSourceFilter() {
+    void get_planCountsOnlyQuestionsFromTheUsersPool_thatIsItsActs() {
         UserSettings stored = withExam(TODAY.plusDays(44));
-        pool = Pools.of(new SourceFilter(true, false, false), 1);
+        pool = Pools.of(SourceFilter.ALL, 1);
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
         List<Question> all = new ArrayList<>();
         for (long id = 1; id <= 10; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OWN_SHEET));       // liczone
-        for (long id = 11; id <= 20; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OTHER_SHEET));    // filtr źródeł
+        for (long id = 11; id <= 20; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OTHER_SHEET));    // liczone: źródło wybiera się dopiero przy teście
         for (long id = 21; id <= 30; id++) all.add(QuestionRefs.question(id, 2, 1, QuestionRefs.OWN_SHEET));      // akt spoza puli
         givenQuestions(all);
         when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
@@ -629,7 +613,7 @@ class LearningSettingsServiceTest {
 
         LearningSettingsResponse.Plan plan = service.get(authentication).plan();
 
-        assertThat(plan.newTestQuestionsLeft()).isEqualTo(10);
+        assertThat(plan.newTestQuestionsLeft()).isEqualTo(20);
     }
 
     @Test
@@ -678,8 +662,6 @@ class LearningSettingsServiceTest {
         existing.setNewTestQuestionsPerDay(77);
         existing.setNewFlashcardsPerDay(9);
         existing.setTrackId(NOTARIALNA);
-        existing.setIncludeAuthored(false);
-        existing.setShuffleOptions(false);
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
         when(examTerms.findById(NOTARIALNA)).thenReturn(Optional.empty());
@@ -690,8 +672,6 @@ class LearningSettingsServiceTest {
         assertThat(existing.getNewTestQuestionsPerDay()).isEqualTo(77);
         assertThat(existing.getNewFlashcardsPerDay()).isEqualTo(9);
         assertThat(existing.getTrackId()).isEqualTo(NOTARIALNA);
-        assertThat(existing.isIncludeAuthored()).isFalse();
-        assertThat(existing.isShuffleOptions()).isFalse();
         assertThat(response.newTestQuestionsPerDay()).isEqualTo(77);
     }
 
@@ -721,7 +701,7 @@ class LearningSettingsServiceTest {
         loggedIn();
         when(repository.findById(5L)).thenReturn(Optional.of(existing));
 
-        LearningSettingsResponse response = service.update(request(null, null, null, null, null), authentication);
+        LearningSettingsResponse response = service.update(request(null, null, null, null), authentication);
 
         assertThat(existing.getTheme()).isEqualTo(Theme.LIGHT);
         assertThat(response.theme()).isEqualTo(Theme.LIGHT);
@@ -852,7 +832,7 @@ class LearningSettingsServiceTest {
     @Test
     void dailyLimit_auto_countsOnlyQuestionsFromTheUsersPool() {
         UserSettings stored = withExam(TODAY.plusDays(44));
-        pool = Pools.of(new SourceFilter(true, false, false), 1);
+        pool = Pools.of(SourceFilter.ALL, 1);
         when(repository.findById(5L)).thenReturn(Optional.of(stored));
         List<Question> all = new ArrayList<>();
         for (long id = 1; id <= 1800; id++) all.add(QuestionRefs.question(id, 1, 1, QuestionRefs.OWN_SHEET));
@@ -861,6 +841,6 @@ class LearningSettingsServiceTest {
         when(stateRepository.findScheduleByUserIdAndMode(5L, ReviewMode.TEST)).thenReturn(List.of());
         startedToday(0);
 
-        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(60); // 1800 / 30
+        assertThat(service.dailyNewTestQuestionLimit(5L)).isEqualTo(100); // (1800 + 1200) / 30
     }
 }

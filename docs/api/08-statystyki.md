@@ -12,8 +12,8 @@ Część endpointów przyjmuje opcjonalny `mode`. Fiszka to tryb nauki tego same
 
 | `mode` | Co jest liczone |
 |--------|------------------|
-| `FLASHCARD` | Stan nauki w trybie fiszek; pytania liczą się tylko, gdy ich fiszka jest **odblokowana** (pewny błąd albo ręczne dodanie) i widoczna. Bez filtra źródeł |
-| `TEST` | Stan nauki w testach, z filtrem źródeł |
+| `FLASHCARD` | Stan nauki w trybie fiszek; pytania liczą się tylko, gdy ich fiszka jest **odblokowana** (pewny błąd albo ręczne dodanie) i widoczna |
+| `TEST` | Stan nauki w testach |
 | (brak) | Oba tryby razem: to samo pytanie, które ma stan w obu trybach, liczy się dwa razy (raz jako test, raz jako fiszka) |
 
 ## `GET /api/statistics/overview`
@@ -90,7 +90,7 @@ Statystyki Testów (zakładka „Testy” na pulpicie). Bez parametrów.
 
 | Pole | Znaczenie |
 |------|-----------|
-| `totalQuestions` | Pytania, które użytkownik może teraz rozwiązywać w testach (liczone tak jak w katalogu Testów: pula, zawężenie, filtr źródeł) |
+| `totalQuestions` | Pytania, które użytkownik może teraz rozwiązywać w testach (liczone tak jak w katalogu Testów: pula po zawężeniu do aktów, wszystkie źródła) |
 | `solvedQuestions` | Z nich rozwiązane co najmniej raz |
 | `answersLast30Days`, `correctLast30Days` | Odpowiedzi w testach z 30 dni i ile z nich poprawnych (niezależnie od „Nie jestem pewien”) |
 | `accuracyRate` | Procent poprawnych z 30 dni; `null` bez odpowiedzi |
@@ -101,7 +101,7 @@ Statystyki Testów (zakładka „Testy” na pulpicie). Bez parametrów.
 ## `GET /api/statistics/sources`
 
 Statystyki Testów według **źródła pytań**: arkuszy egzaminów (z podziałem na lata) i pytań autorskich. Bez parametrów.
-Nie podlega filtrowi źródeł z Testów ani zawężeniu do aktów: zawsze pokazuje całą pulę ścieżki.
+Nie podlega zawężeniu do aktów: zawsze pokazuje całą pulę ścieżki, każde źródło osobno.
 
 ```json
 {

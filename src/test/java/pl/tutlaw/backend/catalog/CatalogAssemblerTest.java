@@ -3,19 +3,16 @@ package pl.tutlaw.backend.catalog;
 import org.junit.jupiter.api.Test;
 import pl.tutlaw.backend.catalog.CatalogAssembler.ActRow;
 import pl.tutlaw.backend.catalog.CatalogAssembler.FieldRow;
-import pl.tutlaw.backend.catalog.CatalogAssembler.SourceRow;
+import pl.tutlaw.backend.catalog.CatalogAssembler.SectionRow;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.ActNode;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.FieldNode;
-import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.SourceNode;
+import pl.tutlaw.backend.catalog.dto.TestCatalogResponse.SectionNode;
 import pl.tutlaw.backend.common.PolishSort;
 import pl.tutlaw.backend.legal.LegalActKind;
-import pl.tutlaw.backend.pool.SourceFilter;
-import pl.tutlaw.backend.source.SourceKind;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,22 +28,19 @@ class CatalogAssemblerTest {
     private static final ActRow PRAWOZNAWSTWO = new ActRow(
             13L, 1L, "Prawoznawstwo", "Prawoznawstwo", "prawoznawstwo", LegalActKind.TOPIC, 1);
 
-    private static final SourceRow EGZAMIN_NOT = new SourceRow(100L, "Egzamin notarialny 2023", SourceKind.EXAM_SHEET, 2023);
-    private static final SourceRow EGZAMIN_NOT_OLD = new SourceRow(101L, "Egzamin notarialny 2021", SourceKind.EXAM_SHEET, 2021);
-    private static final SourceRow EGZAMIN_KOM = new SourceRow(102L, "Egzamin komorniczy 2022", SourceKind.EXAM_SHEET, 2022);
-    private static final SourceRow AUTORSKIE = new SourceRow(103L, "Pytania autorskie", SourceKind.AUTHORED, null);
+    private static final SectionRow KK_I = new SectionRow(200L, 10L, "I. Zasady odpowiedzialności karnej", 10);
+    private static final SectionRow KK_II = new SectionRow(201L, 10L, "II. Formy popełnienia przestępstwa", 20);
+    private static final SectionRow KK_XIX = new SectionRow(202L, 10L, "XIX. Przeciwko życiu i zdrowiu", 190);
 
     private static TestCatalogResponse assemble() {
         return CatalogAssembler.assemble(
                 false,
                 List.of(KARNE, STUDENT, CYWILNE),
                 List.of(KKS, KK, PRAWOZNAWSTWO),
-                List.of(AUTORSKIE, EGZAMIN_KOM, EGZAMIN_NOT_OLD, EGZAMIN_NOT),
-                Set.of(100L, 101L),
+                List.of(KK_XIX, KK_I, KK_II),
                 Map.of(10L, 100L, 11L, 30L, 13L, 20L),
                 Map.of(10L, 40L, 11L, 3L),
-                Map.of(100L, 70L, 101L, 40L, 102L, 25L, 103L, 15L),
-                Map.of(100L, 30L, 101L, 10L, 102L, 2L));
+                Map.of(200L, 18L, 201L, 14L, 202L, 64L));
     }
 
     @Test
@@ -96,7 +90,7 @@ class CatalogAssemblerTest {
     @Test
     void anActWithoutAnyCountsHasZeros() {
         TestCatalogResponse response = CatalogAssembler.assemble(
-                false, List.of(KARNE), List.of(KPK), List.of(), Set.of(), Map.of(), Map.of(), Map.of(), Map.of());
+                false, List.of(KARNE), List.of(KPK), List.of(), Map.of(), Map.of(), Map.of());
 
         ActNode kpk = response.fields().get(0).acts().get(0);
         assertThat(kpk.questionCount()).isZero();
@@ -106,48 +100,69 @@ class CatalogAssemblerTest {
     @Test
     void solvedNeverExceedsAvailable_evenWhenTheCountsDisagree() {
         TestCatalogResponse response = CatalogAssembler.assemble(
-                false, List.of(KARNE), List.of(KK), List.of(EGZAMIN_NOT), Set.of(100L),
-                Map.of(10L, 10L), Map.of(10L, 25L), Map.of(100L, 10L), Map.of(100L, 25L));
+                false, List.of(KARNE), List.of(KK), List.of(), Map.of(10L, 10L), Map.of(10L, 25L), Map.of());
 
         assertThat(response.fields().get(0).acts().get(0).solvedCount()).isEqualTo(10);
-        assertThat(response.sources().get(0).solvedCount()).isEqualTo(10);
     }
 
-    // ---------------------------------------------------------------- źródła
+    // ---------------------------------------------------------------- rozdziały
 
     @Test
-    void sourcesAreGroupedOwnSheetsFirst_thenOtherSheets_thenAuthored_newestYearFirst() {
-        List<SourceNode> sources = assemble().sources();
+    void sectionsAreListedUnderTheirAct_inTheOrderOfTheirSortOrder_withQuestionCounts() {
+        ActNode kk = assemble().fields().get(0).acts().get(0);
 
-        assertThat(sources).extracting(SourceNode::name).containsExactly(
-                "Egzamin notarialny 2023", "Egzamin notarialny 2021", "Egzamin komorniczy 2022", "Pytania autorskie");
-        assertThat(sources).extracting(SourceNode::group).containsExactly(
-                SourceFilter.OWN_SHEETS, SourceFilter.OWN_SHEETS, SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
-    }
-
-    @Test
-    void sourceCountsAreQuestionsAndSolvedOnes() {
-        SourceNode newest = assemble().sources().get(0);
-
-        assertThat(newest.questionCount()).isEqualTo(70);
-        assertThat(newest.solvedCount()).isEqualTo(30);
-        assertThat(newest.examYear()).isEqualTo(2023);
-        assertThat(newest.kind()).isEqualTo(SourceKind.EXAM_SHEET);
+        assertThat(kk.sections()).extracting(SectionNode::name).containsExactly(
+                "I. Zasady odpowiedzialności karnej", "II. Formy popełnienia przestępstwa", "XIX. Przeciwko życiu i zdrowiu");
+        assertThat(kk.sections()).extracting(SectionNode::questionCount).containsExactly(18, 14, 64);
+        assertThat(kk.sections()).extracting(SectionNode::id).containsExactly(200L, 201L, 202L);
     }
 
     @Test
-    void aSourceWithoutQuestionsInThePoolIsLeftOut() {
+    void anActWithoutSectionsHasAnEmptyList() {
+        ActNode kks = assemble().fields().get(0).acts().get(1);
+
+        assertThat(kks.slug()).isEqualTo("kks");
+        assertThat(kks.sections()).isEmpty();
+    }
+
+    @Test
+    void aSectionWithoutQuestionsInTheChosenSourceIsLeftOut() {
+        // II rozdział nie ma pytań z wybranego źródła (np. tylko autorskie), więc nic by nie dał
         TestCatalogResponse response = CatalogAssembler.assemble(
-                false, List.of(KARNE), List.of(KK), List.of(EGZAMIN_NOT, EGZAMIN_KOM), Set.of(100L),
-                Map.of(), Map.of(), Map.of(100L, 5L), Map.of());
+                false, List.of(KARNE), List.of(KK), List.of(KK_I, KK_II), Map.of(10L, 18L), Map.of(), Map.of(200L, 18L));
 
-        assertThat(response.sources()).extracting(SourceNode::id).containsExactly(100L);
+        assertThat(response.fields().get(0).acts().get(0).sections()).extracting(SectionNode::id).containsExactly(200L);
+    }
+
+    @Test
+    void sectionsWithTheSameSortOrderAreOrderedByName_thenId() {
+        SectionRow b = new SectionRow(301L, 10L, "B. Drugi", 50);
+        SectionRow a = new SectionRow(302L, 10L, "A. Pierwszy", 50);
+        SectionRow ae = new SectionRow(300L, 10L, "A. Pierwszy", 50);
+        TestCatalogResponse response = CatalogAssembler.assemble(
+                false, List.of(KARNE), List.of(KK), List.of(b, a, ae), Map.of(10L, 3L), Map.of(),
+                Map.of(300L, 1L, 301L, 1L, 302L, 1L));
+
+        assertThat(response.fields().get(0).acts().get(0).sections()).extracting(SectionNode::id)
+                .containsExactly(300L, 302L, 301L);
+    }
+
+    @Test
+    void sectionsOfAnotherActDoNotLeakIntoTheAct() {
+        SectionRow foreign = new SectionRow(400L, 11L, "I. Cudzy", 10);
+        TestCatalogResponse response = CatalogAssembler.assemble(
+                false, List.of(KARNE), List.of(KK, KKS), List.of(KK_I, foreign), Map.of(10L, 18L, 11L, 5L), Map.of(),
+                Map.of(200L, 18L, 400L, 5L));
+
+        List<ActNode> acts = response.fields().get(0).acts();
+        assertThat(acts.get(0).sections()).extracting(SectionNode::id).containsExactly(200L);
+        assertThat(acts.get(1).sections()).extracting(SectionNode::id).containsExactly(400L);
     }
 
     @Test
     void theNarrowedFlagIsPassedThrough() {
         TestCatalogResponse response = CatalogAssembler.assemble(
-                true, List.of(KARNE), List.of(KK), List.of(), Set.of(), Map.of(), Map.of(), Map.of(), Map.of());
+                true, List.of(KARNE), List.of(KK), List.of(), Map.of(), Map.of(), Map.of());
 
         assertThat(response.narrowed()).isTrue();
         assertThat(assemble().narrowed()).isFalse();

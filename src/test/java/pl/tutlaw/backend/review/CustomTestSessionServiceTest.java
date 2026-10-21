@@ -6,12 +6,14 @@ import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.course.Course;
 import pl.tutlaw.backend.course.CourseRepository;
+import pl.tutlaw.backend.legal.ActSection;
+import pl.tutlaw.backend.legal.ActSectionRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalField;
 import pl.tutlaw.backend.legal.LegalFieldRepository;
-import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.question.CorrectOption;
 import pl.tutlaw.backend.question.Question;
 import pl.tutlaw.backend.question.QuestionRepository;
@@ -55,8 +57,8 @@ class CustomTestSessionServiceTest {
     private final LegalActRepository acts = mock(LegalActRepository.class);
     private final CourseRepository courses = mock(CourseRepository.class);
     private final QuestionRepository questionRepository = mock(QuestionRepository.class);
+    private final ActSectionRepository sections = mock(ActSectionRepository.class);
 
-    private Pool pool = Pools.all();
     private CustomTestSessionService service;
     private User jan;
     private User ola;
@@ -77,7 +79,7 @@ class CustomTestSessionServiceTest {
             return found;
         });
         service = new CustomTestSessionService(selector, sessionRepo(), questionRepo(), questionRepository,
-                fields, acts, courses, Pools.holding(() -> pool), resolver, clock);
+                fields, acts, courses, sections, resolver, clock);
     }
 
     private static User user(long id) {
@@ -173,7 +175,7 @@ class CustomTestSessionServiceTest {
     }
 
     private Long startTest(List<Long> questionIds) {
-        return startTest(questionIds, new CustomTestRequest(null, null, null, CustomTestKind.ALL, 10));
+        return startTest(questionIds, new CustomTestRequest(null, null, null, null, null, CustomTestKind.ALL, 10));
     }
 
     private void answer(Long sessionId, long questionId, CorrectOption selected, boolean correct, boolean guessed, Double time) {
@@ -205,10 +207,9 @@ class CustomTestSessionServiceTest {
     void drawSavesTheConfigurationAndTheQuestionsInOrder() {
         when(fields.findAllById(List.of(2L))).thenReturn(List.of(field(2L, "Prawo karne i proces karny")));
         when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks cywilny")));
-        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
 
-        CustomTestRequest request = new CustomTestRequest(List.of(2L), Arrays.asList(9L, 9L, null), null,
-                CustomTestKind.MISTAKES, 20);
+        CustomTestRequest request = new CustomTestRequest(List.of(2L), Arrays.asList(9L, 9L, null), null, null,
+                SourceMode.AUTHORED, CustomTestKind.MISTAKES, 20);
         Long id = startTest(List.of(7L, 3L, 11L), request);
 
         assertThat(id).isNotNull();
@@ -218,7 +219,7 @@ class CustomTestSessionServiceTest {
         assertThat(saved.getScopeLabel()).isEqualTo("Prawo karne i proces karny i Kodeks cywilny");
         assertThat(saved.getFieldIds()).isEqualTo("2");
         assertThat(saved.getActIds()).isEqualTo("9");
-        assertThat(saved.getSourceGroups()).isEqualTo("OWN_SHEETS,AUTHORED");
+        assertThat(saved.getSourceGroups()).isEqualTo("AUTHORED");
         assertThat(saved.getRequestedCount()).isEqualTo(20);
         assertThat(saved.getAvailableCount()).isEqualTo(40);
         assertThat(saved.getStartedAt()).isNotNull();
@@ -236,6 +237,7 @@ class CustomTestSessionServiceTest {
         assertThat(saved.getScopeLabel()).isEqualTo("Cała pula");
         assertThat(saved.getFieldIds()).isEmpty();
         assertThat(saved.getActIds()).isEmpty();
+        assertThat(saved.getSectionIds()).isEmpty();
         assertThat(saved.getSourceGroups()).isNull();
     }
 
@@ -247,7 +249,7 @@ class CustomTestSessionServiceTest {
         when(courses.findActIdsByCourseIds(List.of(10L, 12L))).thenReturn(List.of(4L, 5L, 4L, 9L));
         when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks cywilny")));
 
-        CustomTestRequest request = new CustomTestRequest(null, List.of(9L), List.of(10L, 12L, 10L),
+        CustomTestRequest request = new CustomTestRequest(null, List.of(9L), List.of(10L, 12L, 10L), null, null,
                 CustomTestKind.LAW_CHANGE, 10);
         startTest(List.of(1L, 2L), request);
 
@@ -269,7 +271,7 @@ class CustomTestSessionServiceTest {
 
     @Test
     void aSubjectThatNoLongerExistsFallsBackToAGeneralLabel() {
-        CustomTestRequest request = new CustomTestRequest(null, null, List.of(77L), CustomTestKind.ALL, 10);
+        CustomTestRequest request = new CustomTestRequest(null, null, List.of(77L), null, null, CustomTestKind.ALL, 10);
         when(courses.findAllById(List.of(77L))).thenReturn(List.of());
         when(courses.findActIdsByCourseIds(List.of(77L))).thenReturn(List.of());
 
@@ -299,7 +301,7 @@ class CustomTestSessionServiceTest {
 
     @Test
     void selectionFailureSavesNothing() {
-        CustomTestRequest request = new CustomTestRequest(null, null, null, CustomTestKind.NEW, 10);
+        CustomTestRequest request = new CustomTestRequest(null, null, null, null, null, CustomTestKind.NEW, 10);
         when(selector.select(request, authentication)).thenThrow(new IllegalArgumentException("Brak pytań"));
 
         assertThatThrownBy(() -> service.draw(request, authentication)).isInstanceOf(IllegalArgumentException.class);
@@ -310,7 +312,7 @@ class CustomTestSessionServiceTest {
 
     @Test
     void unknownSelectedItemsFallBackToAGeneralLabel() {
-        CustomTestRequest request = new CustomTestRequest(List.of(77L), null, null, CustomTestKind.ALL, 10);
+        CustomTestRequest request = new CustomTestRequest(List.of(77L), null, null, null, null, CustomTestKind.ALL, 10);
         when(fields.findAllById(List.of(77L))).thenReturn(List.of());
 
         startTest(List.of(1L), request);
@@ -410,24 +412,24 @@ class CustomTestSessionServiceTest {
         assertThat(summary.timeSeconds()).isEqualTo(10.0 + 30.0 + 120.0);
         assertThat(summary.kind()).isEqualTo(CustomTestKind.ALL);
         assertThat(summary.requestedCount()).isEqualTo(10);
-        assertThat(summary.sourceGroups()).containsExactly(
-                SourceFilter.OWN_SHEETS, SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
+        assertThat(summary.source()).isEqualTo(SourceMode.ALL);
         assertThat(summary.fieldIds()).isEmpty();
         assertThat(summary.actIds()).isEmpty();
+        assertThat(summary.sectionIds()).isEmpty();
     }
 
     @Test
     void theListShowsTheSavedScopeSoTheTestCanBeBuiltAgain() {
         when(fields.findAllById(List.of(2L, 4L))).thenReturn(List.of(field(2L, "Podatki i opłaty"), field(4L, "Prawo pracy")));
         when(acts.findAllById(List.of(9L))).thenReturn(List.of(act(9L, "Kodeks pracy")));
-        pool = Pools.of(new SourceFilter(false, true, false), 1, 2);
 
-        startTest(List.of(1L), new CustomTestRequest(List.of(2L, 4L), List.of(9L), null, CustomTestKind.DUE, 10));
+        startTest(List.of(1L), new CustomTestRequest(List.of(2L, 4L), List.of(9L), null, null, SourceMode.MINISTRY,
+                CustomTestKind.DUE, 10));
 
         CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
         assertThat(summary.fieldIds()).containsExactly(2L, 4L);
         assertThat(summary.actIds()).containsExactly(9L);
-        assertThat(summary.sourceGroups()).containsExactly(SourceFilter.OTHER_SHEETS);
+        assertThat(summary.source()).isEqualTo(SourceMode.MINISTRY);
         assertThat(summary.kind()).isEqualTo(CustomTestKind.DUE);
     }
 
@@ -521,14 +523,72 @@ class CustomTestSessionServiceTest {
     }
 
     @Test
-    void sourceGroupsAreStoredAsNullWhenAllAreActive_andReadBackInAFixedOrder() {
+    void theSourceIsStoredAsTheGroupsOfItsFilter_andReadBackAsTheSameMode() {
         assertThat(SourceFilter.ALL.serialize()).isNull();
-        assertThat(CustomTestSessionService.sourceGroupsOf(null))
-                .containsExactly(SourceFilter.OWN_SHEETS, SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
-        assertThat(CustomTestSessionService.sourceGroupsOf(new SourceFilter(false, true, true).serialize()))
-                .containsExactly(SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
+        for (SourceMode mode : SourceMode.values()) {
+            assertThat(SourceMode.fromFilter(SourceFilter.parse(mode.filter().serialize()))).isEqualTo(mode);
+        }
+        assertThat(SourceMode.MINISTRY.filter().serialize()).isEqualTo("OWN_SHEETS,OTHER_SHEETS");
+        assertThat(SourceMode.AUTHORED.filter().serialize()).isEqualTo("AUTHORED");
+    }
+
+    @Test
+    void aTestSavedWithAnOlderFilterIsReadBackAsTheClosestMode() {
+        // zapisane przed Etapem 34, kiedy filtr źródeł był ustawieniem konta i mógł być dowolną mieszanką grup
+        assertThat(SourceMode.fromFilter(SourceFilter.parse(null))).isEqualTo(SourceMode.ALL);
+        assertThat(SourceMode.fromFilter(SourceFilter.parse("OWN_SHEETS"))).isEqualTo(SourceMode.MINISTRY);
+        assertThat(SourceMode.fromFilter(SourceFilter.parse("OTHER_SHEETS"))).isEqualTo(SourceMode.MINISTRY);
+        assertThat(SourceMode.fromFilter(SourceFilter.parse("OWN_SHEETS,AUTHORED"))).isEqualTo(SourceMode.ALL);
+        assertThat(SourceMode.fromFilter(SourceFilter.parse("AUTHORED"))).isEqualTo(SourceMode.AUTHORED);
         // uszkodzony zapis nie ukrywa materiału
-        assertThat(CustomTestSessionService.sourceGroupsOf("COS,INNEGO"))
-                .containsExactly(SourceFilter.OWN_SHEETS, SourceFilter.OTHER_SHEETS, SourceFilter.AUTHORED);
+        assertThat(SourceMode.fromFilter(SourceFilter.parse("COS,INNEGO"))).isEqualTo(SourceMode.ALL);
+    }
+
+    // ---------------------------------------------------------------- rozdziały
+
+    private static ActSection section(long id, String actName, String name) {
+        ActSection section = new ActSection();
+        section.setId(id);
+        section.setLegalAct(act(100 + id, actName));
+        section.setName(name);
+        return section;
+    }
+
+    @Test
+    void aTestFromSectionsStoresTheirNumbersAndNamesThemAfterTheirAct() {
+        when(sections.findAllById(List.of(7L, 9L))).thenReturn(List.of(
+                section(9L, "Kodeks karny", "XXXV. Przeciwko mieniu"),
+                section(7L, "Kodeks karny", "XIX. Przeciwko życiu i zdrowiu")));
+
+        CustomTestRequest request = new CustomTestRequest(null, null, null, Arrays.asList(7L, 9L, 7L, null), null,
+                CustomTestKind.ALL, 20);
+        startTest(List.of(1L, 2L), request);
+
+        CustomTestSession saved = sessions.get(0);
+        assertThat(saved.getSectionIds()).isEqualTo("7,9");
+        // kolejność wyboru, nie kolejność z bazy
+        assertThat(saved.getScopeLabel()).isEqualTo(
+                "Kodeks karny: XIX. Przeciwko życiu i zdrowiu i Kodeks karny: XXXV. Przeciwko mieniu");
+    }
+
+    @Test
+    void aSectionThatNoLongerExistsFallsBackToAGeneralLabel() {
+        when(sections.findAllById(List.of(77L))).thenReturn(List.of());
+
+        startTest(List.of(1L), new CustomTestRequest(null, null, null, List.of(77L), null, CustomTestKind.ALL, 10));
+
+        assertThat(sessions.get(0).getScopeLabel()).isEqualTo("Wybrane działy");
+        assertThat(sessions.get(0).getSectionIds()).isEqualTo("77");
+    }
+
+    @Test
+    void theListShowsTheSavedSectionsSoTheTestCanBeBuiltAgain() {
+        when(sections.findAllById(List.of(7L))).thenReturn(List.of(section(7L, "Kodeks karny", "XIX. Przeciwko życiu")));
+
+        startTest(List.of(1L), new CustomTestRequest(null, null, null, List.of(7L), SourceMode.AUTHORED, CustomTestKind.NEW, 10));
+
+        CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
+        assertThat(summary.sectionIds()).containsExactly(7L);
+        assertThat(summary.source()).isEqualTo(SourceMode.AUTHORED);
     }
 }

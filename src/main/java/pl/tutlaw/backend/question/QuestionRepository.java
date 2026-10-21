@@ -60,6 +60,27 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
             @Param("sourceIds") Collection<Long> sourceIds
     );
 
+    /**
+     * Pytania puli w każdym rozdziale aktu (groupId = numer rozdziału). Pytania bez rozdziału nie liczą się nigdzie:
+     * są tylko w akcie jako całości.
+     */
+    @Query("""
+            SELECT q.section.id AS groupId, COUNT(q) AS total
+            FROM Question q
+            WHERE\s""" + PoolJpql.QUESTION + """
+
+            AND q.section IS NOT NULL
+            GROUP BY q.section.id
+            """)
+    List<GroupCount> countBySection(
+            @Param("actIds") Collection<Long> actIds,
+            @Param("sourceIds") Collection<Long> sourceIds
+    );
+
+    /** Numery widocznych pytań z podanych rozdziałów (do zawężenia własnego testu do rozdziałów). */
+    @Query("SELECT q.id FROM Question q WHERE q.hidden = false AND q.section.id IN :sectionIds")
+    List<Long> findIdsBySectionIds(@Param("sectionIds") Collection<Long> sectionIds);
+
     /** Pytania puli w każdym źródle (groupId = numer źródła). */
     @Query("""
             SELECT q.source.id AS groupId, COUNT(q) AS total

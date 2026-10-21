@@ -262,35 +262,38 @@ class PoolServiceTest {
     }
 
     @Test
-    void sourceFilter_splitsTheSourcesIntoOwnOtherAndAuthored() {
+    void sourceMode_splitsTheSourcesIntoMinistryAndAuthored() {
         Fixture f = new Fixture().onTrack(1L);
 
-        f.settings.setIncludeOtherSheets(false);
-        f.settings.setIncludeAuthored(false);
-        assertThat(f.service.forUser(USER).sourceIds()).containsExactly(1L);
+        // bez wyboru źródła: wszystkie
+        assertThat(f.service.forUser(USER).sourceIds()).containsExactlyInAnyOrder(1L, 2L, 3L);
+        assertThat(f.service.forUser(USER, SourceMode.ALL.filter()).sourceIds()).containsExactlyInAnyOrder(1L, 2L, 3L);
 
-        f.settings.setIncludeOwnSheets(false);
-        f.settings.setIncludeOtherSheets(true);
-        assertThat(f.service.forUser(USER).sourceIds()).containsExactly(2L);
+        // Ministerstwo Sprawiedliwości: własne arkusze ścieżki i arkusze innych ścieżek
+        assertThat(f.service.forUser(USER, SourceMode.MINISTRY.filter()).sourceIds()).containsExactlyInAnyOrder(1L, 2L);
 
-        f.settings.setIncludeOtherSheets(false);
-        f.settings.setIncludeAuthored(true);
-        Pool authoredOnly = f.service.forUser(USER);
+        Pool authoredOnly = f.service.forUser(USER, SourceMode.AUTHORED.filter());
         assertThat(authoredOnly.sourceIds()).containsExactly(3L);
         // wszystkie źródła zostają znane (fiszki i egzamin nie stosują filtra)
         assertThat(authoredOnly.allSourceIds()).containsExactlyInAnyOrder(1L, 2L, 3L);
     }
 
     @Test
-    void forStudent_everySheetCountsAsOther() {
+    void theStoredSourceColumns_areIgnored_theSourceIsChosenPerTest() {
+        Fixture f = new Fixture().onTrack(1L);
+
+        // kolumny include_* zostały w bazie, ale encja ich już nie zna: pula bez wyboru źródła ma zawsze wszystkie
+        assertThat(f.service.forUser(USER).filter()).isEqualTo(SourceFilter.ALL);
+        assertThat(f.service.forUser(USER, SourceMode.AUTHORED.filter()).filter()).isEqualTo(SourceMode.AUTHORED.filter());
+    }
+
+    @Test
+    void forStudent_everySheetCountsAsMinistry() {
         Fixture f = new Fixture().onTrack(9L);
-        f.settings.setIncludeOwnSheets(false);
 
-        // „własnych arkuszy" Student nie ma, więc wyłączenie ich niczego nie zmienia
-        assertThat(f.service.forUser(USER).sourceIds()).containsExactlyInAnyOrder(1L, 2L, 3L);
-
-        f.settings.setIncludeOtherSheets(false);
-        assertThat(f.service.forUser(USER).sourceIds()).containsExactly(3L);
+        // Student nie ma „własnych arkuszy": wszystkie arkusze to arkusze Ministerstwa
+        assertThat(f.service.forUser(USER, SourceMode.MINISTRY.filter()).sourceIds()).containsExactlyInAnyOrder(1L, 2L);
+        assertThat(f.service.forUser(USER, SourceMode.AUTHORED.filter()).sourceIds()).containsExactly(3L);
     }
 
     @Test
@@ -332,11 +335,9 @@ class PoolServiceTest {
     @Test
     void flashcardsIgnoreTheSourceFilter_andTheExamIgnoresTheNarrowing() {
         Fixture f = new Fixture().onTrack(1L);
-        f.settings.setIncludeOtherSheets(false);
-        f.settings.setIncludeAuthored(false);
         f.chosenActs.add(2L);
 
-        Pool pool = f.service.forUser(USER);
+        Pool pool = f.service.forUser(USER, new SourceFilter(true, false, false));
         assertThat(pool.sourceIds()).containsExactly(1L);
         assertThat(pool.actIds()).containsExactly(2L);
 

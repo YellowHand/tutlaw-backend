@@ -7,27 +7,26 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.catalog.CatalogAssembler.ActRow;
 import pl.tutlaw.backend.catalog.CatalogAssembler.CourseRow;
 import pl.tutlaw.backend.catalog.CatalogAssembler.FieldRow;
-import pl.tutlaw.backend.catalog.CatalogAssembler.SourceRow;
+import pl.tutlaw.backend.catalog.CatalogAssembler.SectionRow;
 import pl.tutlaw.backend.catalog.dto.TestCatalogResponse;
 import pl.tutlaw.backend.common.GroupCount;
 import pl.tutlaw.backend.course.CourseRepository;
+import pl.tutlaw.backend.legal.ActSectionRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalFieldRepository;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.pool.StudentCourses;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.review.ReviewLogRepository;
-import pl.tutlaw.backend.source.QuestionSourceRepository;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -35,7 +34,7 @@ public class TestCatalogService {
 
     private final LegalFieldRepository fieldRepository;
     private final LegalActRepository actRepository;
-    private final QuestionSourceRepository sourceRepository;
+    private final ActSectionRepository sectionRepository;
     private final QuestionRepository questionRepository;
     private final ReviewLogRepository reviewLogRepository;
     private final CurrentUserResolver currentUserResolver;
@@ -43,14 +42,14 @@ public class TestCatalogService {
     private final CourseRepository courseRepository;
 
     /**
-     * Całe drzewo Testów jednym wywołaniem. Tabele dziedzin, aktów i źródeł są małe, a liczniki pytań pochodzą
-     * z czterech zapytań grupujących, więc koszt nie rośnie z liczbą pytań. Liczą się tylko pytania z puli użytkownika
-     * (akty jego ścieżki i zawężenie) i z wybranych przez niego źródeł (filtr źródeł).
+     * Całe drzewo kreatora Testów jednym wywołaniem. Tabele dziedzin, aktów i rozdziałów są małe, a liczniki pytań
+     * pochodzą z kilku zapytań grupujących, więc koszt nie rośnie z liczbą pytań. Liczą się tylko pytania z puli
+     * użytkownika (akty jego ścieżki i zawężenie) z wybranego źródła ({@code source}; bez wyboru: ze wszystkich).
      */
     @Transactional(readOnly = true)
-    public TestCatalogResponse getCatalog(Authentication authentication) {
+    public TestCatalogResponse getCatalog(SourceMode source, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        Pool pool = poolService.forUser(user.getId());
+        Pool pool = poolService.forUser(user.getId(), SourceMode.orAll(source).filter());
 
         List<FieldRow> fields = fieldRepository.findAll().stream()
                 .map(f -> new FieldRow(f.getId(), f.getName(), f.getSlug(), f.getSortOrder()))
@@ -58,26 +57,21 @@ public class TestCatalogService {
         List<ActRow> acts = actRepository.findAllWithFieldByIdIn(pool.actIds()).stream()
                 .map(TestCatalogService::toRow)
                 .toList();
-
-        Set<Long> allowedSources = new HashSet<>(pool.sourceIds());
-        List<SourceRow> sources = sourceRepository.findAllRows().stream()
-                .filter(s -> allowedSources.contains(s.getId()))
-                .map(s -> new SourceRow(s.getId(), s.getName(), s.getKind(), s.getExamYear()))
+        List<SectionRow> sections = sectionRepository.findRowsByActIds(pool.actIds()).stream()
+                .map(s -> new SectionRow(s.getId(), s.getLegalActId(), s.getName(), s.getSortOrder()))
                 .toList();
 
         Map<Long, Long> totalByAct = toMap(questionRepository.countByAct(pool.actIds(), pool.sourceIds()));
         Map<Long, Long> solvedByAct = toMap(
                 reviewLogRepository.countSolvedTestQuestionsByAct(user.getId(), pool.actIds(), pool.sourceIds()));
         TestCatalogResponse tree = CatalogAssembler.assemble(
-                pool.narrowed(), fields, acts, sources, new HashSet<>(pool.ownSheetIds()),
-                totalByAct, solvedByAct,
-                toMap(questionRepository.countBySource(pool.actIds(), pool.sourceIds())),
-                toMap(reviewLogRepository.countSolvedTestQuestionsBySource(user.getId(), pool.actIds(), pool.sourceIds())));
+                pool.narrowed(), fields, acts, sections, totalByAct, solvedByAct,
+                toMap(questionRepository.countBySection(pool.actIds(), pool.sourceIds())));
         if (!pool.isStudent()) {
             return tree;
         }
         return new TestCatalogResponse(
-                tree.narrowed(), tree.fields(), studentCourses(user.getId(), totalByAct, solvedByAct), tree.sources());
+                tree.narrowed(), tree.fields(), studentCourses(user.getId(), totalByAct, solvedByAct));
     }
 
     /** Przedmioty z puli studenta (wybrane albo wszystkie) z licznikami pytań z ich aktów. */

@@ -26,7 +26,6 @@ public record EffectiveSettings(
         Long trackId,
         LocalDate examDate,
         Long daysToExam,
-        boolean shuffleOptions,
         boolean newTestQuestionsAuto
 ) {
 

@@ -113,9 +113,6 @@ public record AccountExportResponse(
             String track,
             /** Wygląd aplikacji: DARK (ciemny) albo LIGHT (jasny). */
             Theme theme,
-            boolean shuffleOptions,
-            /** Filtr źródeł pytań w Testach: kody grup oddzielone przecinkami albo null (wszystkie). */
-            String sourceFilter,
             /** Numery aktów prawnych, do których użytkownik zawęził pulę (puste: bez zawężenia). */
             List<Long> poolActIds,
             /** Stałe ukrycie podpowiedzi skrótów klawiszowych w testach, w fiszkach i ukrycie licznika czasu pytania. */

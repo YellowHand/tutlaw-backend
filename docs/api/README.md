@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **63 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **62 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -87,11 +87,10 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 |--------|-------|--------|------|
 | GET | `/api/tracks` | zalogowany | Sześć ścieżek: pięć aplikacji i Student |
 | GET | `/api/courses` | zalogowany | Przedmioty studenta z aktami prawnymi i liczbą pytań |
-| GET | `/api/me/pool` | zalogowany | Pula pytań użytkownika: ścieżka, dziedziny z aktami do zaznaczenia (Student: przedmioty), grupy źródeł |
+| GET | `/api/me/pool` | zalogowany | Pula pytań użytkownika (zakres nauki): ścieżka, dziedziny z aktami do zaznaczenia (Student: przedmioty) |
 | PUT | `/api/me/pool/acts` | zalogowany | Zawężenie puli do wybranych aktów prawnych (puste = bez zawężenia); tylko aplikacje |
 | PUT | `/api/me/pool/courses` | zalogowany | Wybór przedmiotów na ścieżce Student (puste = wszystkie przedmioty) |
-| PUT | `/api/me/pool/source-filter` | zalogowany | Filtr źródeł w Testach: własne arkusze, arkusze innych ścieżek, pytania autorskie |
-| GET | `/api/tests/catalog` | zalogowany | Drzewo ekranu Testów (dziedzina → akt prawny, przedmioty Studenta, źródła) z licznikami pytań |
+| GET | `/api/tests/catalog` | zalogowany | Drzewo kreatora Testów (dziedzina → akt prawny → rozdział, przedmioty Studenta) z licznikami pytań; parametr `source` wybiera źródło |
 
 ### Pytania (administrator) — [04-pytania-admin.md](04-pytania-admin.md)
 
@@ -113,9 +112,9 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | GET | `/api/review/practice-queue` | zalogowany | Sesja testowa z podanych pytań |
 | GET | `/api/review/mistakes-queue` | zalogowany | Sesja „Powtórz moje błędy” |
 | GET | `/api/review/mistakes-count` | zalogowany | Ile jest błędów do powtórzenia |
-| GET | `/api/review/custom-test/counts` | zalogowany | Własny test: ile pytań każdego rodzaju (w tym ze zmianą w prawie) w wybranym zakresie |
-| POST | `/api/review/custom-test` | zalogowany | Własny test: losowanie pytań z wybranego zakresu i zapis testu (10, 20, 50, 100 albo 150 pytań) |
-| GET | `/api/custom-tests/sessions` | zalogowany | „Moje testy”: lista zapisanych własnych testów |
+| GET | `/api/review/custom-test/counts` | zalogowany | Test z kreatora: ile pytań każdego rodzaju (w tym ze zmianą w prawie) w wybranym zakresie i źródle |
+| POST | `/api/review/custom-test` | zalogowany | Test z kreatora, z „Losuj z całej puli” i z szybkiego zestawu: losowanie pytań z wybranego zakresu i źródła oraz zapis testu (10, 20, 50, 100 albo 150 pytań) |
+| GET | `/api/custom-tests/sessions` | zalogowany | „Moje testy”: lista zapisanych testów |
 | GET | `/api/custom-tests/sessions/{id}` | zalogowany | „Moje testy”: szczegóły testu z odpowiedziami |
 | POST | `/api/review` | zalogowany | Ocena fiszki (1–4) |
 | POST | `/api/review/test-answer` | zalogowany | Odpowiedź na pytanie testowe |
@@ -157,7 +156,7 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 |--------|-------|--------|------|
 | GET | `/api/me/settings` | zalogowany | Ustawienia nauki |
 | PUT | `/api/me/settings` | zalogowany | Zapis ustawień nauki |
-| PUT | `/api/me/track` | zalogowany | Wybór ścieżki: jedna z pięciu aplikacji albo Student (czyści zawężenie puli i filtr źródeł) |
+| PUT | `/api/me/track` | zalogowany | Wybór ścieżki: jedna z pięciu aplikacji albo Student (czyści zawężenie puli do aktów) |
 | PUT | `/api/me/theme` | zalogowany | Wybór wyglądu aplikacji (ciemny / jasny) |
 | GET | `/api/me/interface` | zalogowany | Ustawienia interfejsu: ukrycie podpowiedzi skrótów i licznika czasu, liczba dotychczasowych odpowiedzi |
 | PUT | `/api/me/interface` | zalogowany | Zapis ustawień interfejsu |

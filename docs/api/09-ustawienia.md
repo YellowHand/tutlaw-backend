@@ -3,7 +3,7 @@
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
 Ustawienia zapisane **na koncie** (działają tak samo na każdym urządzeniu) i terminy egzaminów aplikacji. Wymagają tokenu.
-Pula pytań (zawężenie do aktów i filtr źródeł) ma osobne endpointy: [03. Ścieżki, pula, katalog](03-tresci.md#pula-pytań-użytkownika).
+Pula pytań (zakres nauki: zawężenie do aktów) ma osobne endpointy: [03. Ścieżki, pula, katalog](03-tresci.md#pula-pytań-użytkownika).
 
 ## Ustawienia nauki
 
@@ -24,7 +24,6 @@ domyślna z konfiguracji serwera), wybraną ścieżkę z terminem egzaminu, wart
   "desiredRetention": 0.9,
   "track": { "id": 4, "slug": "notarialna", "name": "Aplikacja notarialna", "shortName": "Notarialna", "kind": "EXAM" },
   "examDate": "2027-03-15",
-  "shuffleOptions": true,
   "theme": "DARK",
   "daysToExam": 154,
   "examPassed": false,
@@ -54,7 +53,6 @@ domyślna z konfiguracji serwera), wybraną ścieżkę z terminem egzaminu, wart
 | `desiredRetention` | Docelowa szansa przypomnienia wybrana przez użytkownika |
 | `track` | Ścieżka wybrana przez użytkownika (`PUT /api/me/track`): jedna z pięciu aplikacji albo Student. `null`, gdy jeszcze nie wybrał: wtedy aplikacja pokazuje okno startowe, a pula obejmuje wszystko |
 | `examDate` | Termin egzaminu wybranej aplikacji (ustawia go administrator, tylko do odczytu); `null`, gdy ścieżki nie wybrano, to Student albo termin jest nieogłoszony. Także gdy już minął |
-| `shuffleOptions` | Czy mieszać kolejność odpowiedzi A/B/C w pytaniach (korzysta z tego frontend) |
 | `daysToExam` | Ile dni do egzaminu; `null`, gdy terminu nie ma albo egzamin już się odbył |
 | `examPassed` | Termin egzaminu wybranej aplikacji jest w przeszłości (ustawienia egzaminacyjne wtedy nie działają) |
 | `effectiveRetention` | Retencja faktycznie użyta do liczenia terminów (w 30 dniach przed egzaminem co najmniej 0,95) |
@@ -68,8 +66,7 @@ Cel na dziś liczy się od stanu z **początku dnia** (pozostałe + zaczęte dzi
 
 ### `PUT /api/me/settings`
 
-Zapisuje **pełny zestaw** (zastępuje poprzedni). `null` w polu liczbowym oznacza „wartość domyślna”, a `null` w
-`shuffleOptions` to „tak”. Wyjątek: `null` w `newTestQuestionsPerDay` to **limit automatyczny** (idzie za planem do
+Zapisuje **pełny zestaw** (zastępuje poprzedni). `null` w polu liczbowym oznacza „wartość domyślna”. Wyjątek: `null` w `newTestQuestionsPerDay` to **limit automatyczny** (idzie za planem do
 egzaminu), a nie stała wartość. Daty egzaminu tu nie ma: użytkownik wybiera ścieżkę (`PUT /api/me/track`), a termin
 egzaminu ustawia administrator. Nieznane pola (np. `examDate`) są ignorowane.
 
@@ -78,8 +75,7 @@ egzaminu ustawia administrator. Nieznane pola (np. `examDate`) są ignorowane.
   "newFlashcardsPerDay": null,
   "newTestQuestionsPerDay": 30,
   "maxReviewsPerDay": 150,
-  "desiredRetention": 0.92,
-  "shuffleOptions": true
+  "desiredRetention": 0.92
 }
 ```
 
@@ -89,12 +85,11 @@ egzaminu ustawia administrator. Nieznane pola (np. `examDate`) są ignorowane.
 | `newTestQuestionsPerDay` | 0–500 albo `null` (automatyczny) |
 | `maxReviewsPerDay` | 10–1000 |
 | `desiredRetention` | od 0,70 do 0,97 (70–97%) |
-| `shuffleOptions` | prawda / fałsz |
 
 **Odpowiedź `200`**: ten sam kształt co `GET`, już po zapisie. **Błędy `400`:** „Docelowa retencja musi mieścić się
 między 70% a 97%.”, a także komunikaty zakresów z walidacji pól („nie może być ujemna”, „najwyżej 200” itd.).
 
-Zapis ustawień nauki **nie zmienia** ani wybranej ścieżki, ani wyglądu, ani puli (zawężenia i filtra źródeł): to osobne zestawy.
+Zapis ustawień nauki **nie zmienia** ani wybranej ścieżki, ani wyglądu, ani puli (zawężenia do aktów): to osobne zestawy. Kolejność odpowiedzi A/B/C w testach jest zawsze losowa po stronie frontendu (dawne pole `shuffleOptions` usunięto; nieznane pola w żądaniu są ignorowane).
 
 ### `PUT /api/me/track` — wybór ścieżki
 
@@ -108,8 +103,7 @@ Student nie ma terminu egzaminu ani planu dnia (`examDate` i `plan` są `null`).
 
 Identyfikatory ścieżek podaje [`GET /api/tracks`](03-tresci.md#get-apitracks).
 
-**Zmiana ścieżki** (inna niż dotychczasowa) **czyści zawężenie puli do aktów i przywraca filtr źródeł** (wszystkie trzy
-grupy włączone), bo oba dotyczyły poprzedniej ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia. **Postępy
+**Zmiana ścieżki** (inna niż dotychczasowa) **czyści zawężenie puli do aktów**, bo dotyczyło poprzedniej ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia. **Postępy
 zostają**: stan nauki (terminy powtórek), historia odpowiedzi, własne testy, egzaminy i czas nauki należą do pytań i
 konta, nie do ścieżki. Zostają też wybrane przedmioty Studenta (`user_courses`), więc powrót na ścieżkę Student nie
 wymaga ponownego wyboru. Kto chce zacząć od zera, zeruje postępy osobno

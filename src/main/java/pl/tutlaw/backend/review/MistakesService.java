@@ -30,7 +30,7 @@ import java.util.Set;
  * (z ostatnich {@value #LOOKBACK_DAYS} dni). Pytanie, na które później odpowiedział dobrze, już się tu nie pojawia.
  * Odpowiedzi w tej sesji idą zwykłą drogą testu (z oceną pamięci i terminami), więc to dodatkowe ćwiczenie,
  * a nie osobny tor nauki. Zawieszone i niedostępne pytania odpadają, a także te spoza puli użytkownika
- * (akty jego ścieżki i filtr źródeł w Testach).
+ * (akty jego ścieżki, wszystkie źródła).
  */
 @Service
 @RequiredArgsConstructor

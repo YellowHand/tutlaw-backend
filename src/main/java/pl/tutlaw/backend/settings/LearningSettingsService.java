@@ -79,8 +79,8 @@ public class LearningSettingsService {
 
     /**
      * Wybór ścieżki: jednej z aplikacji albo Studenta. Od tej chwili pulą pytań jest pula tej ścieżki, a egzaminem termin
-     * aplikacji (Student nie ma terminu ani planu). Zmiana ścieżki czyści zawężenie do aktów i przywraca filtr źródeł
-     * (wszystkie trzy grupy), bo oba dotyczyły poprzedniej ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia.
+     * aplikacji (Student nie ma terminu ani planu). Zmiana ścieżki czyści zawężenie do aktów, bo dotyczyło poprzedniej
+     * ścieżki. Ponowny wybór tej samej ścieżki niczego nie zmienia.
      */
     @Transactional
     public LearningSettingsResponse chooseTrack(ChooseTrackRequest request, Authentication authentication) {
@@ -92,9 +92,6 @@ public class LearningSettingsService {
         boolean changed = !track.getId().equals(settings.getTrackId());
         settings.setTrackId(track.getId());
         if (changed) {
-            settings.setIncludeOwnSheets(true);
-            settings.setIncludeOtherSheets(true);
-            settings.setIncludeAuthored(true);
             poolActRepository.deleteByUserId(user.getId());
         }
         settings.setUpdatedAt(LocalDateTime.now(clock));
@@ -149,7 +146,6 @@ public class LearningSettingsService {
         settings.setNewTestQuestionsPerDay(request.newTestQuestionsPerDay());
         settings.setMaxReviewsPerDay(request.maxReviewsPerDay());
         settings.setDesiredRetention(request.desiredRetention());
-        settings.setShuffleOptions(request.shuffleOptions() == null || request.shuffleOptions());
         settings.setUpdatedAt(LocalDateTime.now(clock));
         repository.save(settings);
 
@@ -167,7 +163,6 @@ public class LearningSettingsService {
         double retention = stored != null && stored.getDesiredRetention() != null
                 ? stored.getDesiredRetention() : defaults.retention();
         Long trackId = stored != null ? stored.getTrackId() : null;
-        boolean shuffle = stored == null || stored.isShuffleOptions();
 
         Long daysToExam = null;
         if (examDate != null) {
@@ -180,7 +175,7 @@ public class LearningSettingsService {
         return new EffectiveSettings(
                 newFlashcards, newTests, maxReviews,
                 retention, SchedulingRules.effectiveRetention(retention, daysToExam),
-                trackId, examDate, daysToExam, shuffle, newTestsAuto);
+                trackId, examDate, daysToExam, newTestsAuto);
     }
 
     private LearningSettingsResponse describe(Long userId, UserSettings stored, LocalDate today) {
@@ -199,7 +194,7 @@ public class LearningSettingsService {
 
         return new LearningSettingsResponse(
                 e.newFlashcardsPerDay(), newTestsInForce, e.newTestQuestionsAuto(), e.maxReviewsPerDay(), e.desiredRetention(),
-                track, e.examDate(), e.shuffleOptions(), theme, e.daysToExam(), e.examPassed(),
+                track, e.examDate(), theme, e.daysToExam(), e.examPassed(),
                 e.effectiveRetention(), e.retentionBoosted(),
                 new LearningSettingsResponse.Defaults(
                         defaults.newFlashcardsPerDay(), defaults.newTestQuestionsPerDay(),
@@ -209,7 +204,7 @@ public class LearningSettingsService {
 
     /**
      * Ile nowych pytań testowych zostało do rozpoczęcia i ile dziennie trzeba, żeby zdążyć przed rezerwą na powtórki.
-     * „Nowe" to pytania z puli użytkownika (jego akty i filtr źródeł w Testach), których jeszcze nie ruszył w teście.
+     * „Nowe" to pytania z puli użytkownika (jego ścieżka i zawężenie do aktów), których jeszcze nie ruszył w teście.
      * Fiszek się nie planuje: powstają z pomyłek, więc ich liczby nie da się przewidzieć.
      *
      * <p>Cel dnia dla pytań liczymy od stanu z początku dnia (do „zostało" dodajemy to, co użytkownik zaczął dzisiaj),
@@ -229,7 +224,7 @@ public class LearningSettingsService {
     /** Ile jest nowych (nietkniętych w teście) pytań z puli użytkownika oraz ile pytań zaczął dziś. */
     private NewCounts countNew(Long userId) {
         Pool pool = poolService.forUser(userId);
-        List<QuestionRef> inPool = questionRepository.findRefsInPool(pool.actIds(), pool.sourceIds());
+        List<QuestionRef> inPool = questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds());
         Set<Long> started = new HashSet<>();
         for (UserQuestionStateRepository.QuestionDue row : stateRepository.findScheduleByUserIdAndMode(userId, ReviewMode.TEST)) {
             started.add(row.getQuestionId());

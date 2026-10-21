@@ -29,7 +29,8 @@ import java.util.Set;
  *       przypisane przez administratora, a student wybiera przedmioty, nie akty;</li>
  *   <li><b>zawężenie</b>: użytkownik aplikacji może zawęzić pulę do wybranych aktów (trwale, poza egzaminem
  *       próbnym); student zawęża przedmiotami;</li>
- *   <li><b>filtr źródeł</b>: własne arkusze / arkusze innych aplikacji / pytania autorskie (dotyczy Testów).</li>
+ *   <li><b>źródło</b>: własne arkusze / arkusze innych aplikacji / pytania autorskie; wybierane osobno przy każdym teście
+ *       ({@link SourceMode}), a nie zapisane na koncie.</li>
  * </ul>
  * Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
  */
@@ -46,14 +47,22 @@ public class PoolService {
     private final UserPoolActRepository poolActRepository;
     private final UserCourseRepository userCourseRepository;
 
+    /** Pula użytkownika ze wszystkich źródeł. Źródło wybiera się osobno przy każdym teście ({@link #forUser(Long, SourceFilter)}). */
     @Transactional(readOnly = true)
     public Pool forUser(Long userId) {
+        return forUser(userId, SourceFilter.ALL);
+    }
+
+    /**
+     * Pula użytkownika z pytaniami tylko z wybranych grup źródeł ({@code sourceIds} to źródła dozwolone przez filtr,
+     * {@code allSourceIds} zostają wszystkie). Filtr nie jest już ustawieniem konta: wybiera się go przy układaniu testu
+     * ({@link SourceMode}).
+     */
+    @Transactional(readOnly = true)
+    public Pool forUser(Long userId, SourceFilter filter) {
         UserSettings settings = settingsRepository.findById(userId).orElse(null);
         Long trackId = settings == null ? null : settings.getTrackId();
         Track track = trackId == null ? null : trackRepository.findById(trackId).orElse(null);
-        SourceFilter filter = settings == null
-                ? SourceFilter.ALL
-                : new SourceFilter(settings.isIncludeOwnSheets(), settings.isIncludeOtherSheets(), settings.isIncludeAuthored());
         return build(userId, track, filter);
     }
 

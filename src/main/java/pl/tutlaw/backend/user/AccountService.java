@@ -7,7 +7,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.exam.ExamAttemptRepository;
-import pl.tutlaw.backend.pool.SourceFilter;
 import pl.tutlaw.backend.pool.UserPoolActRepository;
 import pl.tutlaw.backend.report.QuestionReportRepository;
 import pl.tutlaw.backend.review.CustomTestSessionService;
@@ -97,8 +96,7 @@ public class AccountService {
                         s.getNewFlashcardsPerDay(), s.getNewTestQuestionsPerDay(), s.getMaxReviewsPerDay(),
                         s.getDesiredRetention(),
                         s.getTrackId() == null ? null : trackRepository.findById(s.getTrackId()).map(t -> t.getSlug()).orElse(null),
-                        s.getTheme(), s.isShuffleOptions(),
-                        new SourceFilter(s.isIncludeOwnSheets(), s.isIncludeOtherSheets(), s.isIncludeAuthored()).serialize(),
+                        s.getTheme(),
                         poolActRepository.findActIdsByUserId(user.getId()),
                         s.isHintHiddenTest(), s.isHintHiddenFlashcard(), s.isQuestionTimerHidden()))
                 .orElse(null);

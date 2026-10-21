@@ -9,7 +9,7 @@ import pl.tutlaw.backend.user.User;
 import java.time.LocalDateTime;
 
 /**
- * Zapisany własny test: konfiguracja z chwili ułożenia (zakres, rodzaj pytań, liczba, filtr źródeł). Pytania i
+ * Zapisany własny test: konfiguracja z chwili ułożenia (zakres, źródło, rodzaj pytań, liczba). Pytania i
  * odpowiedzi leżą w {@link CustomTestSessionQuestion}. Test bez {@code finishedAt} jest nieukończony.
  */
 @Entity
@@ -49,13 +49,17 @@ public class CustomTestSession {
     @Column(name = "act_ids", nullable = false, length = 2000)
     private String actIds = "";
 
+    /** Numery wybranych rozdziałów aktów, oddzielone przecinkami (puste: nie wybrano rozdziałów). */
+    @Column(name = "section_ids", nullable = false, length = 2000)
+    private String sectionIds = "";
+
     /** Numery wybranych przedmiotów studenta, oddzielone przecinkami (puste: nie wybrano przedmiotów). */
     @Column(name = "course_ids", nullable = false, length = 500)
     private String courseIds = "";
 
     /**
-     * Filtr źródeł w chwili układania testu: kody grup (OWN_SHEETS, OTHER_SHEETS, AUTHORED) oddzielone przecinkami
-     * albo null (wszystkie). Zob. {@code SourceFilter#serialize}.
+     * Źródło pytań wybrane przy układaniu testu, zapisane jako kody grup (OWN_SHEETS, OTHER_SHEETS, AUTHORED) oddzielone
+     * przecinkami albo null (wszystkie źródła). Zob. {@code SourceMode} i {@code SourceFilter#serialize}.
      */
     @Column(name = "source_groups", length = 100)
     private String sourceGroups;

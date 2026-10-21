@@ -8,12 +8,14 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.course.Course;
 import pl.tutlaw.backend.course.CourseRepository;
+import pl.tutlaw.backend.legal.ActSection;
+import pl.tutlaw.backend.legal.ActSectionRepository;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.legal.LegalActRepository;
 import pl.tutlaw.backend.legal.LegalField;
 import pl.tutlaw.backend.legal.LegalFieldRepository;
-import pl.tutlaw.backend.pool.PoolService;
 import pl.tutlaw.backend.pool.SourceFilter;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.question.CorrectOption;
 import pl.tutlaw.backend.question.Question;
 import pl.tutlaw.backend.question.dto.LawChangeInfo;
@@ -35,8 +37,8 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Własne testy jako sesje ("Moje testy"). Test powstaje w chwili ułożenia: zapisujemy konfigurację (zakres, rodzaj
- * pytań, liczba, filtr źródeł) i wylosowane pytania. Odpowiedzi dopisują się do niego w trakcie
+ * Własne testy jako sesje ("Moje testy"). Test powstaje w chwili ułożenia: zapisujemy konfigurację (zakres, źródło,
+ * rodzaj pytań, liczba) i wylosowane pytania. Odpowiedzi dopisują się do niego w trakcie
  * ({@link #recordAnswer}); po odpowiedzi na ostatnie pytanie test jest ukończony. Test, którego nikt nie skończył,
  * zostaje na liście jako nieukończony. Zapisuje się wyłącznie własny test: powtórki, "Popraw błędy" i egzamin mają
  * swoje miejsca (egzamin: historia podejść).
@@ -55,7 +57,7 @@ public class CustomTestSessionService {
     private final LegalFieldRepository fieldRepository;
     private final LegalActRepository actRepository;
     private final CourseRepository courseRepository;
-    private final PoolService poolService;
+    private final ActSectionRepository sectionRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
 
@@ -68,6 +70,7 @@ public class CustomTestSessionService {
         List<Long> fieldIds = distinctIds(request.fieldIds());
         List<Long> chosenActIds = distinctIds(request.actIds());
         List<Long> courseIds = distinctIds(request.courseIds());
+        List<Long> sectionIds = distinctIds(request.sectionIds());
         // Akty wybranych przedmiotów zapisujemy razem z aktami wybranymi wprost: test da się ułożyć ponownie z tych numerów.
         List<Long> actIds = new ArrayList<>(chosenActIds);
         if (!courseIds.isEmpty()) {
@@ -80,11 +83,12 @@ public class CustomTestSessionService {
         session.setUser(user);
         session.setStartedAt(LocalDateTime.now(clock));
         session.setKind(request.kind() == null ? CustomTestKind.ALL : request.kind());
-        session.setScopeLabel(CustomTestScopeLabel.describe(scopeNames(courseIds, fieldIds, chosenActIds)));
+        session.setScopeLabel(CustomTestScopeLabel.describe(scopeNames(courseIds, fieldIds, chosenActIds, sectionIds)));
         session.setFieldIds(fitting(joinIds(fieldIds), FIELD_IDS_LENGTH));
         session.setActIds(fitting(joinIds(actIds), ACT_IDS_LENGTH));
         session.setCourseIds(fitting(joinIds(courseIds), COURSE_IDS_LENGTH));
-        session.setSourceGroups(poolService.forUser(user.getId()).filter().serialize());
+        session.setSectionIds(fitting(joinIds(sectionIds), SECTION_IDS_LENGTH));
+        session.setSourceGroups(SourceMode.orAll(request.source()).filter().serialize());
         session.setRequestedCount(selection.requested());
         session.setAvailableCount(selection.available());
         sessionRepository.save(session);
@@ -222,16 +226,16 @@ public class CustomTestSessionService {
         }
         return new CustomTestSessionSummaryResponse(
                 s.getId(), s.getStartedAt(), s.getFinishedAt(), s.isFinished(), s.getScopeLabel(), s.getKind(),
-                parseIds(s.getFieldIds()), parseIds(s.getActIds()), parseIds(s.getCourseIds()),
-                sourceGroupsOf(s.getSourceGroups()),
+                parseIds(s.getFieldIds()), parseIds(s.getActIds()), parseIds(s.getCourseIds()), parseIds(s.getSectionIds()),
+                SourceMode.fromFilter(SourceFilter.parse(s.getSourceGroups())),
                 s.getRequestedCount(), rows.size(), answered, correct, guessed, time);
     }
 
     /**
-     * Nazwy wybranych przedmiotów, dziedzin i aktów prawnych (w tej kolejności, w kolejności wyboru); nieistniejące
-     * numery są pomijane.
+     * Nazwy wybranych przedmiotów, dziedzin, aktów prawnych i rozdziałów (w tej kolejności, w kolejności wyboru; rozdział
+     * z nazwą aktu: „Kodeks karny: XIX. Przeciwko życiu i zdrowiu"); nieistniejące numery są pomijane.
      */
-    private List<String> scopeNames(List<Long> courseIds, List<Long> fieldIds, List<Long> actIds) {
+    private List<String> scopeNames(List<Long> courseIds, List<Long> fieldIds, List<Long> actIds, List<Long> sectionIds) {
         List<String> names = new ArrayList<>();
         if (!courseIds.isEmpty()) {
             Map<Long, String> byId = courseRepository.findAllById(courseIds).stream()
@@ -248,8 +252,15 @@ public class CustomTestSessionService {
                     .collect(Collectors.toMap(LegalAct::getId, LegalAct::getName));
             actIds.stream().map(byId::get).filter(Objects::nonNull).forEach(names::add);
         }
+        if (!sectionIds.isEmpty()) {
+            Map<Long, ActSection> byId = sectionRepository.findAllById(sectionIds).stream()
+                    .collect(Collectors.toMap(ActSection::getId, section -> section));
+            sectionIds.stream().map(byId::get).filter(Objects::nonNull)
+                    .map(section -> section.getLegalAct().getName() + ": " + section.getName())
+                    .forEach(names::add);
+        }
         // Wybrano coś, czego już nie ma: lepsza ogólna nazwa niż "Cała pula".
-        if (names.isEmpty() && (!courseIds.isEmpty() || !fieldIds.isEmpty() || !actIds.isEmpty())) {
+        if (names.isEmpty() && (!courseIds.isEmpty() || !fieldIds.isEmpty() || !actIds.isEmpty() || !sectionIds.isEmpty())) {
             names.add("Wybrane działy");
         }
         return names;
@@ -259,10 +270,11 @@ public class CustomTestSessionService {
         return raw == null ? List.of() : raw.stream().filter(Objects::nonNull).distinct().toList();
     }
 
-    /** Długości kolumn field_ids, act_ids i course_ids w bazie. */
+    /** Długości kolumn field_ids, act_ids, course_ids i section_ids w bazie. */
     static final int FIELD_IDS_LENGTH = 2000;
     static final int ACT_IDS_LENGTH = 2000;
     static final int COURSE_IDS_LENGTH = 500;
+    static final int SECTION_IDS_LENGTH = 2000;
 
     /** Lista numerów mieszcząca się w kolumnie: za długą ucinamy na ostatnim całym numerze. */
     static String fitting(String joined, int maxLength) {
@@ -290,15 +302,5 @@ public class CustomTestSessionService {
             }
         }
         return ids;
-    }
-
-    /** Grupy źródeł zapisanego filtra w stałej kolejności; brak zapisu to wszystkie trzy. */
-    static List<String> sourceGroupsOf(String stored) {
-        SourceFilter filter = SourceFilter.parse(stored);
-        List<String> groups = new ArrayList<>();
-        if (filter.ownSheets()) groups.add(SourceFilter.OWN_SHEETS);
-        if (filter.otherSheets()) groups.add(SourceFilter.OTHER_SHEETS);
-        if (filter.authored()) groups.add(SourceFilter.AUTHORED);
-        return groups;
     }
 }

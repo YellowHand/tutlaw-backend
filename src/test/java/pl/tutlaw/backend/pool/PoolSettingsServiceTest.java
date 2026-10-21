@@ -14,13 +14,7 @@ import pl.tutlaw.backend.legal.LegalFieldRepository;
 import pl.tutlaw.backend.pool.dto.PoolResponse;
 import pl.tutlaw.backend.pool.dto.UpdatePoolActsRequest;
 import pl.tutlaw.backend.pool.dto.UpdatePoolCoursesRequest;
-import pl.tutlaw.backend.pool.dto.UpdateSourceFilterRequest;
 import pl.tutlaw.backend.question.QuestionRepository;
-import pl.tutlaw.backend.settings.UserSettings;
-import pl.tutlaw.backend.settings.UserSettingsRepository;
-import pl.tutlaw.backend.source.QuestionSourceRepository;
-import pl.tutlaw.backend.source.SourceKind;
-import pl.tutlaw.backend.testsupport.MutableClock;
 import pl.tutlaw.backend.testsupport.Pools;
 import pl.tutlaw.backend.testsupport.QuestionRefs;
 import pl.tutlaw.backend.track.Track;
@@ -46,12 +40,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Okno „Pula pytań": zawężenie do aktów (student: do przedmiotów) i filtr źródeł. Pula bazowa: akty 1 i 2, źródła 1-3. */
+/** Okno „Pula pytań": zawężenie do aktów (student: do przedmiotów). Pula bazowa: akty 1 i 2, źródła 1-3. */
 class PoolSettingsServiceTest {
 
     private static final long USER = 7L;
 
-    private final UserSettingsRepository settingsRepository = mock(UserSettingsRepository.class);
     private final UserPoolActRepository poolActRepository = mock(UserPoolActRepository.class);
     private final UserCourseRepository userCourseRepository = mock(UserCourseRepository.class);
     private final CourseRepository courseRepository = mock(CourseRepository.class);
@@ -59,7 +52,6 @@ class PoolSettingsServiceTest {
     private final LegalFieldRepository fieldRepository = mock(LegalFieldRepository.class);
     private final LegalActRepository actRepository = mock(LegalActRepository.class);
     private final QuestionRepository questionRepository = mock(QuestionRepository.class);
-    private final QuestionSourceRepository sourceRepository = mock(QuestionSourceRepository.class);
     private final CurrentUserResolver currentUserResolver = mock(CurrentUserResolver.class);
     private final Authentication authentication = mock(Authentication.class);
 
@@ -70,10 +62,9 @@ class PoolSettingsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PoolSettingsService(Pools.holding(() -> pool, () -> studentCourses), settingsRepository,
+        service = new PoolSettingsService(Pools.holding(() -> pool, () -> studentCourses),
                 poolActRepository, userCourseRepository, courseRepository, trackRepository, fieldRepository,
-                actRepository, questionRepository, sourceRepository, currentUserResolver,
-                MutableClock.at("2026-10-12T10:00:00Z"));
+                actRepository, questionRepository, currentUserResolver);
         User user = new User();
         user.setId(USER);
         when(currentUserResolver.resolve(authentication)).thenReturn(user);
@@ -101,8 +92,6 @@ class PoolSettingsServiceTest {
                 QuestionRefs.refOf(QuestionRefs.question(2, 1, 1, 2)),
                 QuestionRefs.refOf(QuestionRefs.question(3, 2, 1, 2)),
                 QuestionRefs.refOf(QuestionRefs.question(4, 2, 1, 3))));
-        when(sourceRepository.findAllRows()).thenReturn(List.of(row(1, SourceKind.EXAM_SHEET), row(2, SourceKind.EXAM_SHEET),
-                row(3, SourceKind.AUTHORED)));
     }
 
     private static GroupCount count(long id, long total) {
@@ -112,21 +101,10 @@ class PoolSettingsServiceTest {
         };
     }
 
-    private static QuestionSourceRepository.SourceRow row(long id, SourceKind kind) {
-        return new QuestionSourceRepository.SourceRow() {
-            public Long getId() { return id; }
-            public String getSlug() { return "zrodlo-" + id; }
-            public SourceKind getKind() { return kind; }
-            public String getName() { return "Źródło " + id; }
-            public Long getTrackId() { return null; }
-            public Integer getExamYear() { return null; }
-        };
-    }
-
     // ---------------------------------------------------------------- get
 
     @Test
-    void get_describesTheTrackTheActsWithTheirCountsAndTheSourceGroups() {
+    void get_describesTheTrackAndTheActsWithTheirCounts() {
         PoolResponse response = service.get(authentication);
 
         assertThat(response.track().slug()).isEqualTo("adwokacka-radcowska");
@@ -138,22 +116,6 @@ class PoolSettingsServiceTest {
         assertThat(response.fields().get(0).acts()).extracting(PoolResponse.ActNode::questionCount).containsExactly(30, 12);
         assertThat(response.fields().get(0).acts()).allMatch(PoolResponse.ActNode::selected);
         assertThat(response.courses()).isEmpty();
-        assertThat(response.sourceGroups()).extracting(PoolResponse.SourceGroupNode::code)
-                .containsExactly("OWN_SHEETS", "OTHER_SHEETS", "AUTHORED");
-        assertThat(response.sourceGroups()).extracting(PoolResponse.SourceGroupNode::questionCount).containsExactly(1, 2, 1);
-        assertThat(response.sourceGroups()).allMatch(PoolResponse.SourceGroupNode::selected);
-    }
-
-    @Test
-    void get_countsOnlyTheQuestionsTheSourceFilterLetsThrough() {
-        pool = Pools.of(new SourceFilter(true, false, true), 1, 2);
-
-        PoolResponse response = service.get(authentication);
-
-        assertThat(response.questionCount()).isEqualTo(2); // arkusz własny + autorskie
-        assertThat(response.sourceGroups()).extracting(PoolResponse.SourceGroupNode::selected).containsExactly(true, false, true);
-        // grupa wyłączona nadal pokazuje, ile pytań by dała
-        assertThat(response.sourceGroups().get(1).questionCount()).isEqualTo(2);
     }
 
     @Test
@@ -327,42 +289,5 @@ class PoolSettingsServiceTest {
                 .hasMessageContaining("na ścieżce Student");
 
         verify(userCourseRepository, never()).deleteByUserId(any());
-    }
-
-    // ---------------------------------------------------------------- updateSourceFilter
-
-    @Test
-    void updateSourceFilter_savesTheGroupsOnTheExistingSettings() {
-        UserSettings settings = new UserSettings(USER);
-        when(settingsRepository.findById(USER)).thenReturn(Optional.of(settings));
-
-        service.updateSourceFilter(new UpdateSourceFilterRequest(true, false, true), authentication);
-
-        assertThat(settings.isIncludeOwnSheets()).isTrue();
-        assertThat(settings.isIncludeOtherSheets()).isFalse();
-        assertThat(settings.isIncludeAuthored()).isTrue();
-        verify(settingsRepository).save(settings);
-    }
-
-    @Test
-    void updateSourceFilter_createsTheSettingsForAUserWhoHadNone() {
-        when(settingsRepository.findById(USER)).thenReturn(Optional.empty());
-
-        service.updateSourceFilter(new UpdateSourceFilterRequest(false, true, false), authentication);
-
-        ArgumentCaptor<UserSettings> saved = ArgumentCaptor.forClass(UserSettings.class);
-        verify(settingsRepository).save(saved.capture());
-        assertThat(saved.getValue().getUserId()).isEqualTo(USER);
-        assertThat(saved.getValue().isIncludeOtherSheets()).isTrue();
-        assertThat(saved.getValue().isIncludeOwnSheets()).isFalse();
-    }
-
-    @Test
-    void updateSourceFilter_refusesToSwitchEveryGroupOff() {
-        assertThatThrownBy(() -> service.updateSourceFilter(new UpdateSourceFilterRequest(false, false, false), authentication))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("co najmniej jedną grupę");
-
-        verify(settingsRepository, never()).save(any());
     }
 }

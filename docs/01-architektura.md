@@ -25,7 +25,7 @@ flowchart LR
 | Spring Web MVC | w Spring Boot | Kontrolery REST |
 | Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
 | PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta), uruchamiane przy starcie |
+| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta, `V4` rozdziały aktów), uruchamiane przy starcie |
 | Spring Security | w Spring Boot | Ochrona endpointów, role |
 | jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
 | Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |
@@ -54,7 +54,7 @@ komplet klas.
 | `course` | Przedmioty ścieżki Student: porządkują akty ze wspólnej bazy, nie przechowują własnych pytań; student wybiera, z których się uczy |
 | `source` | Źródła pytań: arkusz egzaminu aplikacji w danym roku (`EXAM_SHEET`) albo pytania autorskie (`AUTHORED`) |
 | `question` | Pytania ABC z dokładnie jedną poprawną odpowiedzią, podstawą prawną i wyjaśnieniem; ukrywanie pytania i fiszki przez administratora; zakres nauki (dziedzina, akt, źródło); **zmiany w prawie** (data i opis przy pytaniu, zwrot pytań do nauki po zmianie) |
-| `pool` | **Pula pytań użytkownika** wyliczana regułą (akty ścieżki albo własne arkusze; u Studenta akty wybranych przedmiotów), trwałe zawężenie do wybranych aktów, wybór przedmiotów Studenta, filtr źródeł |
+| `pool` | **Pula pytań użytkownika** wyliczana regułą (akty ścieżki albo własne arkusze; u Studenta akty wybranych przedmiotów), trwałe zawężenie do wybranych aktów (zakres nauki), wybór przedmiotów Studenta, `SourceMode` (źródło pytań wybierane przy teście) |
 | `catalog` | Drzewo ekranu Testów: dziedzina → akt → źródło, z licznikami pytań |
 | `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS) osobno dla trybów Testy i Fiszki, zawieszanie, błędy, własny test i jego zapis jako sesji („Moje testy”) |
 | `review.fsrs` | Sam algorytm FSRS-6 (wzory matematyczne) |
@@ -210,7 +210,7 @@ prawdziwą bazą PostgreSQL i uruchamia migracje, więc wymaga działającej baz
 Czego testy **nie** sprawdzają: zapytań JPQL i SQL wykonanych na prawdziwej bazie. W zamian pakiet `mapping` zawiera
 **testy statyczne**, które bez Springa i bez bazy odtwarzają to, co przy starcie sprawdza Hibernate:
 
-- `EntityMappingTest` czyta schemat z migracji `V1`–`V3` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
+- `EntityMappingTest` czyta schemat z migracji `V1`–`V4` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
   zgodne typy, długości oraz ograniczenia `CHECK`;
 - `RepositoryQueryTest` sprawdza zapytania repozytoriów (sklejone słowa kluczowe, parametry bez `@Param`,
   nieistniejące pola encji, aliasy projekcji);

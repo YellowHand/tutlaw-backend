@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import pl.tutlaw.backend.legal.ActSection;
 import pl.tutlaw.backend.legal.LegalAct;
 import pl.tutlaw.backend.source.QuestionSource;
 
@@ -30,6 +31,14 @@ public class Question {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "legal_act_id", nullable = false)
     private LegalAct legalAct;
+
+    /**
+     * Rozdział aktu, do którego należy pytanie (np. „XIX. Przestępstwa przeciwko życiu i zdrowiu"), albo {@code null}.
+     * Rozdział zawsze należy do tego samego aktu co pytanie; pytanie bez rozdziału jest tylko w akcie jako całości.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "section_id")
+    private ActSection section;
 
     /** Arkusz egzaminacyjny albo pytania autorskie. */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

@@ -18,7 +18,7 @@ Kod, o którym tu mowa, leży głównie w pakietach `pool`, `review`, `review.fs
 9. [Trudne pytania i zawieszanie](#trudne-pytania-i-zawieszanie)
 10. [Dodatkowe sesje: „Powtórz moje błędy” i „Przerób błędy”](#dodatkowe-sesje-powtórz-moje-błędy-i-przerób-błędy)
 11. [Egzamin próbny](#egzamin-próbny)
-12. [Filtr źródeł pytań](#filtr-źródeł-pytań)
+12. [Źródło pytań w teście](#źródło-pytań-w-teście)
 13. [Zmiany w prawie](#zmiany-w-prawie)
 14. [Zmiana ścieżki i zerowanie postępów](#zmiana-ścieżki-i-zerowanie-postępów)
 15. [Zabezpieczenia spójności](#zabezpieczenia-spójności)
@@ -61,12 +61,11 @@ dostępie do pytań. Zasada jest **regułą**, a nie ręcznym przypisaniem pyta�
 3. **Zawężenie** (aplikacje: `user_pool_acts`, Student: wybór przedmiotów w `user_courses`): użytkownik może trwale zawęzić
    pulę do wybranych aktów (Student: do wybranych przedmiotów; zawężenie aktami jest u Studenta ignorowane). Brak wpisów
    = cała pula ścieżki. Zawężenie **nie dotyczy egzaminu próbnego**.
-4. **Filtr źródeł** (`user_settings.include_*`): trzy grupy `OWN_SHEETS` (arkusze wybranej ścieżki), `OTHER_SHEETS`
-   (arkusze innych ścieżek), `AUTHORED` (pytania autorskie); co najmniej jedna musi być włączona. Filtr dotyczy
-   pytań testowych (patrz [Filtr źródeł pytań](#filtr-źródeł-pytań)).
+4. **Źródło pytań** nie jest trwałą częścią puli: użytkownik wybiera je osobno **przy każdym teście** (`SourceMode`:
+   wszystkie, Ministerstwo Sprawiedliwości, autorskie; patrz [Źródło pytań w teście](#źródło-pytań-w-teście)).
 
 Użytkownik widzi dziedziny, w których ma **akty w swojej puli**, i w każdej tylko te akty (dziedzina bez jego aktów, np.
-„Student” u użytkownika aplikacji, jest pomijana). Zmiana ścieżki czyści zawężenie aktami i przywraca filtr źródeł;
+„Student” u użytkownika aplikacji, jest pomijana). Zmiana ścieżki czyści zawężenie aktami;
 wybrane przedmioty Studenta zostają.
 
 ```mermaid
@@ -76,8 +75,8 @@ flowchart TD
     H -- "tak" --> A{"Akt pytania w aktach puli?<br/>(ścieżka: własne arkusze albo lista aktów;<br/>po zawężeniu: tylko wybrane akty)"}
     A -- "nie" --> Y["Poza pulą użytkownika"]
     A -- "tak" --> M{"Tryb nauki"}
-    M -- "Testy" --> F{"Źródło dozwolone<br/>przez filtr źródeł?"}
-    F -- "nie" --> W["Pominięte w Testach"]
+    M -- "Testy" --> F{"Źródło zgodne z wyborem<br/>przy teście (SourceMode)?"}
+    F -- "nie" --> W["Pominięte w tym teście"]
     F -- "tak" --> S{"Zawieszone w tym trybie?"}
     M -- "Fiszki" --> U{"Fiszka odblokowana i nieukryta?<br/>(pewny błąd albo ręczne 'Dodaj do fiszek';<br/>flashcard_hidden = false)"}
     U -- "nie" --> V["Nie ma jej w Fiszkach"]
@@ -144,7 +143,7 @@ Użytkownik **nie widzi** fiszki od razu. Pojawia się ona w jego Fiszkach dopie
 2. **sam ją dodał** przyciskiem „Dodaj do fiszek” (`POST /api/questions/{id}/flashcard`).
 
 Idea: pewny błąd to utrwalone błędne przekonanie, więc warto je przepracować także w formie fiszki. Pomyłka, o której
-użytkownik wiedział („nie jestem pewien”), nie wymaga fiszki. Fiszki **nie podlegają filtrowi źródeł** (wynikają z
+użytkownik wiedział („nie jestem pewien”), nie wymaga fiszki. Fiszki **nie mają wyboru źródła** (wynikają z
 błędów w testach), ale podlegają zawężeniu do aktów.
 
 Stany fiszki pytania (`FlashcardStatus`) widziane z punktu widzenia użytkownika:
@@ -326,8 +325,7 @@ egzaminu ustawia administrator osobno dla każdej aplikacji (tabela `exam_terms`
 termin, włączają się trzy mechanizmy (`SchedulingRules`, `LearningSettingsService`). Aplikacja bez terminu
 („termin nieogłoszony”), ścieżka Student i brak wyboru oznaczają zwykłą naukę bez trybu egzaminacyjnego i bez planu.
 
-Zmiana ścieżki czyści zawężenie puli do aktów i przywraca filtr źródeł (wszystkie trzy grupy włączone), bo oba dotyczyły
-poprzedniej ścieżki.
+Zmiana ścieżki czyści zawężenie puli do aktów, bo dotyczyło poprzedniej ścieżki.
 
 | Mechanizm | Reguła |
 |-----------|--------|
@@ -378,38 +376,40 @@ nadal są w nauce (od największej liczby błędów).
 
 ## Dodatkowe sesje: „Powtórz moje błędy” i „Przerób błędy”
 
-Obie sesje (i „Własny test” poniżej) to zwykłe sesje testowe: odpowiedzi idą normalną drogą (z oceną pamięci i terminami), więc to dodatkowe
+Obie sesje (i test z kreatora poniżej) to zwykłe sesje testowe: odpowiedzi idą normalną drogą (z oceną pamięci i terminami), więc to dodatkowe
 ćwiczenie, a nie osobny tor nauki.
 
 - **„Powtórz moje błędy”** (`/api/review/mistakes-queue`, `/mistakes-count`): pytania, w których **ostatnia**
   odpowiedź w teście z ostatnich **30 dni** była błędna. Pytanie, na które później odpowiedziano dobrze, znika z listy.
-  Maksymalnie **50** pytań w sesji, w losowej kolejności; zawieszone, spoza puli i spoza filtra źródeł odpadają.
+  Maksymalnie **50** pytań w sesji, w losowej kolejności; zawieszone i spoza puli odpadają (źródła nie zawęża).
 - **„Przerób błędy teraz”** (`/api/review/practice-queue?questionIds=...`): sesja z podanych pytań (np. błędnych po
   egzaminie próbnym), w podanej kolejności, maksymalnie 200. Pytania spoza puli, ukryte i zawieszone są po cichu pomijane.
 
-## Własny test
+## Test z kreatora (dawniej „Własny test”)
 
-Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera dowolne **dziedziny i akty
-prawne** (Student: **przedmioty**; zakres to ich suma, bez powtórzeń; bez wyboru cała pula), **które pytania** mają w niej być
+Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera **źródło pytań** (wszystkie, Ministerstwo Sprawiedliwości, autorskie),
+dowolne **dziedziny, akty prawne i rozdziały aktów** (Student: **przedmioty**; zakres to ich suma, bez powtórzeń; bez wyboru
+cała pula), **które pytania** mają w niej być
 (wszystkie, nowe, z błędną ostatnią odpowiedzią, zaległe, ze zmianą w prawie z ostatniego roku) i **liczbę pytań**: **10, 20, 50, 100 albo 150** (własnej liczby ani wyboru lat egzaminu nie ma).
-Gdy w zakresie jest mniej niż 10 pytań, jedyny wybór to wszystkie z nich. Podgląd „Dostępnych: N” dla każdego rodzaju
-daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie.
+Gdy w zakresie jest mniej niż 10 pytań, jedyny wybór to wszystkie z nich. Liczby pytań dla każdego rodzaju
+daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie. Tym samym `POST` zaczynają się też „Losuj z całej
+puli” (cała pula, wszystkie źródła, rodzaj `ALL`) i szybkie zestawy (cała pula, rodzaje `MISTAKES`, `LAW_CHANGE` albo `NEW`, do 20 pytań).
 
 - **To nauka, nie egzamin.** Serwer losuje numery pytań, a sesję otwiera się zwykłą kolejką ćwiczeń
   (`/practice-queue`), więc odpowiedzi mają ocenę pamięci i terminy, a pomyłki trafiają do „Moich błędów”.
   Nie ma progu zaliczenia ani raportu „zdał / nie zdał”.
 - **Zapisany jako sesja („Moje testy”).** Losowanie od razu zapisuje test (`CustomTestSessionService`, tabele
-  `custom_test_sessions` i `custom_test_session_questions`): zakres, rodzaj pytań, filtr źródeł z tej chwili i
+  `custom_test_sessions` i `custom_test_session_questions`): zakres, rodzaj pytań, źródło i
   wylosowane pytania w kolejności sesji. Odpowiedzi wysyłane z numerem testu (`sessionId`) dopisują się do niego; po
   odpowiedzi na ostatnie pytanie test jest ukończony, a porzucony w połowie zostaje na liście jako **nieukończony**.
   Lista (`GET /api/custom-tests/sessions`, 50 ostatnich) i szczegóły z odpowiedziami (`/{id}`) służą ekranowi „Moje
-  testy”, z którego da się ułożyć test ponownie z tymi samymi ustawieniami. Powtórki, „Popraw błędy” i egzamin nie są
-  zapisywane jako własne testy. Własne testy liczą się osobno od egzaminów w „Podsumowaniu nauki”.
-- **Zakres**: dziedziny, akty i **przedmioty** (Student), w sumie bez powtórzeń. Przedmiot oznacza wszystkie jego akty;
-  przedmiot bez aktów nie poszerza zakresu do całej puli. Zapisany test pamięta wybrane przedmioty (`course_ids`) i
-  ich akty (`act_ids`).
-- **Pula**: pytania z puli użytkownika (jego akty po zawężeniu), nieukryte, **niezawieszone** w testach i ze źródeł
-  z filtra źródeł.
+  testy”, z którego da się ułożyć test ponownie z tymi samymi ustawieniami. Sesja z paska zaległych, „Popraw błędy” i egzamin nie są
+  zapisywane jako testy. Własne testy liczą się osobno od egzaminów w „Podsumowaniu nauki”.
+- **Zakres**: dziedziny, akty, **rozdziały** i **przedmioty** (Student), w sumie bez powtórzeń. Przedmiot oznacza wszystkie
+  jego akty; przedmiot bez aktów nie poszerza zakresu do całej puli. Rozdział (`act_sections`, `questions.section_id`) obejmuje
+  tylko pytania do niego przypisane: pytania aktu bez rozdziału są tylko w zakresie „cały akt”. Zapisany test pamięta wybrane
+  przedmioty (`course_ids`), ich akty (`act_ids`) i rozdziały (`section_ids`).
+- **Pula**: pytania z puli użytkownika (jego akty po zawężeniu), nieukryte, **niezawieszone** w testach i z wybranego źródła.
 - **Dobór przy ograniczonej liczbie**: `MISTAKES` bierze najświeższe błędy (jak „Moje błędy”, tylko w wybranym zakresie
   i bez limitu 50), `DUE` te o najniższej szansie przypomnienia (jak kolejka nauki), `ALL` i `NEW` losują. Kolejność w
   sesji jest zawsze losowa.
@@ -437,10 +437,10 @@ niczego do dziennika odpowiedzi, nie rusza dziennych limitów ani licznika błę
 **Format jest stały** (`ExamFormat`): zawsze **150 pytań** z całej puli użytkownika, zaliczenie od
 **100 punktów** (2/3 punktów). Użytkownik nie wybiera zakresu, liczby pytań ani progu, a próg ustala wyłącznie serwer.
 Egzamin z jednego działu nie ma sensu (prawdziwy egzamin jest mieszany), więc ćwiczenie z wybranego działu to
-[własny test](#własny-test), który niczego nie zalicza.
+[test z kreatora](#test-z-kreatora-dawniej-własny-test), który niczego nie zalicza.
 
 1. **Start** (`POST /api/exams/start`, bez ciała): serwer losuje 150 pytań z Twojej puli (**bez zawężenia do wybranych
-   aktów**: prawdziwy egzamin obejmuje wszystko), niezawieszonych w testach i ze źródeł z filtra źródeł. Zwraca je **bez poprawnych odpowiedzi**, razem z progiem w punktach
+   aktów**: prawdziwy egzamin obejmuje wszystko), niezawieszonych w testach, ze wszystkich źródeł. Zwraca je **bez poprawnych odpowiedzi**, razem z progiem w punktach
    (`passPoints`). Niczego nie zapisuje. Jeśli w materiale jest mniej niż 150 pytań, egzamin ma wszystkie, a próg maleje
    proporcjonalnie (100 z 150, w górę do całego punktu; 12 pytań to próg 8).
 2. **Rozwiązywanie** odbywa się po stronie frontendu (czas, opcjonalny limit minut, wybór odpowiedzi).
@@ -459,17 +459,25 @@ bazie). Gdy proporcje zostaną ustalone, trzeba tylko zmienić losowanie w `Exam
 
 Historia obejmuje ostatnie 50 podejść. Tabela `exam_attempts` trzyma tylko podsumowania.
 
-## Filtr źródeł pytań
+## Źródło pytań w teście
 
-Użytkownik może zawęzić Testy do wybranych **grup źródeł**: własne arkusze (arkusze wybranej ścieżki), arkusze innych
-ścieżek i pytania autorskie (`OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED`). Zapis jest na koncie (kolumny
-`user_settings.include_own_sheets`, `include_other_sheets`, `include_authored`), więc działa tak samo na każdym urządzeniu.
+Od Etapu 34 nie ma trwałego filtra źródeł na koncie. Źródło pytań wybiera się **osobno przy każdym teście** (`SourceMode`,
+parametr `source` w `GET /api/tests/catalog`, `GET /api/review/custom-test/counts` i `POST /api/review/custom-test`):
 
-- Zawsze musi być włączona **co najmniej jedna** grupa (baza też tego pilnuje). Domyślnie włączone są wszystkie trzy.
-- Filtr dotyczy **pytań testowych**: katalogu Testów, kolejek (nowe, zaległe), „Powtórz moje błędy”, licznika zaległych w
-  Testach, własnych testów, planu do egzaminu, statystyk testów i losowania egzaminu. **Fiszek nie dotyczy.**
-- Statystyki według źródeł (`GET /api/statistics/sources`) filtra nie uwzględniają: zawsze pokazują całą pulę ścieżki.
-- Wyjątek: ocena zakończonego egzaminu (`submit`) filtra nie stosuje, bo ocenia to, co zostało pokazane.
+- `ALL` (domyślnie): wszystkie źródła razem,
+- `MINISTRY`: arkusze egzaminacyjne Ministerstwa Sprawiedliwości (arkusze wybranej ścieżki i arkusze innych ścieżek),
+- `AUTHORED`: pytania autorskie dodane w aplikacji (m.in. paremie łacińskie).
+
+Pod spodem tryb to `SourceFilter` (trzy grupy: `OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED`): `MINISTRY` to dwie pierwsze, `AUTHORED`
+to trzecia. Dzięki temu reguła puli (`PoolService.forUser(userId, SourceFilter)`) i zapis w teście (`source_groups`) zostały
+bez zmian; testy zapisane wcześniej mają tryb wyprowadzony z dawnego filtra (`SourceMode.fromFilter`).
+
+- Wybór źródła obowiązuje tylko w kreatorze (Nauka i Powtórki). „Losuj z całej puli”, szybkie zestawy, pasek zaległych,
+  „Powtórz moje błędy”, plan do egzaminu, statystyki testów, egzamin próbny i fiszki biorą **wszystkie** źródła.
+- Statystyki według źródeł (`GET /api/statistics/sources`) pokazują zawsze całą pulę ścieżki, każde źródło osobno.
+- Kolumny `user_settings.include_own_sheets`, `include_other_sheets` i `include_authored` zostały w bazie, ale **nie są już
+  używane** (encja ich nie mapuje); to samo dotyczy `user_settings.shuffle_options` (kolejność odpowiedzi miesza frontend
+  zawsze).
 
 ## Zmiany w prawie
 
@@ -490,10 +498,10 @@ Dwa skutki dla użytkownika:
    zaczyna więc działać najpóźniej następnej nocy; chcąc od razu, uruchom ten sam `UPDATE` ręcznie albo zrestartuj
    backend. Błąd przebiegu nie zatrzymuje aplikacji (następny przebieg nadrobi). Pytania nowe dla użytkownika (bez stanu
    nauki) nie potrzebują przestawiania: i tak są nowe.
-2. **Kategoria „Zmiany w prawie” we własnym teście** (`kind = LAW_CHANGE`): pytania, w których zmiana weszła w życie nie
+2. **Kategoria „Zmiany w prawie” w teście z kreatora i w szybkim zestawie** (`kind = LAW_CHANGE`): pytania, w których zmiana weszła w życie nie
    wcześniej niż `app.questions.recent-change-days` dni temu (domyślnie **365**) i już obowiązuje (`LawChangePolicy`).
    Okno liczy się w chwili zapytania, więc pytanie wypada z kategorii samo po roku. Kategoria ma licznik
-   `lawChanges` w `GET /api/review/custom-test/counts` i podlega puli, filtrowi źródeł i wyborowi zakresu jak inne rodzaje.
+   `lawChanges` w `GET /api/review/custom-test/counts` i podlega puli, wybranemu źródłu i wyborowi zakresu jak inne rodzaje.
    Zawieszonych pytań nie obejmuje żaden rodzaj.
 
 Przy każdym pytaniu, które ma zapisaną zmianę, aplikacja pokazuje plakietkę **„Zmiana w prawie: data”** z opisem
@@ -505,7 +513,7 @@ powtarzające się w dwóch arkuszach to osobne wiersze: zmianę trzeba wpisać 
 **Postępy należą do użytkownika i pytań, nie do ścieżki.** Stan nauki (`user_question_states`), historia odpowiedzi
 (`review_logs`), własne testy, egzaminy i czas nauki nie są związane ze ścieżką, więc **zmiana ścieżki ich nie rusza**
 (`LearningSettingsService.chooseTrack`; pilnuje tego test). Zmiana czyści tylko zawężenie puli do aktów
-(`user_pool_acts`) i przywraca filtr źródeł; wybrane przedmioty Studenta zostają. Pytania wspólne dla dwóch ścieżek (przez
+(`user_pool_acts`); wybrane przedmioty Studenta zostają. Pytania wspólne dla dwóch ścieżek (przez
 wspólne akty) mają jeden stan nauki, więc odpowiedź udzielona na jednej ścieżce liczy się na drugiej.
 
 Kto chce zacząć od zera, **zeruje postępy** (`StudyProgressService`, `DELETE /api/me/study-progress`, w aplikacji: okno
@@ -545,4 +553,4 @@ Opis endpointów jest w [API: statystyki](api/08-statystyki.md). Najważniejsze 
 | **Skuteczność w testach** | Poprawne odpowiedzi z 30 dni, niezależnie od „Nie jestem pewien” |
 | **Pewne błędy** | Błędne odpowiedzi bez „Nie jestem pewien” (utrwalone błędne przekonania) |
 | **Szczęśliwe trafienia** | Poprawne odpowiedzi z „Nie jestem pewien” (wiedza krucha) |
-| **Wszystkie pytania** | Pytania, które użytkownik **może teraz ćwiczyć** w trybie (pula, zawężenie, filtr źródeł w testach, odblokowane fiszki), a nie cała biblioteka |
+| **Wszystkie pytania** | Pytania, które użytkownik **może teraz ćwiczyć** w trybie (pula, zawężenie do aktów, odblokowane fiszki), a nie cała biblioteka |

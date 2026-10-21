@@ -60,7 +60,7 @@ wszystkie pytania aktów tych przedmiotów. Ten sam akt w kilku przedmiotach nie
 
 | Pole | Znaczenie |
 |------|-----------|
-| `questionCount` | Pytania przedmiotu **ze wszystkich źródeł** (suma pytań jego aktów, bez filtra źródeł) |
+| `questionCount` | Pytania przedmiotu **ze wszystkich źródeł** (suma pytań jego aktów) |
 | `actIds` | Numery aktów prawnych przedmiotu. Ten sam akt może należeć do kilku przedmiotów |
 
 Zagadnienia spoza prawa (np. paremie łacińskie, logika) to akty rodzaju `TOPIC`; ich pytania są zwykłymi pytaniami.
@@ -69,11 +69,16 @@ Zagadnienia spoza prawa (np. paremie łacińskie, logika) to akty rodzaju `TOPIC
 
 Pula to zbiór pytań, które użytkownik może rozwiązywać: **pytania z jego własnych arkuszy ALBO z aktów prawnych jego
 ścieżki** (dla Studenta: z aktów **wybranych przedmiotów**, a bez wyboru wszystkich przedmiotów), opcjonalnie **zawężone**
-do aktów wybranych przez użytkownika (Student zawęża przedmiotami, nie aktami) i **przefiltrowane** po źródłach. Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
+do aktów wybranych przez użytkownika (**zakres nauki**; Student zawęża przedmiotami, nie aktami). Użytkownik, który nie wybrał ścieżki, ma pulę obejmującą wszystko.
+
+**Źródło pytań nie jest częścią puli** (od Etapu 34). Trwałego filtra źródeł nie ma: źródło (`SourceMode`: `ALL`, `MINISTRY`
+albo `AUTHORED`) podaje się osobno przy każdym teście, w parametrze `source` katalogu Testów, liczników i losowania
+(zob. [05. Nauka](05-nauka.md)). `MINISTRY` to arkusze egzaminacyjne (arkusze ścieżki i arkusze innych ścieżek razem),
+`AUTHORED` to pytania autorskie, a `ALL` (domyślnie, także gdy parametru brak) to wszystkie źródła.
 
 ### `GET /api/me/pool`
 
-Opis puli do okna „Pula pytań”: wybrana ścieżka, dziedziny z aktami do zaznaczenia i trzy grupy źródeł.
+Opis puli do karty i okna „Zakres nauki”: wybrana ścieżka, dziedziny z aktami (Student: przedmioty) do zaznaczenia.
 
 ```json
 {
@@ -89,12 +94,7 @@ Opis puli do okna „Pula pytań”: wybrana ścieżka, dziedziny z aktami do za
     },
     { "id": 8, "name": "Prawo Unii Europejskiej i międzynarodowe", "slug": "prawo-ue-i-miedzynarodowe", "acts": [] }
   ],
-  "courses": [],
-  "sourceGroups": [
-    { "code": "OWN_SHEETS",   "selected": true,  "questionCount": 600 },
-    { "code": "OTHER_SHEETS", "selected": false, "questionCount": 1400 },
-    { "code": "AUTHORED",     "selected": true,  "questionCount": 90 }
-  ]
+  "courses": []
 }
 ```
 
@@ -102,19 +102,18 @@ Opis puli do okna „Pula pytań”: wybrana ścieżka, dziedziny z aktami do za
 |------|-----------|
 | `track` | Wybrana ścieżka; `null`, gdy użytkownik jeszcze jej nie wybrał |
 | `narrowed` | Czy użytkownik zawęził pulę do wybranych aktów (Student: do wybranych przedmiotów, czyli nie do wszystkich). Bez zawężenia obowiązują wszystkie akty ścieżki (Student: wszystkie przedmioty) |
-| `questionCount` | Pytania w puli po zawężeniu **i** po filtrze źródeł |
+| `questionCount` | Pytania w puli po zawężeniu do aktów (ze wszystkich źródeł) |
 | `fields` | Dziedziny z aktami ścieżki użytkownika; dziedzina **bez** takich aktów jest pomijana (np. „Student” dla użytkownika aplikacji). Na ścieżce Student pusta lista (Student wybiera przedmioty) |
 | `courses` | Tylko na ścieżce Student: przedmioty do wyboru (`id`, `name`, `slug`, `questionCount` = pytania aktów przedmiotu ze wszystkich źródeł, `selected`). Przedmiot bez pytań jest pomijany. Bez własnego wyboru wszystkie mają `selected: true`. Na pozostałych ścieżkach pusta lista |
 | `fields[].acts[].selected` | Czy akt jest w puli po zawężeniu; `questionCount` to pytania aktu ze wszystkich źródeł |
 | `fields[].acts[].kind` | `ACT` (akt prawny) albo `TOPIC` (zagadnienie, np. paremie) |
-| `sourceGroups` | Trzy grupy źródeł: `OWN_SHEETS` (arkusze wybranej ścieżki), `OTHER_SHEETS` (arkusze innych ścieżek), `AUTHORED` (pytania autorskie). `questionCount` to pytania grupy w aktach puli **przed** filtrem; 0 oznacza, że włączenie grupy nic nie da |
 
 ### `PUT /api/me/pool/acts` — zawężenie puli do aktów
 
 Zawęża pulę do wybranych aktów prawnych (trwale, na koncie). **Tylko dla aplikacji**: Student wybiera przedmioty
 ([`PUT /api/me/pool/courses`](#put-apimepoolcourses--wybór-przedmiotów-studenta)), a wpisy o aktach są u niego ignorowane.
-Zawężenie obowiązuje w Testach, w fiszkach, we własnych
-testach, w „Moich błędach” i w statystykach (poza statystykami źródeł), ale **nie dotyczy egzaminu próbnego**.
+Zawężenie obowiązuje w Testach, w fiszkach, w testach z kreatora,
+w „Moich błędach” i w statystykach (poza statystykami źródeł), ale **nie dotyczy egzaminu próbnego**.
 
 ```json
 { "actIds": [5, 6, 12] }
@@ -161,30 +160,16 @@ własnych testach, „Moich błędach” i statystykach, ale **nie dotyczy egzam
 **Błędy:** `400` — „Przedmioty wybierasz na ścieżce Student.” (inna ścieżka), „Wybrany przedmiot nie istnieje albo nie ma
 jeszcze pytań.” (nic się wtedy nie zmienia), „lista przedmiotów jest wymagana”, „za dużo wybranych przedmiotów”.
 
-### `PUT /api/me/pool/source-filter` — filtr źródeł
-
-Wybiera, które z trzech grup źródeł mają dawać pytania w Testach.
-
-```json
-{ "ownSheets": true, "otherSheets": false, "authored": true }
-```
-
-Wszystkie trzy pola są wymagane. Filtr dotyczy **pytań testowych**: katalogu Testów, kolejek testów, własnych testów,
-„Moich błędów”, planu nowych pytań, statystyk testów i **egzaminu próbnego** (zawężenie do aktów egzaminu nie dotyczy,
-filtr źródeł tak). **Fiszek nie dotyczy**: fiszka wynika z błędu w teście, więc zostaje w nauce niezależnie od tego, z
-którego źródła pochodzi pytanie.
-
-**Odpowiedź `200`:** ten sam kształt co `GET /api/me/pool`.
-
-**Błędy:** `400` — „Zaznacz co najmniej jedną grupę pytań.” (filtr nie może ukryć całego materiału).
-
 ## Katalog Testów
 
 ### `GET /api/tests/catalog`
 
-Całe drzewo ekranu Testów **jednym wywołaniem**: dziedzina → akt prawny oraz osobno lista źródeł, z licznikami pytań
-dla zalogowanego użytkownika. Liczą się tylko pytania z **puli** użytkownika (akty jego ścieżki i zawężenie) i ze
-**źródeł wybranych w filtrze**.
+Drzewo kreatora Testów **jednym wywołaniem**: dziedzina → akt prawny → rozdział, z licznikami pytań dla zalogowanego
+użytkownika. Liczą się tylko pytania z **puli** użytkownika (akty jego ścieżki i zawężenie) i z wybranego **źródła**.
+
+| Parametr | Znaczenie |
+|----------|-----------|
+| `source` | Opcjonalny: `ALL` (domyślnie), `MINISTRY` albo `AUTHORED`. Akty i rozdziały bez pytań z tego źródła są pomijane |
 
 ```json
 {
@@ -195,30 +180,30 @@ dla zalogowanego użytkownika. Liczą się tylko pytania z **puli** użytkownika
       "questionCount": 420, "solvedCount": 130,
       "acts": [
         { "id": 12, "name": "Kodeks karny", "shortName": "k.k.", "slug": "kodeks-karny", "kind": "ACT",
-          "questionCount": 300, "solvedCount": 100 }
+          "questionCount": 300, "solvedCount": 100,
+          "sections": [
+            { "id": 51, "name": "XIX. Przestępstwa przeciwko życiu i zdrowiu", "questionCount": 40 },
+            { "id": 52, "name": "XXXV. Przestępstwa przeciwko mieniu", "questionCount": 25 }
+          ] }
       ]
     }
   ],
-  "courses": [],
-  "sources": [
-    { "id": 31, "name": "Notarialna 2024", "kind": "EXAM_SHEET", "group": "OWN_SHEETS", "examYear": 2024,
-      "questionCount": 150, "solvedCount": 70 },
-    { "id": 1, "name": "Pytania autorskie", "kind": "AUTHORED", "group": "AUTHORED", "examYear": null,
-      "questionCount": 40, "solvedCount": 5 }
-  ]
+  "courses": []
 }
 ```
 
 | Pole | Znaczenie |
 |------|-----------|
 | `narrowed` | Czy pula jest zawężona przez użytkownika do wybranych aktów |
-| `questionCount` | Pytania, które użytkownik **może teraz rozwiązywać** |
+| `questionCount` | Pytania, które użytkownik **może teraz rozwiązywać** (z wybranego źródła) |
 | `solvedCount` | Ile z nich rozwiązał co najmniej raz w teście |
+| `acts[].sections` | Rozdziały aktu, w których jest co rozwiązywać (`id`, `name`, `questionCount`), według `sortOrder`. Pusta lista, gdy akt nie ma rozdziałów. Pytania **bez rozdziału** są tylko w akcie jako całości, więc suma rozdziałów może być mniejsza niż `questionCount` aktu |
 | `courses` | Tylko dla Studenta: wybrane (albo wszystkie) przedmioty z licznikami (`id`, `name`, `slug`, `questionCount`, `solvedCount`, `actIds`). Przedmioty się nakładają (ten sam akt w dwóch przedmiotach liczy się w obu), więc ich sumy nie dają puli. Przedmiot bez pytań jest pomijany. Dla aplikacji pusta lista |
-| `sources[].group` | `OWN_SHEETS`, `OTHER_SHEETS` albo `AUTHORED` (jak w filtrze źródeł) |
-| `sources[].kind` | `EXAM_SHEET` (arkusz egzaminu, `examYear` wypełniony) albo `AUTHORED` |
+
+Rozdziały (`act_sections`) wczytuje administrator skryptem SQL (katalog `baza/`, skrypty 07 i 08); pytanie ma najwyżej jeden
+rozdział (`questions.section_id`), a zwykłe pytania wczytane bez rozdziału po prostu go nie mają.
 
 Kolejność: **dziedziny** według `sortOrder` (potem nazwa po polsku), **akty** według `sortOrder` (potem nazwa),
-**źródła**: własne arkusze, arkusze innych ścieżek, na końcu pytania autorskie; w grupie od najnowszego roku. Liczniki
+**rozdziały** według `sortOrder`. Liczniki
 dziedziny są sumą liczników jej aktów. **Dziedziny bez aktów w puli użytkownika są pomijane** (np. „Student” u użytkownika aplikacji),
-tak samo źródła bez pytań w puli.
+tak samo rozdziały bez pytań w wybranym źródle.

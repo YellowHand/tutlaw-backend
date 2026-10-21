@@ -8,7 +8,7 @@ tworzy i nie zmienia.
 
 Są trzy migracje:
 
-- `V1__init_schema.sql` — **cały schemat** (23 tabele; `V3` dodaje 24., ograniczenia, indeksy). To nowa baza startowa (*baseline*): zastąpiła
+- `V1__init_schema.sql` — **cały schemat** (23 tabele; `V3` dodaje 24., `V4` 25., ograniczenia, indeksy). To nowa baza startowa (*baseline*): zastąpiła
   dawne migracje V1–V25, a wraz z nią zniknął stary model (kategorie, przedmioty, podręczniki, rozdziały, karty, tagi).
 - `V2__reference_data.sql` — **dane słownikowe**, bez których aplikacja nie ruszy: 11 dziedzin, 6 ścieżek, puste terminy
   egzaminów pięciu aplikacji i źródło „Pytania autorskie”.
@@ -30,6 +30,8 @@ SQL z katalogu `baza/` (patrz [05](05-konfiguracja-i-uruchomienie.md#wczytywanie
 erDiagram
     legal_fields ||--o{ legal_acts : "zawiera"
     legal_acts ||--o{ questions : "pytania aktu"
+    legal_acts ||--o{ act_sections : "rozdziały"
+    act_sections ||--o{ questions : "rozdział pytania"
     question_sources ||--o{ questions : "arkusz albo pytania autorskie"
     tracks ||--o{ question_sources : "arkusze aplikacji (track_id)"
     tracks ||--o{ track_acts : "akty aplikacji"
@@ -89,7 +91,7 @@ Trzy grupy tabel:
   dzielą akty na kursy. Student widzi w aplikacji **przedmioty**, nie listę aktów.
 - **Pula użytkownika** to reguła, a nie ręczne przypisanie: pytania z **jego własnych arkuszy ALBO z aktów jego
   ścieżki**. Pytania z cudzych arkuszy i pytania autorskie wchodzą do puli przez wspólne akty. Użytkownik może pulę
-  **zawęzić** do wybranych aktów (`user_pool_acts`) i **przefiltrować źródła** w Testach (`user_settings.include_*`).
+  **zawęzić** do wybranych aktów (`user_pool_acts`). Źródło pytań (wszystkie, Ministerstwo, autorskie) wybiera przy każdym teście.
   Szczegóły: [04](04-nauka-testy-fiszki-fsrs.md#pula-pytań-użytkownika).
 - **Fiszka nie jest osobnym rekordem.** To tryb nauki pytania: stan nauki pytania ma osobny wiersz w trybie `TEST` i w
   trybie `FLASHCARD` (`user_question_states`), z własnym harmonogramem FSRS.
@@ -123,6 +125,21 @@ opłaty, Student oraz Pozostałe. Prawa cywilnego nie rozdzielono na materialne 
 | `slug` | varchar(100), unikalny | |
 | `kind` | varchar(10), domyślnie `ACT` | `ACT` (akt prawny) albo `TOPIC` (zagadnienie). CHECK `chk_legal_acts_kind` |
 | `sort_order` | int ≥ 0, domyślnie 100 | Kolejność w dziedzinie. CHECK `chk_legal_acts_sort_order` |
+
+### `act_sections` — rozdziały aktów (od V4)
+
+Rozdział (dział, tytuł) jednego aktu prawnego, np. „XIX. Przestępstwa przeciwko życiu i zdrowiu” w Kodeksie karnym. Akt może
+nie mieć żadnych rozdziałów (wtedy w kreatorze Testów wybiera się go tylko w całości). Rozdziały i przypisanie do nich pytań
+wczytuje się skryptami SQL z katalogu `baza/` (07 zakłada rozdziały, 08 zakłada rozdziały Kodeksu karnego).
+
+| Kolumna | Typ | Znaczenie |
+|---------|-----|-----------|
+| `id` | bigserial, PK | |
+| `legal_act_id` | FK → `legal_acts`, NOT NULL (ON DELETE CASCADE) | Akt, do którego należy rozdział. Indeks `idx_act_sections_act` |
+| `name` | varchar(300) | Nazwa z numerem rozdziału, dokładnie tak, jak ma się pokazać użytkownikowi. Unikalna w obrębie aktu (`uq_act_sections_name`), niepusta (`chk_act_sections_name_not_blank`) |
+| `sort_order` | int ≥ 0, domyślnie 100 | Kolejność w akcie. CHECK `chk_act_sections_sort_order` |
+
+Skasowanie rozdziału nie kasuje pytań: `questions.section_id` wraca wtedy do NULL.
 
 ### `tracks` — ścieżki
 
@@ -198,6 +215,7 @@ odpowiedź z wyjaśnieniem i podstawą prawną.
 | `valid_as_of` | date, opcjonalny | „Stan prawny na dzień” |
 | `law_changed_at` | date, opcjonalny | Dzień, od którego treść pytania uwzględnia **zmianę w prawie** (dzień wejścia zmiany w życie, a gdy treść pytania poprawiono później, dzień poprawki). Od tego dnia pytanie wraca jako zaległe u każdego, kto odpowiadał na nie wcześniej, a przez rok trafia do kategorii „Zmiany w prawie”. Data z przyszłości jeszcze nic nie zmienia. Indeks częściowy `idx_questions_law_changed` |
 | `law_change_note` | varchar(500), opcjonalny | Krótki opis zmiany pokazywany przy pytaniu (np. „nowelizacja art. 415 k.c. od 1.10.2026”). Wymaga `law_changed_at` i nie może być pusty (CHECK `chk_questions_law_change_note`) |
+| `section_id` | FK → `act_sections`, opcjonalny (ON DELETE SET NULL) | Rozdział aktu, do którego należy pytanie (od V4). NULL: pytanie nie ma rozdziału i jest tylko w akcie jako całości. Indeks częściowy `idx_questions_section` |
 | `hidden` | boolean, domyślnie false | Ukryte pytanie znika wszystkim (testy, fiszki, liczniki, egzamin); historia odpowiedzi zostaje |
 | `flashcard_hidden` | boolean, domyślnie false | Ukryta **fiszka**: pytanie zostaje w testach, ale nikt nie ma z niego fiszki |
 | `created_at` | timestamp | Data wczytania (nigdzie niepokazywana) |
@@ -271,14 +289,14 @@ Klucz główny `user_id` (jeden wiersz na użytkownika, tworzony dopiero po pier
 | Kolumna | Zakres (CHECK) | Znaczenie |
 |---------|----------------|-----------|
 | `track_id` | FK → `tracks`, NULL | Wybrana ścieżka (jedna z pięciu aplikacji albo Student). NULL = jeszcze nie wybrano (aplikacja pokazuje okno startowe, pula obejmuje wszystko). Z tej ścieżki bierze się też termin egzaminu |
-| `include_own_sheets` | boolean, domyślnie true | Filtr źródeł w Testach: czy pytania z **własnych arkuszy** (arkuszy wybranej ścieżki) mają wchodzić |
-| `include_other_sheets` | boolean, domyślnie true | To samo dla **arkuszy innych ścieżek** |
-| `include_authored` | boolean, domyślnie true | To samo dla **pytań autorskich** |
+| `include_own_sheets` | boolean, domyślnie true | **Nieużywana od Etapu 34.** Dawny trwały filtr źródeł w Testach (własne arkusze). Encja jej nie mapuje; źródło wybiera się teraz przy każdym teście |
+| `include_other_sheets` | boolean, domyślnie true | **Nieużywana od Etapu 34.** Dawny filtr: arkusze innych ścieżek |
+| `include_authored` | boolean, domyślnie true | **Nieużywana od Etapu 34.** Dawny filtr: pytania autorskie |
 | `new_flashcards_per_day` | 0–200 | Dzienny limit nowych fiszek (`chk_user_settings_new_flashcards`) |
 | `new_test_questions_per_day` | 0–500 | Dzienny limit nowych pytań testowych. **NULL = limit automatyczny** (idzie za planem do egzaminu, nie mniej niż domyślny i nie więcej niż 100; patrz 04). `chk_user_settings_new_tests` |
 | `max_reviews_per_day` | 10–1000 | Dzienny limit zaległych powtórek (`chk_user_settings_reviews`) |
 | `desired_retention` | 0,70–0,97 | Docelowa szansa przypomnienia (`chk_user_settings_retention`) |
-| `shuffle_options` | boolean, domyślnie true | Mieszanie kolejności odpowiedzi A/B/C w pytaniach (korzysta z tego frontend) |
+| `shuffle_options` | boolean, domyślnie true | **Nieużywana od Etapu 34.** Dawne ustawienie mieszania odpowiedzi A/B/C; frontend miesza je teraz zawsze |
 | `theme` | `DARK` albo `LIGHT`, domyślnie `DARK` | Wygląd aplikacji, taki sam na każdym urządzeniu (`chk_user_settings_theme`) |
 | `hint_hidden_test` | boolean, domyślnie false | Podpowiedź o skrótach klawiszowych w testach jest stale ukryta |
 | `hint_hidden_flashcard` | boolean, domyślnie false | To samo w fiszkach |
@@ -377,7 +395,7 @@ Powtórki, „Popraw błędy” i egzamin próbny tu nie trafiają. Sesje znikaj
 
 | Tabela | Kolumny | Uwagi |
 |--------|---------|-------|
-| `custom_test_sessions` | `id`, `user_id` (ON DELETE CASCADE), `started_at`, `finished_at` (NULL = nieukończony), `kind` (`ALL`, `NEW`, `MISTAKES`, `DUE`, `LAW_CHANGE`), `scope_label` (nazwa zakresu w chwili układania), `field_ids`, `act_ids` (numery po przecinku; `act_ids` zawiera też akty wybranych przedmiotów), `course_ids` (numery wybranych przedmiotów po przecinku, domyślnie pusty; wszystkie trzy puste = cała pula), `source_groups` (filtr źródeł z tej chwili: `OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED` po przecinku, albo NULL), `requested_count`, `available_count` | CHECK `chk_custom_test_sessions_kind`; CHECK `chk_custom_test_sessions_counts` (`requested_count` 1–150, `available_count` ≥ 1). Indeks `idx_custom_test_sessions_user_started` (`user_id`, `started_at DESC`) pod listę „Moje testy”. Z `field_ids` i `act_ids` frontend układa test ponownie |
+| `custom_test_sessions` | `id`, `user_id` (ON DELETE CASCADE), `started_at`, `finished_at` (NULL = nieukończony), `kind` (`ALL`, `NEW`, `MISTAKES`, `DUE`, `LAW_CHANGE`), `scope_label` (nazwa zakresu w chwili układania), `field_ids`, `act_ids` (numery po przecinku; `act_ids` zawiera też akty wybranych przedmiotów), `course_ids` (numery wybranych przedmiotów po przecinku, domyślnie pusty; wszystkie cztery listy puste = cała pula), `section_ids` (numery wybranych rozdziałów po przecinku, domyślnie pusty; od V4), `source_groups` (źródło z tej chwili jako grupy: `OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED` po przecinku, albo NULL; tryb `ALL`, `MINISTRY` albo `AUTHORED` jest z nich wyprowadzany), `requested_count`, `available_count` | CHECK `chk_custom_test_sessions_kind`; CHECK `chk_custom_test_sessions_counts` (`requested_count` 1–150, `available_count` ≥ 1). Indeks `idx_custom_test_sessions_user_started` (`user_id`, `started_at DESC`) pod listę „Moje testy”. Z `field_ids`, `act_ids`, `course_ids`, `section_ids` i źródła frontend układa test ponownie |
 | `custom_test_session_questions` | `id`, `session_id` (ON DELETE CASCADE), `question_id` (ON DELETE CASCADE), `position`, `selected_option` (`A`/`B`/`C` pod oryginalnym kluczem z bazy), `was_correct`, `was_guessed`, `time_spent_seconds`, `answered_at` | Wiersz bez odpowiedzi ma `answered_at = NULL` (CHECK `chk_custom_test_session_questions_answer` pilnuje, że `selected_option`, `was_correct` i `answered_at` są puste razem; `chk_custom_test_session_questions_option` dopuszcza A/B/C). Para (`session_id`, `position`) i para (`session_id`, `question_id`) są unikalne (`uq_custom_test_session_questions_position`, `uq_custom_test_session_questions_question`). Indeks `idx_custom_test_session_questions_question` |
 
 ### `exam_attempts` — podejścia do egzaminu próbnego
@@ -442,7 +460,7 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 - `review_logs (user_id, reviewed_at)` — aktywność, retencja, historia,
 - `review_logs (user_id, mode, reviewed_at) WHERE elapsed_days IS NULL` — dzienny limit nowych (liczy tylko pierwsze
   zobaczenia),
-- `questions (legal_act_id)` i `questions (source_id)` — pula użytkownika to wybór po aktach i źródłach,
+- `questions (legal_act_id)`, `questions (source_id)` i (częściowy) `questions (section_id)` — pula użytkownika to wybór po aktach i źródłach, a test z kreatora może dodatkowo wybierać rozdziały,
 - `exam_attempts (user_id, finished_at DESC)`, `question_reports (status, created_at)` i inne (patrz opisy tabel).
 
 ## Historia migracji
@@ -452,6 +470,7 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 | V1 | Cały schemat (23 tabele): konta i tokeny, katalog (dziedziny, akty prawne, ścieżki, przedmioty studenta, źródła pytań), pytania, ustawienia i pula użytkownika, stan nauki per pytanie i tryb, historia odpowiedzi, fiszki dodane ręcznie, zgłoszenia, własne testy, egzaminy próbne, czas nauki. Nowa baza startowa zamiast dawnych V1–V25 |
 | V2 | Dane słownikowe: 11 dziedzin, 6 ścieżek, puste terminy egzaminów pięciu aplikacji, źródło „Pytania autorskie” |
 | V3 | Zmiany w prawie (`questions.law_changed_at`, `law_change_note`, rodzaj własnego testu `LAW_CHANGE`), przedmioty wybierane przez Studenta (`user_courses`), `custom_test_sessions.course_ids` |
+| V4 | Rozdziały aktów prawnych: tabela `act_sections` (rozdział należy do aktu, nazwa z numerem), `questions.section_id` (NULL = pytanie bez rozdziału), `custom_test_sessions.section_ids`. Migracja nie rusza istniejących danych |
 
 Dawne migracje V1–V25 (model kategorii, przedmiotów, podręczników i kart) zostały zastąpione i **nie ma ścieżki
 przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje skryptami z katalogu `baza/`.
@@ -459,7 +478,7 @@ przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje 
 ## Przydatne zapytania SQL (ręczna administracja)
 
 Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1–V3. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
+pasują do schematu z migracji V1–V4. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
 pytania, szablon importu, kontrola) są w katalogu `baza/` razem z instrukcją.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się

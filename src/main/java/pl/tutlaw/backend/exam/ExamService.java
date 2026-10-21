@@ -64,10 +64,10 @@ public class ExamService {
     private final Random random = new Random();
 
     /**
-     * Losuje {@value ExamFormat#QUESTION_COUNT} pytań z całej puli ścieżki (bez zawężenia do aktów), z wybranych źródeł
-     * (filtr źródeł w Testach) i niezawieszonych w testach. Gdy jest ich mniej niż 150, egzamin ma tyle, ile jest,
-     * a próg zaliczenia maleje proporcjonalnie (zob. {@link ExamFormat#passPointsFor}). Ocena egzaminu (submit)
-     * filtra nie stosuje: ocenia to, co zostało pokazane.
+     * Losuje {@value ExamFormat#QUESTION_COUNT} pytań z całej puli ścieżki (bez zawężenia do aktów, ze wszystkich
+     * źródeł) i niezawieszonych w testach. Gdy jest ich mniej niż 150, egzamin ma tyle, ile jest, a próg zaliczenia
+     * maleje proporcjonalnie (zob. {@link ExamFormat#passPointsFor}). Ocena egzaminu (submit) niczego nie filtruje:
+     * ocenia to, co zostało pokazane.
      */
     @Transactional(readOnly = true)
     public ExamStartResponse start(Authentication authentication) {
@@ -75,21 +75,14 @@ public class ExamService {
         Pool pool = poolService.forUser(user.getId()).unnarrowed();
 
         Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedQuestionIds(user.getId(), ReviewMode.TEST));
-        Set<Long> allowedSources = new HashSet<>(pool.sourceIds());
         // Losujemy na samych numerach; pełne pytania ładujemy dopiero dla wylosowanych (jedno zapytanie).
-        List<QuestionRef> inScope = questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds())
+        List<Long> drawable = new ArrayList<>(questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds())
                 .stream()
                 .filter(ref -> !suspended.contains(ref.getId()))
-                .toList();
-        List<Long> drawable = new ArrayList<>(inScope.stream()
-                .filter(ref -> allowedSources.contains(ref.getSourceId()))
                 .map(QuestionRef::getId)
                 .toList());
         if (drawable.isEmpty()) {
-            // Gdy pytania są, ale wszystkie spoza wybranych źródeł, podpowiadamy filtr zamiast mylić brakiem pytań.
-            throw new IllegalArgumentException(inScope.isEmpty()
-                    ? "Nie ma teraz pytań, które możesz rozwiązać na egzaminie."
-                    : "Nie ma pytań z wybranych źródeł. Zmień filtr źródeł w Testach.");
+            throw new IllegalArgumentException("Nie ma teraz pytań, które możesz rozwiązać na egzaminie.");
         }
 
         Collections.shuffle(drawable, random);

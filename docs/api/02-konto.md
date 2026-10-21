@@ -51,8 +51,8 @@ przenoszenia danych). Bez hasła i tokenów.
                      "guessedCount": 2, "timeSeconds": 311.5 } ],
   "studyTime": [ { "day": "2026-10-10", "seconds": 1820 } ],
   "learningSettings": { "newFlashcardsPerDay": null, "newTestQuestionsPerDay": 30, "maxReviewsPerDay": null,
-                        "desiredRetention": 0.92, "track": "notarialna", "theme": "LIGHT", "shuffleOptions": true,
-                        "sourceFilter": "OWN_SHEETS,AUTHORED", "poolActIds": [12, 14],
+                        "desiredRetention": 0.92, "track": "notarialna", "theme": "LIGHT",
+                        "poolActIds": [12, 14],
                         "hintHiddenTest": false, "hintHiddenFlashcard": false, "questionTimerHidden": false }
 }
 ```
@@ -61,7 +61,7 @@ przenoszenia danych). Bez hasła i tokenów.
 ćwiczył: stan nauki testowej i fiszkowej jest liczony oddzielnie. `customTests` to zapisane własne testy („Moje testy”)
 z konfiguracją i wynikiem; odpowiedzi na pojedyncze pytania są w `reviewLogs`. `studyTime` to czas nauki w sekundach,
 osobno dla każdego dnia. W `learningSettings` pole `track` to `slug` ścieżki (np. `notarialna`, `student`),
-`sourceFilter` to grupy źródeł oddzielone przecinkami (`null` = wszystkie), a `poolActIds` to akty prawne, do których
+`poolActIds` to akty prawne, do których
 użytkownik zawęził pulę (pusta lista = bez zawężenia). Cały obiekt `learningSettings` jest `null`, jeśli użytkownik
 nigdy nie zmieniał ustawień; `null` w polu liczbowym oznacza wartość domyślną.
 

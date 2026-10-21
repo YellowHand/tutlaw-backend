@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
 /**
  * Statystyki nauki. Dla obu trybów (Testy i Fiszki) liczone na tych samych pytaniach, ale na osobnych stanach FSRS:
  * parametr {@code mode} wybiera tryb, a brak parametru oznacza oba razem. Zakres to pula użytkownika (akty jego
- * ścieżki, zawężenie i filtr źródeł dla Testów; fiszki ignorują filtr źródeł).
+ * ścieżki i zawężenie do aktów; źródło wybiera się osobno przy teście, więc statystyki liczą wszystkie).
  */
 @Service
 @RequiredArgsConstructor
@@ -248,7 +248,7 @@ public class StatisticsService {
         return mode == null ? EnumSet.allOf(ReviewMode.class) : EnumSet.of(mode);
     }
 
-    /** Pula trybu: testy widzą filtr źródeł, fiszki nie (wynikają z błędów w testach). */
+    /** Pula trybu (akty ścieżki z zawężeniem, wszystkie źródła). */
     private static Pool poolFor(Pool pool, ReviewMode mode) {
         return mode == ReviewMode.FLASHCARD ? pool.forFlashcards() : pool;
     }

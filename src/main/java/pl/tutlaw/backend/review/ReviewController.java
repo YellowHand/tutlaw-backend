@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.review.dto.*;
 
 import java.util.List;
@@ -80,16 +81,19 @@ public class ReviewController {
 
     /**
      * Własny test, krok 1: ile pytań każdego rodzaju (wszystkie, nowe, błędy, zaległe) jest w wybranym zakresie.
-     * Zakres to suma dziedzin ({@code fieldIds}), aktów prawnych ({@code actIds}) i przedmiotów studenta
-     * ({@code courseIds}); bez żadnego cała pula.
+     * Zakres to suma dziedzin ({@code fieldIds}), aktów prawnych ({@code actIds}), rozdziałów ({@code sectionIds})
+     * i przedmiotów studenta ({@code courseIds}); bez żadnego cała pula. {@code source} to źródło pytań (ALL,
+     * MINISTRY albo AUTHORED; bez niego ALL).
      */
     @GetMapping("/custom-test/counts")
     public CustomTestCountsResponse getCustomTestCounts(
             @RequestParam(required = false) List<Long> fieldIds,
             @RequestParam(required = false) List<Long> actIds,
             @RequestParam(required = false) List<Long> courseIds,
+            @RequestParam(required = false) List<Long> sectionIds,
+            @RequestParam(required = false) SourceMode source,
             Authentication authentication) {
-        return customTestService.counts(fieldIds, actIds, courseIds, authentication);
+        return customTestService.counts(fieldIds, actIds, courseIds, sectionIds, source, authentication);
     }
 
     /**

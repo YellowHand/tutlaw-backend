@@ -15,20 +15,13 @@ import pl.tutlaw.backend.legal.LegalFieldRepository;
 import pl.tutlaw.backend.pool.dto.PoolResponse;
 import pl.tutlaw.backend.pool.dto.UpdatePoolActsRequest;
 import pl.tutlaw.backend.pool.dto.UpdatePoolCoursesRequest;
-import pl.tutlaw.backend.pool.dto.UpdateSourceFilterRequest;
-import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.question.QuestionRepository;
-import pl.tutlaw.backend.settings.UserSettings;
-import pl.tutlaw.backend.settings.UserSettingsRepository;
-import pl.tutlaw.backend.source.QuestionSourceRepository;
 import pl.tutlaw.backend.track.Track;
 import pl.tutlaw.backend.track.TrackRepository;
 import pl.tutlaw.backend.track.dto.TrackSummary;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
-import java.time.Clock;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -41,16 +34,15 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Okno „Pula pytań": odczyt puli użytkownika oraz dwie rzeczy, które sam ustawia: zawężenie do wybranych aktów
- * prawnych (student: do wybranych przedmiotów; trwałe, nie dotyczy egzaminu próbnego) i filtr źródeł w Testach (własne
- * arkusze, arkusze innych ścieżek, pytania autorskie). Samą regułę puli liczy {@link PoolService}.
+ * Okno „Pula pytań": odczyt puli użytkownika i jedna rzecz, którą sam ustawia: zawężenie do wybranych aktów
+ * prawnych (student: do wybranych przedmiotów; trwałe, nie dotyczy egzaminu próbnego). Źródło pytań (Ministerstwo,
+ * autorskie) wybiera się osobno przy każdym teście. Samą regułę puli liczy {@link PoolService}.
  */
 @Service
 @RequiredArgsConstructor
 public class PoolSettingsService {
 
     private final PoolService poolService;
-    private final UserSettingsRepository settingsRepository;
     private final UserPoolActRepository poolActRepository;
     private final UserCourseRepository userCourseRepository;
     private final CourseRepository courseRepository;
@@ -58,9 +50,7 @@ public class PoolSettingsService {
     private final LegalFieldRepository fieldRepository;
     private final LegalActRepository actRepository;
     private final QuestionRepository questionRepository;
-    private final QuestionSourceRepository sourceRepository;
     private final CurrentUserResolver currentUserResolver;
-    private final Clock clock;
 
     @Transactional(readOnly = true)
     public PoolResponse get(Authentication authentication) {
@@ -123,24 +113,6 @@ public class PoolSettingsService {
         return describe(user.getId());
     }
 
-    /** Zapisuje filtr źródeł. Co najmniej jedna grupa musi zostać włączona: filtr nie może ukryć całego materiału. */
-    @Transactional
-    public PoolResponse updateSourceFilter(UpdateSourceFilterRequest request, Authentication authentication) {
-        User user = currentUserResolver.resolve(authentication);
-        SourceFilter filter = new SourceFilter(request.ownSheets(), request.otherSheets(), request.authored());
-        if (filter.isNone()) {
-            throw new IllegalArgumentException("Zaznacz co najmniej jedną grupę pytań.");
-        }
-
-        UserSettings settings = settingsRepository.findById(user.getId()).orElseGet(() -> new UserSettings(user.getId()));
-        settings.setIncludeOwnSheets(filter.ownSheets());
-        settings.setIncludeOtherSheets(filter.otherSheets());
-        settings.setIncludeAuthored(filter.authored());
-        settings.setUpdatedAt(LocalDateTime.now(clock));
-        settingsRepository.save(settings);
-        return describe(user.getId());
-    }
-
     private PoolResponse describe(Long userId) {
         Pool pool = poolService.forUser(userId);
         Track track = pool.trackId() == null ? null : trackRepository.findById(pool.trackId()).orElse(null);
@@ -170,26 +142,11 @@ public class PoolSettingsService {
             fields.add(new PoolResponse.FieldNode(field.getId(), field.getName(), field.getSlug(), acts));
         }
 
-        List<QuestionRef> refs = questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds());
-        Map<Long, String> groupBySource = groupsBySource(pool);
-        Map<String, Integer> perGroup = new HashMap<>();
-        int inPool = 0;
-        Set<Long> allowed = new HashSet<>(pool.sourceIds());
-        for (QuestionRef ref : refs) {
-            perGroup.merge(groupBySource.getOrDefault(ref.getSourceId(), SourceFilter.OTHER_SHEETS), 1, Integer::sum);
-            if (allowed.contains(ref.getSourceId())) {
-                inPool++;
-            }
-        }
-        SourceFilter filter = pool.filter();
-        List<PoolResponse.SourceGroupNode> groups = List.of(
-                new PoolResponse.SourceGroupNode(SourceFilter.OWN_SHEETS, filter.ownSheets(), perGroup.getOrDefault(SourceFilter.OWN_SHEETS, 0)),
-                new PoolResponse.SourceGroupNode(SourceFilter.OTHER_SHEETS, filter.otherSheets(), perGroup.getOrDefault(SourceFilter.OTHER_SHEETS, 0)),
-                new PoolResponse.SourceGroupNode(SourceFilter.AUTHORED, filter.authored(), perGroup.getOrDefault(SourceFilter.AUTHORED, 0)));
+        int inPool = questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds()).size();
 
         return new PoolResponse(
                 track == null ? null : TrackSummary.of(track), pool.narrowed(), inPool, fields,
-                pool.isStudent() ? describeCourses(userId, pool) : List.of(), groups);
+                pool.isStudent() ? describeCourses(userId, pool) : List.of());
     }
 
     /** Przedmioty do wyboru: tylko takie, w których są jakieś pytania, w kolejności ustalonej przez administratora. */
@@ -217,15 +174,5 @@ public class PoolSettingsService {
                     course.getId(), course.getName(), course.getSlug(), questions, courses.inPool().contains(course.getId())));
         }
         return nodes;
-    }
-
-    /** Do której z trzech grup filtra należy każde źródło. */
-    private Map<Long, String> groupsBySource(Pool pool) {
-        Set<Long> own = new HashSet<>(pool.ownSheetIds());
-        Map<Long, String> result = new HashMap<>();
-        for (QuestionSourceRepository.SourceRow source : sourceRepository.findAllRows()) {
-            result.put(source.getId(), SourceGroups.of(source.getKind(), source.getId(), own));
-        }
-        return result;
     }
 }
