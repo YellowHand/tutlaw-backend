@@ -4,11 +4,14 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import pl.tutlaw.backend.common.PageParams;
+import pl.tutlaw.backend.common.PageResponse;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
 import pl.tutlaw.backend.exam.dto.ExamAvailabilityResponse;
 import pl.tutlaw.backend.exam.dto.ExamResultResponse;
@@ -16,8 +19,6 @@ import pl.tutlaw.backend.exam.dto.ExamSheetsResponse;
 import pl.tutlaw.backend.exam.dto.ExamStartResponse;
 import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
 import pl.tutlaw.backend.pool.SourceMode;
-
-import java.util.List;
 
 /** Egzamin próbny. Wszystko dotyczy tylko zalogowanego użytkownika. */
 @RestController
@@ -65,9 +66,25 @@ public class ExamController {
         return examService.submit(request, authentication);
     }
 
-    /** Ostatnie podejścia, od najnowszego. */
+    /**
+     * Podejścia użytkownika, od najnowszego, stronami ({@code page} od 0, {@code size} domyślnie 20, najwyżej 100).
+     * Odpowiedź to {@code PageResponse}: {@code items}, {@code page}, {@code size}, {@code totalElements},
+     * {@code totalPages}.
+     */
     @GetMapping("/history")
-    public List<ExamAttemptResponse> history(Authentication authentication) {
-        return examService.history(authentication);
+    public PageResponse<ExamAttemptResponse> history(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            Authentication authentication) {
+        return examService.history(PageParams.ofList(page, size), authentication);
+    }
+
+    /**
+     * Raport jednego podejścia z zapisanych odpowiedzi (jak raport tuż po egzaminie). Podejścia sprzed zapisu odpowiedzi
+     * ({@code detailsAvailable = false}), cudze i nieistniejące to 404.
+     */
+    @GetMapping("/attempts/{id}")
+    public ExamResultResponse attempt(@PathVariable Long id, Authentication authentication) {
+        return examService.attempt(id, authentication);
     }
 }

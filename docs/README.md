@@ -4,7 +4,7 @@ Ten katalog opisuje, jak działa serwer (backend) aplikacji **Gradus iuris**: co
 endpointy, jak liczy powtórki i gdzie w kodzie szukać konkretnej funkcji. Wszystko jest po polsku i pisane tak, żeby
 dało się to zrozumieć bez znajomości kodu.
 
-> Stan dokumentacji: backend po **Etapie 34** (baza: schemat `V1`, dane słownikowe `V2`, przedmioty Studenta i zmiany w prawie `V3`, rozdziały aktów `V4`). Opisuje to, co faktycznie jest w kodzie.
+> Stan dokumentacji: backend po **Etapie 34, poprawce 2** (baza: schemat `V1`, dane słownikowe `V2`, przedmioty Studenta i zmiany w prawie `V3`, rozdziały aktów `V4`, oznaczenia pytań i odpowiedzi z egzaminów `V5`). Opisuje to, co faktycznie jest w kodzie.
 > Tam, gdzie coś jest niedoskonałe albo celowo odłożone na koniec, jest to powiedziane wprost w
 > [Znanych ograniczeniach](07-znane-ograniczenia.md).
 
@@ -21,7 +21,7 @@ umiesz, a co tylko zgadłeś, i sama układa powtórki algorytmem **FSRS-6**.
 | Plik | O czym jest | Kiedy czytać |
 |------|-------------|--------------|
 | [01. Architektura](01-architektura.md) | Technologie, pakiety, warstwy, droga jednego żądania, wspólne rozwiązania | Na początek, żeby wiedzieć, gdzie co leży |
-| [02. Baza danych](02-baza-danych.md) | Wszystkie tabele, relacje, ograniczenia, model puli pytań, migracje V1 (schemat), V2 (dane słownikowe), V3 (zmiany w prawie, przedmioty Studenta) i V4 (rozdziały aktów) | Gdy chcesz zrozumieć dane albo napisać zapytanie SQL |
+| [02. Baza danych](02-baza-danych.md) | Wszystkie tabele, relacje, ograniczenia, model puli pytań, migracje V1 (schemat), V2 (dane słownikowe), V3 (zmiany w prawie, przedmioty Studenta), V4 (rozdziały aktów) i V5 (oznaczenia pytań, odpowiedzi z egzaminów) | Gdy chcesz zrozumieć dane albo napisać zapytanie SQL |
 | [03. Bezpieczeństwo i konta](03-bezpieczenstwo-i-konta.md) | Rejestracja, aktywacja, logowanie, tokeny (dostępu i odświeżające), reset hasła, role, limity prób, usuwanie konta | Gdy chcesz wiedzieć, kto co może i jak chronione są konta |
 | [04. Nauka: testy, fiszki, FSRS](04-nauka-testy-fiszki-fsrs.md) | Serce aplikacji: jak działa algorytm powtórek, kolejki, limity dzienne, tryb egzaminacyjny | Gdy chcesz zrozumieć pulę pytań i dlaczego pytanie wraca akurat dziś |
 | [API: przegląd](api/README.md) | Wspólne zasady API i lista wszystkich 64 endpointów | Gdy łączysz frontend z backendem |

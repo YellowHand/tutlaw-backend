@@ -141,7 +141,7 @@ Pierwszy krok układania testu: liczby pytań w kreatorze, w „Losuj z całej p
 | `source` | Źródło pytań: `ALL` (domyślnie), `MINISTRY` (arkusze egzaminacyjne) albo `AUTHORED` (pytania autorskie) |
 
 ```json
-{ "all": 1240, "newQuestions": 800, "mistakes": 12, "due": 45, "lawChanges": 7 }
+{ "all": 1240, "newQuestions": 800, "mistakes": 12, "due": 45, "lawChanges": 7, "timeLimits": 31, "traps": 52 }
 ```
 
 Liczby dotyczą pytań z puli użytkownika, **niezawieszonych** i z wybranego **źródła**. Rodzaje nakładają się: to samo
@@ -176,7 +176,7 @@ porzucony w połowie zostaje na liście jako nieukończony. Sesję otwiera się 
 | `courseIds` | Przedmioty Studenta (najwyżej 50 numerów). Zakres to **suma** dziedzin, aktów, rozdziałów i aktów wskazanych przedmiotów |
 | `sectionIds` | Rozdziały aktów (najwyżej 500 numerów) |
 | `source` | `ALL` (domyślnie, także gdy brak pola), `MINISTRY` albo `AUTHORED` |
-| `kind` | `ALL` (domyślnie), `NEW` (jeszcze nierozwiązywane), `MISTAKES` (ostatnia odpowiedź błędna), `DUE` (po terminie powtórki), `LAW_CHANGE` (zmiana w prawie z ostatniego roku) |
+| `kind` | `ALL` (domyślnie), `NEW` (jeszcze nierozwiązywane), `MISTAKES` (ostatnia odpowiedź błędna), `DUE` (po terminie powtórki), `LAW_CHANGE` (zmiana w prawie z ostatniego roku), `TIME_LIMIT` (pytania o terminy) albo `TRAPS` (pułapki). Dwa ostatnie to pytania z **zatwierdzonym** oznaczeniem administratora (zob. [oznaczenia pytań](04-pytania-admin.md#oznaczenia-pytań-apiadminquestion-marks)) |
 | `questionCount` | Ile pytań (wymagane): **10, 20, 50, 100 albo 150**. Własnej liczby nie ma. Wyjątek: gdy pytań w zakresie jest **mniej niż 10**, jedyny wybór to wszystkie z nich (liczba równa liczbie dostępnych) |
 
 ```json
@@ -192,8 +192,10 @@ Wybierz inne źródło.”; liczba spoza listy: „Wybierz liczbę pytań: 10, 2
 
 ### `GET /api/custom-tests/sessions` — „Moje testy”: lista
 
-Ostatnie 50 zapisanych testów użytkownika (z kreatora, z „Losuj z całej puli” i z szybkich zestawów), od najnowszego. Sesja
-z paska zaległych (`/app/test/due`), „Popraw błędy” i egzamin próbny tu nie trafiają (egzaminy mają własną historię).
+Zapisane testy użytkownika (z kreatora, z „Losuj z całej puli” i z szybkich zestawów), od najnowszego, **stronami**: parametry
+`page` (od 0) i `size` (domyślnie 20, najwyżej 100; złe wartości są przycinane). Odpowiedź to `PageResponse`: `items`, `page`,
+`size`, `totalElements`, `totalPages`. Sesja z paska zaległych (`/app/test/due`), „Popraw błędy” i egzamin próbny tu nie
+trafiają (egzaminy mają własną listę: `GET /api/exams/history`). Elementy `items`:
 
 ```json
 [

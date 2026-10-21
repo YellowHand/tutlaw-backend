@@ -30,8 +30,10 @@ sequenceDiagram
     F->>B: POST /api/exams/submit { czas, answers[], source / sheetId }
     B->>B: ocena i próg po stronie serwera + zapis podsumowania
     B-->>F: raport: wynik, rozbicie wg źródeł, każde pytanie z poprawną odpowiedzią
-    F->>B: GET /api/exams/history
-    B-->>F: ostatnie 50 podejść
+    F->>B: GET /api/exams/history?page=0&size=20
+    B-->>F: strona podejść (od najnowszego)
+    F->>B: GET /api/exams/attempts/{id}
+    B-->>F: raport podejścia z zapisanych odpowiedzi
 ```
 
 ## `GET /api/exams/availability` — ile pytań w każdym źródle
@@ -169,7 +171,7 @@ Progu zaliczenia ani zakresu klient nie wysyła: nieznane pola (np. `passThresho
     "id": 9, "finishedAt": "2026-10-12T20:00:00", "scopeLabel": "Egzamin MS: Notarialna 2024",
     "questionCount": 150, "answeredCount": 148, "correctCount": 112, "scorePercent": 74.7,
     "passThresholdPercent": 67, "passPoints": 100, "passed": true, "timeLimitMinutes": 150,
-    "durationSeconds": 7710, "timedOut": false
+    "durationSeconds": 7710, "timedOut": false, "detailsAvailable": true
   },
   "excludedCount": 0,
   "bySource": [ { "sourceName": "Notarialna 2024", "total": 150, "correct": 112 } ],
@@ -209,18 +211,41 @@ egzamin z uprawnieniami).
 
 ## `GET /api/exams/history` — historia podejść
 
-Ostatnie **50** podejść zalogowanego użytkownika, od najnowszego. Elementy mają kształt `attempt` z raportu powyżej.
+Podejścia zalogowanego użytkownika, od najnowszego, **stronami**: parametry `page` (od 0) i `size` (domyślnie 20, najwyżej 100;
+złe wartości są przycinane, nie dają błędu). Odpowiedź to `PageResponse` (`items`, `page`, `size`, `totalElements`,
+`totalPages`); elementy mają kształt `attempt` z raportu powyżej.
 
 ```json
-[
-  { "id": 9, "finishedAt": "2026-10-12T20:00:00", "scopeLabel": "Egzamin MS: Notarialna 2024", "questionCount": 150,
-    "answeredCount": 148, "correctCount": 112, "scorePercent": 74.7, "passThresholdPercent": 67,
-    "passPoints": 100, "passed": true, "timeLimitMinutes": 150, "durationSeconds": 7710, "timedOut": false }
-]
+{
+  "items": [
+    { "id": 9, "finishedAt": "2026-10-12T20:00:00", "scopeLabel": "Egzamin MS: Notarialna 2024", "questionCount": 150,
+      "answeredCount": 148, "correctCount": 112, "scorePercent": 74.7, "passThresholdPercent": 67,
+      "passPoints": 100, "passed": true, "timeLimitMinutes": 150, "durationSeconds": 7710, "timedOut": false,
+      "detailsAvailable": true }
+  ],
+  "page": 0, "size": 20, "totalElements": 45, "totalPages": 3
+}
 ```
 
 Serwer zawsze zapisuje `passPoints` (kolumna w bazie dopuszcza `NULL` z historycznych powodów, ale kod nie zapisuje
 tam pustej wartości). `scopeLabel` to podpis z chwili egzaminu (patrz wyżej): wcześniejsze podejścia mają „Cała pula”.
 
-Historia zawiera tylko podsumowania; pojedyncze odpowiedzi nie są przechowywane (raport dostaje się raz, po
-zakończeniu).
+`detailsAvailable` mówi, czy da się otworzyć raport podejścia (`GET /api/exams/attempts/{id}`). Odpowiedzi zapisują się od
+poprawki 2 etapu 34; **starsze podejścia** mają `detailsAvailable = false` i zostają na liście tylko z wynikiem.
+
+> **Zmiana niezgodna wstecz:** do poprawki 2 ten endpoint zwracał zwykłą tablicę ostatnich 50 podejść. Teraz zwraca stronę
+> (`PageResponse`), więc frontend i backend trzeba wdrożyć razem. To samo dotyczy `GET /api/custom-tests/sessions`.
+
+## `GET /api/exams/attempts/{id}` — raport zapisanego podejścia
+
+Raport jednego podejścia, w tym samym kształcie co odpowiedź `POST /api/exams/submit` (`attempt`, `excludedCount`,
+`bySource`, `questions`). Służy ekranowi „Moje testy” → Egzaminy.
+
+- **Wynik, czas, próg i podpis** w nagłówku (`attempt`) są **z chwili egzaminu** (zapisane podsumowanie).
+- **Treść pytań, wyjaśnienia, poprawne odpowiedzi i ocena poszczególnych pytań** pochodzą z **aktualnych** pytań w bazie:
+  zapisana jest tylko odpowiedź użytkownika (`exam_attempt_answers`). Jeśli pytanie zostało poprawione (np. zmieniono klucz),
+  raport pokaże je poprawione, a ocena przy nim może się różnić od tej z egzaminu; nagłówek zostaje bez zmian.
+- Pytania, które zostały później usunięte z bazy, znikają z raportu razem ze swoimi zapisanymi odpowiedziami.
+
+**Błędy:** `404` — „Nie ma raportu tego egzaminu. Starsze podejścia mają zapisany tylko wynik.” Dotyczy podejścia bez zapisanych
+odpowiedzi (`detailsAvailable = false`), cudzego i nieistniejącego (nie zdradzamy, które z nich).

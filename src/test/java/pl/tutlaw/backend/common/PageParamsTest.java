@@ -36,6 +36,16 @@ class PageParamsTest {
     }
 
     @Test
+    void historyListsDefaultToTwentyAndNeverExceedAHundred() {
+        assertThat(PageParams.ofList(null, null)).isEqualTo(new PageParams(0, PageParams.LIST_DEFAULT_SIZE));
+        assertThat(PageParams.LIST_DEFAULT_SIZE).isEqualTo(20);
+        assertThat(PageParams.ofList(2, 50)).isEqualTo(new PageParams(2, 50));
+        assertThat(PageParams.ofList(0, 1_000)).isEqualTo(new PageParams(0, PageParams.LIST_MAX_SIZE));
+        assertThat(PageParams.LIST_MAX_SIZE).isEqualTo(100);
+        assertThat(PageParams.ofList(-1, 0)).isEqualTo(new PageParams(0, 1));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void pageResponseCarriesTheItemsAndTheTotals() {
         Page<String> page = mock(Page.class);

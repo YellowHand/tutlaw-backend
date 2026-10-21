@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **64 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **70 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -19,7 +19,7 @@ endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 | Wyliczenia (enum) | Wartości jako napisy, np. `"A"`, `"TEST"`, `"EXAM_SHEET"`. Nieznana wartość daje 400 „Nieprawidłowy format żądania” |
 | Daty | `LocalDate`: `"2026-10-12"`. `LocalDateTime` (czas lokalny bez strefy, zwykle czas polski): `"2026-10-12T08:15:30"`. W błędach i eksporcie danych `Instant`: `"2026-10-12T06:15:30.123Z"` |
 | Puste wartości | Pola opcjonalne mogą być `null` albo pominięte |
-| Stronicowanie | `?page=0&size=50`. Strona od 0; `size` od 1 do 200 (domyślnie 50); złe wartości są przycinane, nie dają błędu |
+| Stronicowanie | `?page=0&size=50`. Strona od 0; `size` od 1 do 200 (domyślnie 50); złe wartości są przycinane, nie dają błędu. Listy „Moje testy” i historii egzaminów mają własne granice: domyślnie 20 na stronę, najwyżej 100 |
 
 ### Format odpowiedzi stronicowanej
 
@@ -45,7 +45,7 @@ Każdy błąd ma ten sam kształt:
 |-----|-------|------------------------|
 | **400** Bad Request | Błędne dane: walidacja pól, zły JSON, nieznana wartość enum, naruszona reguła (np. zbyt słabe hasło) | „Hasło: musi mieć od 8 do 72 znaków” |
 | **401** Unauthorized | Brak tokenu, zły lub wygasły token dostępu (30 minut), konto usunięte, sesja unieważniona zmianą hasła. Klient odpowiada na to wywołaniem `POST /api/auth/refresh` i ponawia żądanie | „Wymagane zalogowanie” |
-| **403** Forbidden | Brak uprawnień (endpoint tylko dla `ADMIN`: ukrywanie pytań, terminy egzaminów) | — |
+| **403** Forbidden | Brak uprawnień (endpoint tylko dla `ADMIN`: ukrywanie pytań, terminy egzaminów, oznaczenia pytań `/api/admin/**`) | — |
 | **404** Not Found | Nie ma takiego zasobu albo jest niedostępny dla użytkownika (np. nieistniejące albo ukryte pytanie) | „Question not found” |
 | **405 / 415** | Zła metoda HTTP / zły typ treści (standardowe odpowiedzi Springa) | — |
 | **409** Conflict | Duplikat, konflikt danych, równoległa zmiana tego samego stanu nauki, konto nieaktywowane, link wygasł | „Taki adres e-mail jest już zajęty” |
@@ -98,6 +98,11 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 |--------|-------|--------|------|
 | PUT | `/api/questions/{id}/hidden` | ADMIN | Ukrycie / przywrócenie pytania wszystkim |
 | PUT | `/api/questions/{id}/flashcard-hidden` | ADMIN | Ukrycie / przywrócenie samej fiszki pytania |
+| GET | `/api/admin/question-marks/summary` | ADMIN | Oznaczenia pytań: ile ich jest w każdym stanie |
+| POST | `/api/admin/question-marks/analyze` | ADMIN | Automat proponuje oznaczenia (terminy, pułapki) dla wszystkich pytań |
+| GET | `/api/admin/question-marks` | ADMIN | Oznaczenia w danym stanie z treścią pytań (kolejka do przejrzenia), stronami |
+| POST | `/api/admin/question-marks/bulk` | ADMIN | Hurtowa zmiana stanu oznaczeń (np. zatwierdź wszystkie propozycje) |
+| PUT | `/api/admin/question-marks/questions/{questionId}/{mark}` | ADMIN | Zatwierdzenie albo odrzucenie jednego oznaczenia jednego pytania |
 
 ### Nauka — [05-nauka.md](05-nauka.md)
 
@@ -112,9 +117,9 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | GET | `/api/review/practice-queue` | zalogowany | Sesja testowa z podanych pytań |
 | GET | `/api/review/mistakes-queue` | zalogowany | Sesja „Powtórz moje błędy” |
 | GET | `/api/review/mistakes-count` | zalogowany | Ile jest błędów do powtórzenia |
-| GET | `/api/review/custom-test/counts` | zalogowany | Test z kreatora: ile pytań każdego rodzaju (w tym ze zmianą w prawie) w wybranym zakresie i źródle |
+| GET | `/api/review/custom-test/counts` | zalogowany | Test z kreatora: ile pytań każdego rodzaju (w tym ze zmianą w prawie, o terminach i pułapek) w wybranym zakresie i źródle |
 | POST | `/api/review/custom-test` | zalogowany | Test z kreatora, z „Losuj z całej puli” i z szybkiego zestawu: losowanie pytań z wybranego zakresu i źródła oraz zapis testu (10, 20, 50, 100 albo 150 pytań) |
-| GET | `/api/custom-tests/sessions` | zalogowany | „Moje testy”: lista zapisanych testów |
+| GET | `/api/custom-tests/sessions` | zalogowany | „Moje testy”: jedna strona listy zapisanych testów (stronicowana) |
 | GET | `/api/custom-tests/sessions/{id}` | zalogowany | „Moje testy”: szczegóły testu z odpowiedziami |
 | POST | `/api/review` | zalogowany | Ocena fiszki (1–4) |
 | POST | `/api/review/test-answer` | zalogowany | Odpowiedź na pytanie testowe |
@@ -138,7 +143,8 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | GET | `/api/exams/availability` | zalogowany | Ile pytań można wylosować na egzamin z każdego źródła |
 | GET | `/api/exams/sheets` | zalogowany | Egzaminy MS z poprzednich lat według aplikacji i roku |
 | POST | `/api/exams/submit` | zalogowany | Ocena egzaminu i zapis podsumowania |
-| GET | `/api/exams/history` | zalogowany | Ostatnie podejścia |
+| GET | `/api/exams/history` | zalogowany | Podejścia od najnowszego (stronicowane) |
+| GET | `/api/exams/attempts/{id}` | zalogowany | Raport zapisanego podejścia (z zapisanych odpowiedzi) |
 
 ### Statystyki — [08-statystyki.md](08-statystyki.md)
 

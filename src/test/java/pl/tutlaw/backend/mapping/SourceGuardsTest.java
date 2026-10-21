@@ -56,6 +56,43 @@ class SourceGuardsTest {
                 "@Enumerated(EnumType.STRING)\n    @Column(length = 12)").find()).isFalse();
     }
 
+    /** Kontrolery pod {@code /api/admin} (panel i narzędzia administratora) i ich zabezpieczenie. */
+    private static final Pattern ADMIN_MAPPING = Pattern.compile("Mapping\\(\\s*(?:value\\s*=\\s*)?\"/api/admin");
+
+    @Test
+    void everyAdminControllerRequiresTheAdminRole_andTheSecurityConfigGuardsThePathToo() {
+        assumeTrue(Files.isDirectory(MAIN), "Test uruchomiony poza katalogiem modułu");
+        List<String> problems = new ArrayList<>();
+        int admin = 0;
+        try (Stream<Path> files = Files.walk(MAIN)) {
+            for (Path file : files.filter(p -> p.toString().endsWith("Controller.java")).toList()) {
+                String text = Files.readString(file, StandardCharsets.UTF_8);
+                if (ADMIN_MAPPING.matcher(text).find()) {
+                    admin++;
+                    if (!text.contains("@PreAuthorize(\"hasRole('ADMIN')\")")) {
+                        problems.add(file + ": endpoint pod /api/admin bez @PreAuthorize(\"hasRole('ADMIN')\")");
+                    }
+                }
+            }
+            Path config = MAIN.resolve(Path.of("pl", "tutlaw", "backend", "common", "config", "SecurityConfig.java"));
+            String security = Files.readString(config, StandardCharsets.UTF_8);
+            if (!security.contains("\"/api/admin/**\").hasRole(\"ADMIN\")")) {
+                problems.add("SecurityConfig nie wymaga roli ADMIN dla /api/admin/**");
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        assertThat(problems).isEmpty();
+        assertThat(admin).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    void theAdminGuardRecognisesAdminMappings() {
+        assertThat(ADMIN_MAPPING.matcher("@RequestMapping(\"/api/admin/question-marks\")").find()).isTrue();
+        assertThat(ADMIN_MAPPING.matcher("@GetMapping(value = \"/api/admin/x\")").find()).isTrue();
+        assertThat(ADMIN_MAPPING.matcher("@RequestMapping(\"/api/exams\")").find()).isFalse();
+    }
+
     @Test
     void noEnumIsStoredByOrdinal() {
         assumeTrue(Files.isDirectory(MAIN), "Test uruchomiony poza katalogiem modułu");

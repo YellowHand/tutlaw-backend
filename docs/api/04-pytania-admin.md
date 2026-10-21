@@ -8,7 +8,7 @@ wczytuje się skryptami SQL** (katalog `baza/`, szablon importu `04-import-szabl
 ma w API tylko dwie rzeczy: **ukrywanie pytań** (poniżej) i [ustawianie terminów egzaminów](09-ustawienia.md#put-apiexam-termstrackid).
 Rozpatrywanie zgłoszeń błędów też odbywa się zapytaniami SQL.
 
-Oba endpointy wymagają roli **ADMIN** (zwykły użytkownik dostaje `403`). Wymagają tokenu jak cała aplikacja.
+Oba endpointy ukrywania wymagają roli **ADMIN** (zwykły użytkownik dostaje `403`). Wymagają tokenu jak cała aplikacja.
 
 Jak pytanie jest zbudowane w bazie i jakie ma ograniczenia: [02. Baza danych](../02-baza-danych.md#questions--pytania).
 
@@ -55,3 +55,76 @@ Poprawianie treści pytania, dodawanie i usuwanie pytań, aktów i arkuszy robi 
 [instrukcją katalogu `baza/`](../05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql). Zgłoszenia błędów
 trafiają do tabeli `question_reports`; zapytania do ich przeglądania są w
 [02. Bazie danych](../02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja).
+
+## Oznaczenia pytań (`/api/admin/question-marks`)
+
+Pytanie może mieć **oznaczenia**, które służą wyłącznie do układania testów „Pytania z terminów” i „Pułapki”
+(rodzaje `TIME_LIMIT` i `TRAPS` w [teście z kreatora](05-nauka.md)). Użytkownik **nigdy ich nie widzi**: ani w pytaniach,
+ani w odpowiedziach API; widzi tylko, że takie testy istnieją. Wszystkie endpointy poniżej wymagają roli **ADMIN**
+(`403` dla zwykłego użytkownika; dodatkowo cała ścieżka `/api/admin/**` jest w konfiguracji zabezpieczeń tylko dla
+administratora).
+
+| Oznaczenie (`mark`) | Znaczenie |
+|---------------------|-----------|
+| `TIME_LIMIT` | W pytaniu pada termin (np. liczba dni na wniesienie środka), odpowiedzi różnią się terminami |
+| `TRAP_NEGATION` | Pułapka: przeczenie albo wyjątek w poleceniu („nie jest”, „z wyjątkiem”, „wskaż zdanie fałszywe”) |
+| `TRAP_ABSOLUTE` | Pułapka: słowo absolutne („zawsze”, „nigdy”, „wyłącznie”) odróżnia jedną albo dwie odpowiedzi |
+| `TRAP_NUMBERS` | Pułapka: odpowiedzi różnią się tylko liczbami z tą samą jednostką (np. 7 / 14 / 30 dni) |
+| `TRAP_CONJUNCTION` | Pułapka: odpowiedzi różnią się spójnikiem („i” zamiast „lub”) |
+| `TRAP_OUTDATED_LAW` | Pułapka: odpowiedź zgodna z dawnym stanem prawnym. Z treści nie da się jej rozpoznać, więc **automat jej nie proponuje** (tylko ręcznie) |
+
+Każde oznaczenie ma **pochodzenie** (`origin`: `AUTO` dla propozycji automatu, `MANUAL` dla nadanego ręcznie) i **stan**
+(`status`):
+
+| Stan | Znaczenie |
+|------|-----------|
+| `SUGGESTED` | Propozycja automatu, czeka na przejrzenie. **Nie liczy się** w testach |
+| `CONFIRMED` | Zatwierdzone. **Tylko takie liczą się** w testach `TIME_LIMIT` i `TRAPS` (`TRAPS` to dowolny podtyp pułapki) |
+| `REJECTED` | Odrzucone. Automat nie zaproponuje go ponownie |
+
+Pytanie ma najwyżej jedno oznaczenie danego rodzaju, więc ponowne uruchomienie automatu **niczego nie nadpisuje**: dodaje
+propozycje tylko dla par pytanie–oznaczenie, których jeszcze nie ma w bazie (także nie tam, gdzie administrator zdecydował).
+Do propozycji nie ma powrotu. Oznaczenia można też wczytać skryptem SQL (`baza/09-oznaczenia.sql`).
+
+### `GET /api/admin/question-marks/summary`
+
+Ile oznaczeń każdego rodzaju jest w każdym stanie (wiersz na rodzaj, także z zerami) i ile pytań ma baza.
+
+```json
+{ "questions": 1240, "marks": [ { "mark": "TIME_LIMIT", "suggested": 85, "confirmed": 0, "rejected": 0 } ] }
+```
+
+### `POST /api/admin/question-marks/analyze`
+
+Bez ciała. Uruchamia automat na wszystkich pytaniach (porcjami po 500) i dodaje **propozycje** (`SUGGESTED`, `AUTO`).
+Nic nie zatwierdza. Można uruchamiać wielokrotnie, np. po wczytaniu nowych pytań.
+
+```json
+{ "questionsScanned": 1240, "suggested": 312,
+  "suggestedByMark": { "TIME_LIMIT": 85, "TRAP_NEGATION": 120, "TRAP_ABSOLUTE": 40, "TRAP_NUMBERS": 55,
+                       "TRAP_CONJUNCTION": 12, "TRAP_OUTDATED_LAW": 0 } }
+```
+
+### `GET /api/admin/question-marks`
+
+Oznaczenia w danym stanie razem z treścią pytania, stronami. Parametry: `status` (`SUGGESTED` domyślnie, `CONFIRMED` albo
+`REJECTED`), `mark` (opcjonalnie, zawęża do jednego rodzaju), `page`, `size` (jak w innych listach administratora).
+Odpowiedź to strona (`items`, `page`, `size`, `totalElements`, `totalPages`); element ma `id`, `questionId`, `mark`, `origin`,
+`status`, `body`, `optionA`, `optionB`, `optionC`, `correctOption`, `sourceName` i `actShortName`.
+
+### `POST /api/admin/question-marks/bulk`
+
+Hurtowa zmiana stanu: wszystkie oznaczenia w stanie `from` (tylko podanych rodzajów w `marks`, a gdy lista pusta albo jej
+brak, wszystkich) dostają stan `to`. `to` to `CONFIRMED` albo `REJECTED`; `from` musi się różnić od `to`.
+
+```json
+{ "from": "SUGGESTED", "to": "CONFIRMED", "marks": ["TRAP_NEGATION"] }
+```
+
+Odpowiedź: `{ "updated": 120 }`.
+
+### `PUT /api/admin/question-marks/questions/{questionId}/{mark}`
+
+Decyzja o jednym oznaczeniu jednego pytania. Ciało `{ "status": "CONFIRMED" }` nadaje oznaczenie ręcznie (`MANUAL`, gdy go
+nie było) albo zatwierdza propozycję; `{ "status": "REJECTED" }` cofa je (i automat go nie zaproponuje ponownie).
+Odpowiedź: `{ "questionId": 101, "mark": "TIME_LIMIT", "origin": "AUTO", "status": "CONFIRMED" }`. Nieznane pytanie: `404`.

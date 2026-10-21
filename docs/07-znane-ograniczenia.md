@@ -46,7 +46,7 @@ Drobne rzeczy znalezione podczas czytania kodu. Żadna nie psuje działania, ale
 | 2 | Token aktywacyjny konta jest w bazie zapisany **wprost** (UUID), a token resetu hasła jako skrót SHA-256 | `email_verification_tokens.token` vs `password_reset_tokens.token_hash` | Wyciek bazy ujawniłby działające linki aktywacyjne (reset hasła jest bezpieczniejszy). Wpływ mały, bo link tylko aktywuje konto |
 | 3 | Wartość `app.cors.allowed-origin` w `application.yml` jest nieużywana (opis w punkcie 1.3) | `application.yml`, `CorsConfig` | Mylące: wygląda na konfigurowalne, a nie jest |
 | 4 | **Komentarz do zgłoszenia ma dwa limity**: żądanie przyjmuje do 4000 znaków (`@Size`), a reguła biznesowa pozwala na 1000 | `QuestionReportRequest`, `ReportRules.COMMENT_MAX_LENGTH` | Dłuższy komentarz przejdzie walidację pola, ale zostanie odrzucony regułą; frontend i baza używają 1000 |
-| 5 | `PageResponse` i `PageParams` (stronicowanie) nie są używane przez żaden endpoint | pakiet `common` | Martwy kod z czasów list kart dla administratora; ma własny test |
+| 5 | `PageResponse` i `PageParams` (stronicowanie) są używane przez listy „Moje testy” i historię egzaminów (`PageParams.ofList`: 20 domyślnie, najwyżej 100) oraz kolejkę oznaczeń administratora | pakiet `common` | Od poprawki 2 etapu 34 odpowiedź tych dwóch list to strona, a nie tablica: frontend i backend trzeba wdrażać razem |
 | 6 | Komunikat konfliktu 409 mówi o „pytaniu”, ale pojawia się przy każdej równoległej zmianie stanu nauki, także w trybie Fiszki | `GlobalExceptionHandler` | Niewielka nieścisłość; treść i tak jest zrozumiała |
 
 ---
@@ -57,9 +57,17 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 
 ### Treści i administracja
 
-- **Nie ma panelu administratora w backendzie.** Role nadaje się w bazie (SQL). API pozwala administratorowi tylko
-  **ukrywać pytania i fiszki** oraz **ustawiać terminy egzaminów**. Nie ma endpointów do dodawania, edycji i usuwania
-  treści.
+- **Nie ma panelu administratora w backendzie.** Role nadaje się w bazie (SQL). API pozwala administratorowi
+  **ukrywać pytania i fiszki**, **ustawiać terminy egzaminów** i **zarządzać oznaczeniami pytań** (`/api/admin/question-marks`,
+  bez ekranu: Swagger albo `curl`). Nie ma endpointów do dodawania, edycji i usuwania treści.
+- **Oznaczenia pytań („Pytania z terminów”, „Pułapki”) wymagają zatwierdzenia.** Automat tylko proponuje (reguły są
+  ostrożne i oparte na słowach, więc część pytań pominie, a część trafi do propozycji niesłusznie); w testach liczą się dopiero
+  oznaczenia zatwierdzone. Bez uruchomienia automatu (`POST /api/admin/question-marks/analyze`) i zatwierdzenia albo
+  wczytania skryptu `baza/09-oznaczenia.sql` oba testy są puste, a kafelki wyszarzone. Pułapki „nieaktualny stan prawny”
+  (`TRAP_OUTDATED_LAW`) automat nie rozpoznaje: tylko ręcznie.
+- **Raport zapisanego egzaminu pokazuje dzisiejszą treść pytań.** Zapisana jest tylko odpowiedź użytkownika; po poprawce
+  pytania ocena przy nim może się różnić od tej z egzaminu (nagłówek z wynikiem zostaje z chwili egzaminu). Podejścia sprzed
+  poprawki 2 mają tylko wynik, bez raportu (`detailsAvailable = false`).
 - **Treść wczytuje się skryptami SQL** (katalog `baza/`, opis w
   [05](05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)). Nie ma importu z pliku CSV ani JSON ani
   importu zbiorczego przez API; poprawki pytań robi się w bazie.
@@ -156,7 +164,7 @@ Uczciwie o weryfikacji tej dokumentacji:
   aplikacji: pierwsze uruchomienie na prawdziwej bazie (Flyway, walidacja Hibernate, wiązanie zapytań Spring Data) może
   jeszcze ujawnić błąd, którego te testy nie widzą. Przed pierwszym użyciem uruchom backend i sprawdź
   `/actuator/health`.
-- **Migracje `V1`–`V4` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
+- **Migracje `V1`–`V5` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
   `ON_ERROR_STOP`). Opisy działania endpointów pochodzą z kodu i testów jednostkowych, a nie z obserwacji
   działającego serwera.
 - **Przykłady JSON są ilustracyjne**: kształt pól pochodzi z klas DTO, ale wartości są wymyślone.

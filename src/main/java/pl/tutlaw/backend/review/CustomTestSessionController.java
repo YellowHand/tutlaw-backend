@@ -5,11 +5,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import pl.tutlaw.backend.common.PageParams;
+import pl.tutlaw.backend.common.PageResponse;
 import pl.tutlaw.backend.review.dto.CustomTestSessionDetailResponse;
 import pl.tutlaw.backend.review.dto.CustomTestSessionSummaryResponse;
-
-import java.util.List;
 
 /** "Moje testy": zapisane własne testy użytkownika (lista i szczegóły z odpowiedziami). */
 @RestController
@@ -19,10 +20,17 @@ public class CustomTestSessionController {
 
     private final CustomTestSessionService service;
 
-    /** Ostatnie 50 testów, od najnowszego. Nieukończone mają {@code finished = false}. */
+    /**
+     * Testy użytkownika, od najnowszego, stronami ({@code page} od 0, {@code size} domyślnie 20, najwyżej 100).
+     * Nieukończone mają {@code finished = false}. Odpowiedź to {@code PageResponse}: {@code items}, {@code page},
+     * {@code size}, {@code totalElements}, {@code totalPages}.
+     */
     @GetMapping
-    public List<CustomTestSessionSummaryResponse> list(Authentication authentication) {
-        return service.list(authentication);
+    public PageResponse<CustomTestSessionSummaryResponse> list(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            Authentication authentication) {
+        return service.list(PageParams.ofList(page, size), authentication);
     }
 
     /** Test z wszystkimi pytaniami i odpowiedziami użytkownika; cudzy albo nieistniejący to 404. */

@@ -25,7 +25,7 @@ flowchart LR
 | Spring Web MVC | w Spring Boot | Kontrolery REST |
 | Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
 | PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta, `V4` rozdziały aktów), uruchamiane przy starcie |
+| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta, `V4` rozdziały aktów, `V5` oznaczenia pytań i odpowiedzi z egzaminów), uruchamiane przy starcie |
 | Spring Security | w Spring Boot | Ochrona endpointów, role |
 | jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
 | Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |
@@ -59,7 +59,8 @@ komplet klas.
 | `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS) osobno dla trybów Testy i Fiszki, zawieszanie, błędy, własny test i jego zapis jako sesji („Moje testy”) |
 | `review.fsrs` | Sam algorytm FSRS-6 (wzory matematyczne) |
 | `flashcard` | Fiszka jako tryb nauki pytania: odblokowywanie (pewny błąd albo „Dodaj do fiszek”), status fiszki |
-| `exam` | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie z wybranego źródła albo cały Egzamin MS z wybranego roku, ocena, historia podejść |
+| `mark` | **Oznaczenia pytań** (terminy, pułapki): automat `QuestionMarkDetector` proponuje, administrator zatwierdza (`/api/admin/question-marks`); zatwierdzone oznaczenia układają testy „Pytania z terminów” i „Pułapki” |
+| `exam` | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie z wybranego źródła albo cały Egzamin MS z wybranego roku, ocena, historia podejść (stronicowana) z zapisanymi odpowiedziami i raport zapisanego podejścia |
 | `report` | Zgłoszenia błędów w pytaniach |
 | `statistics` | Statystyki: przegląd, opanowanie aktów, pytania najsłabsze, skuteczność, aktywność, rozbicie wg źródeł, „Podsumowanie nauki” |
 | `studytime` | Czas nauki: porcje sekund zgłaszane przez przeglądarkę i sumy dla każdego dnia |
@@ -197,7 +198,7 @@ Jeśli to samo pytanie dostanie odpowiedź w tym samym trybie w ciągu **1 sekun
 
 ## Testy
 
-W `src/test` jest **58 klas testowych** (ok. 620 testów) i 4 klasy pomocnicze (`testsupport`: zegar do sterowania
+W `src/test` jest **60 klas testowych** (ok. 735 testów) i 4 klasy pomocnicze (`testsupport`: zegar do sterowania
 czasem, „fałszywe” repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy jednostkowe
 czystej logiki (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`, `SourceFilterTest`…) oraz serwisów na repozytoriach w
 pamięci (np. `AuthFlowTest` przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez
@@ -210,7 +211,7 @@ prawdziwą bazą PostgreSQL i uruchamia migracje, więc wymaga działającej baz
 Czego testy **nie** sprawdzają: zapytań JPQL i SQL wykonanych na prawdziwej bazie. W zamian pakiet `mapping` zawiera
 **testy statyczne**, które bez Springa i bez bazy odtwarzają to, co przy starcie sprawdza Hibernate:
 
-- `EntityMappingTest` czyta schemat z migracji `V1`–`V4` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
+- `EntityMappingTest` czyta schemat z migracji `V1`–`V5` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
   zgodne typy, długości oraz ograniczenia `CHECK`;
 - `RepositoryQueryTest` sprawdza zapytania repozytoriów (sklejone słowa kluczowe, parametry bez `@Param`,
   nieistniejące pola encji, aliasy projekcji);

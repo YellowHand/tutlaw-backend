@@ -7,8 +7,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
+import pl.tutlaw.backend.common.PageParams;
+import pl.tutlaw.backend.common.PageResponse;
+import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
 import pl.tutlaw.backend.exam.dto.ExamResultResponse;
 import pl.tutlaw.backend.exam.dto.ExamSheetsResponse;
@@ -42,6 +47,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,6 +71,7 @@ class ExamServiceTest {
     @Mock private QuestionRepository questionRepository;
     @Mock private UserQuestionStateRepository stateRepository;
     @Mock private ExamAttemptRepository attemptRepository;
+    @Mock private ExamAttemptAnswerRepository answerRepository;
     @Mock private CurrentUserResolver currentUserResolver;
     @Mock private QuestionSourceRepository sourceRepository;
     @Mock private TrackRepository trackRepository;
@@ -76,7 +83,7 @@ class ExamServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ExamService(questionRepository, stateRepository, attemptRepository, currentUserResolver, clock,
+        service = new ExamService(questionRepository, stateRepository, attemptRepository, answerRepository, currentUserResolver, clock,
                 Pools.holding(() -> pool), sourceRepository, trackRepository, settingsRepository);
         User user = new User();
         user.setId(5L);
@@ -982,29 +989,203 @@ class ExamServiceTest {
         assertThat(savedAttempt().getScopeLabel()).isEqualTo("Pytania autorskie");
     }
 
+    // ---------------------------------------------------------------- zapis odpowiedzi
+
+    @SuppressWarnings("unchecked")
+    private List<ExamAttemptAnswer> savedAnswers() {
+        ArgumentCaptor<Iterable<ExamAttemptAnswer>> captor = ArgumentCaptor.forClass(Iterable.class);
+        verify(answerRepository).saveAll(captor.capture());
+        List<ExamAttemptAnswer> rows = new ArrayList<>();
+        captor.getValue().forEach(rows::add);
+        return rows;
+    }
+
+    @Test
+    void submit_storesEveryAnswerInTheExamOrder_withNullForAQuestionLeftBlank() {
+        gradable(question(1), question(2), question(3));
+
+        service.submit(submitRequest(answer(3, CorrectOption.B), answer(1, null), answer(2, CorrectOption.A)), authentication);
+
+        List<ExamAttemptAnswer> rows = savedAnswers();
+        assertThat(rows).extracting(ExamAttemptAnswer::getPosition).containsExactly(1, 2, 3);
+        assertThat(rows).extracting(r -> r.getQuestion().getId()).containsExactly(3L, 1L, 2L);
+        assertThat(rows).extracting(ExamAttemptAnswer::getSelectedOption)
+                .containsExactly(CorrectOption.B, null, CorrectOption.A);
+        ExamAttempt saved = savedAttempt();
+        assertThat(rows).allMatch(r -> r.getAttempt() == saved);
+    }
+
+    @Test
+    void submit_marksTheAttemptAsHavingAnswers_andRemembersHowManyQuestionsWereExcluded() {
+        gradable(question(1));
+
+        ExamResultResponse result = service.submit(
+                submitRequest(answer(1, CorrectOption.A), answer(99, CorrectOption.B)), authentication);
+
+        ExamAttempt saved = savedAttempt();
+        assertThat(saved.isHasAnswers()).isTrue();
+        assertThat(saved.getExcludedCount()).isEqualTo(1);
+        assertThat(result.excludedCount()).isEqualTo(1);
+        assertThat(result.attempt().detailsAvailable()).isTrue();
+        // pytanie, którego nie dało się ocenić, nie dostaje wiersza i nie zajmuje miejsca w kolejności
+        assertThat(savedAnswers()).extracting(r -> r.getQuestion().getId()).containsExactly(1L);
+        assertThat(savedAnswers()).extracting(ExamAttemptAnswer::getPosition).containsExactly(1);
+    }
+
+    @Test
+    void submit_storesNothing_whenNoneOfTheQuestionsCanBeGraded() {
+        gradable();
+
+        assertThatThrownBy(() -> service.submit(submitRequest(answer(99, CorrectOption.A)), authentication))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(attemptRepository, never()).save(any());
+        verify(answerRepository, never()).saveAll(ArgumentMatchers.<Iterable<ExamAttemptAnswer>>any());
+    }
+
+    // ---------------------------------------------------------------- raport podejścia
+
+    private ExamAttempt storedAttempt(long id, boolean hasAnswers) {
+        ExamAttempt attempt = attempt(id, NOW, 2, 2, 100, 2, true);
+        attempt.setHasAnswers(hasAnswers);
+        attempt.setExcludedCount(1);
+        return attempt;
+    }
+
+    private static ExamAttemptAnswer storedAnswer(Question question, int position, CorrectOption selected) {
+        ExamAttemptAnswer row = new ExamAttemptAnswer();
+        row.setQuestion(question);
+        row.setPosition(position);
+        row.setSelectedOption(selected);
+        return row;
+    }
+
+    @Test
+    void attempt_rebuildsTheReportFromTheStoredAnswers_withTheCurrentQuestionContent() {
+        Question first = question(1, CorrectOption.A, "Zbiór autorski");
+        first.setBody("Treść po poprawce");
+        Question second = question(2, CorrectOption.A, "Egzamin 2024");
+        when(attemptRepository.findByIdAndUserId(7L, 5L)).thenReturn(Optional.of(storedAttempt(7L, true)));
+        when(answerRepository.findDetailed(7L)).thenReturn(List.of(
+                storedAnswer(first, 1, CorrectOption.A), storedAnswer(second, 2, CorrectOption.C)));
+
+        ExamResultResponse result = service.attempt(7L, authentication);
+
+        assertThat(result.attempt().id()).isEqualTo(7L);
+        assertThat(result.attempt().detailsAvailable()).isTrue();
+        assertThat(result.excludedCount()).isEqualTo(1);
+        assertThat(result.questions()).extracting(ExamResultResponse.QuestionResult::questionId).containsExactly(1L, 2L);
+        assertThat(result.questions().get(0).body()).isEqualTo("Treść po poprawce");
+        assertThat(result.questions().get(0).selectedOption()).isEqualTo(CorrectOption.A);
+        assertThat(result.questions().get(0).correct()).isTrue();
+        assertThat(result.questions().get(1).selectedOption()).isEqualTo(CorrectOption.C);
+        assertThat(result.questions().get(1).correct()).isFalse();
+        assertThat(result.bySource()).extracting(ExamResultResponse.SourceBreakdown::sourceName)
+                .containsExactlyInAnyOrder("Zbiór autorski", "Egzamin 2024");
+    }
+
+    @Test
+    void attempt_keepsTheStoredScore_butJudgesEachQuestionAgainstTheCurrentKey() {
+        // po egzaminie administrator poprawił klucz pytania z A na B: odpowiedź A nie jest już poprawna
+        Question corrected = question(1, CorrectOption.B, "Egzamin 2024");
+        ExamAttempt stored = storedAttempt(7L, true);
+        stored.setCorrectCount(1);
+        when(attemptRepository.findByIdAndUserId(7L, 5L)).thenReturn(Optional.of(stored));
+        when(answerRepository.findDetailed(7L)).thenReturn(List.of(storedAnswer(corrected, 1, CorrectOption.A)));
+
+        ExamResultResponse result = service.attempt(7L, authentication);
+
+        assertThat(result.attempt().correctCount()).isEqualTo(1);
+        assertThat(result.questions().get(0).correct()).isFalse();
+        assertThat(result.questions().get(0).correctOption()).isEqualTo(CorrectOption.B);
+        assertThat(result.bySource().get(0).correct()).isZero();
+    }
+
+    @Test
+    void attempt_showsAQuestionLeftBlankAsNoAnswer() {
+        when(attemptRepository.findByIdAndUserId(7L, 5L)).thenReturn(Optional.of(storedAttempt(7L, true)));
+        when(answerRepository.findDetailed(7L)).thenReturn(List.of(storedAnswer(question(1), 1, null)));
+
+        ExamResultResponse result = service.attempt(7L, authentication);
+
+        assertThat(result.questions().get(0).selectedOption()).isNull();
+        assertThat(result.questions().get(0).correct()).isFalse();
+    }
+
+    @Test
+    void attempt_isNotFound_whenTheAttemptHasNoStoredAnswers() {
+        when(attemptRepository.findByIdAndUserId(7L, 5L)).thenReturn(Optional.of(storedAttempt(7L, false)));
+
+        assertThatThrownBy(() -> service.attempt(7L, authentication)).isInstanceOf(ResourceNotFoundException.class);
+        verify(answerRepository, never()).findDetailed(any());
+    }
+
+    @Test
+    void attempt_isNotFound_forSomeoneElsesOrMissingAttempt() {
+        when(attemptRepository.findByIdAndUserId(7L, 5L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.attempt(7L, authentication)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
     // ---------------------------------------------------------------- historia
 
     @Test
     void history_mapsAttemptsNewestFirst_withTheScoreInPercent() {
         ExamAttempt newer = attempt(2L, NOW, 100, 150, 67, 100, true);
         ExamAttempt older = attempt(1L, NOW.minusDays(3), 99, 150, 67, 100, false);
-        when(attemptRepository.findRecent(eq(5L), ArgumentMatchers.<Pageable>any())).thenReturn(List.of(newer, older));
+        when(attemptRepository.findPage(eq(5L), ArgumentMatchers.<Pageable>any()))
+                .thenReturn(new PageImpl<>(List.of(newer, older), PageRequest.of(0, 20), 2));
 
-        List<ExamAttemptResponse> history = service.history(authentication);
+        PageResponse<ExamAttemptResponse> history = service.history(PageParams.ofList(null, null), authentication);
 
-        assertThat(history).extracting(ExamAttemptResponse::id).containsExactly(2L, 1L);
-        assertThat(history.get(0).scorePercent()).isEqualTo(66.7);
-        assertThat(history.get(0).passPoints()).isEqualTo(100);
-        assertThat(history.get(0).passed()).isTrue();
-        assertThat(history.get(1).scorePercent()).isEqualTo(66.0);
-        assertThat(history.get(1).passed()).isFalse();
+        assertThat(history.items()).extracting(ExamAttemptResponse::id).containsExactly(2L, 1L);
+        assertThat(history.items().get(0).scorePercent()).isEqualTo(66.7);
+        assertThat(history.items().get(0).passPoints()).isEqualTo(100);
+        assertThat(history.items().get(0).passed()).isTrue();
+        assertThat(history.items().get(1).scorePercent()).isEqualTo(66.0);
+        assertThat(history.items().get(1).passed()).isFalse();
+    }
+
+    @Test
+    void history_asksForTheRequestedPage_andReportsTheTotals() {
+        ExamAttempt only = attempt(2L, NOW, 100, 150, 67, 100, true);
+        when(attemptRepository.findPage(eq(5L), ArgumentMatchers.<Pageable>any()))
+                .thenReturn(new PageImpl<>(List.of(only), PageRequest.of(2, 10), 21));
+
+        PageResponse<ExamAttemptResponse> history = service.history(PageParams.ofList(2, 10), authentication);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(attemptRepository).findPage(eq(5L), captor.capture());
+        assertThat(captor.getValue().getPageNumber()).isEqualTo(2);
+        assertThat(captor.getValue().getPageSize()).isEqualTo(10);
+        assertThat(history.page()).isEqualTo(2);
+        assertThat(history.size()).isEqualTo(10);
+        assertThat(history.totalElements()).isEqualTo(21);
+        assertThat(history.totalPages()).isEqualTo(3);
+    }
+
+    @Test
+    void history_flagsWhichAttemptsHaveAReport() {
+        ExamAttempt withReport = attempt(2L, NOW, 100, 150, 67, 100, true);
+        withReport.setHasAnswers(true);
+        ExamAttempt old = attempt(1L, NOW.minusDays(30), 99, 150, 67, null, false);
+        when(attemptRepository.findPage(eq(5L), ArgumentMatchers.<Pageable>any()))
+                .thenReturn(new PageImpl<>(List.of(withReport, old), PageRequest.of(0, 20), 2));
+
+        PageResponse<ExamAttemptResponse> history = service.history(PageParams.ofList(null, null), authentication);
+
+        assertThat(history.items()).extracting(ExamAttemptResponse::detailsAvailable).containsExactly(true, false);
     }
 
     @Test
     void history_isEmptyWhenThereAreNoAttempts() {
-        when(attemptRepository.findRecent(eq(5L), ArgumentMatchers.<Pageable>any())).thenReturn(List.of());
+        when(attemptRepository.findPage(eq(5L), ArgumentMatchers.<Pageable>any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
-        assertThat(service.history(authentication)).isEmpty();
+        PageResponse<ExamAttemptResponse> history = service.history(PageParams.ofList(null, null), authentication);
+
+        assertThat(history.items()).isEmpty();
+        assertThat(history.totalElements()).isZero();
     }
 
     private static ExamAttempt attempt(long id, LocalDateTime finishedAt, int correct, int total, int threshold,

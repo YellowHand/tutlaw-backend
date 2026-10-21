@@ -1,5 +1,6 @@
 package pl.tutlaw.backend.review;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -11,13 +12,14 @@ import java.util.Optional;
 
 public interface CustomTestSessionRepository extends JpaRepository<CustomTestSession, Long> {
 
-    /** Ostatnie sesje użytkownika, od najnowszej. */
-    @Query("""
+    /** Jedna strona sesji użytkownika, od najnowszej (z łączną liczbą sesji). */
+    @Query(value = """
             SELECT s FROM CustomTestSession s
             WHERE s.user.id = :userId
             ORDER BY s.startedAt DESC, s.id DESC
-            """)
-    List<CustomTestSession> findRecent(@Param("userId") Long userId, Pageable pageable);
+            """,
+            countQuery = "SELECT COUNT(s) FROM CustomTestSession s WHERE s.user.id = :userId")
+    Page<CustomTestSession> findPage(@Param("userId") Long userId, Pageable pageable);
 
     /** Wszystkie sesje użytkownika (do eksportu danych), od najnowszej. */
     @Query("""

@@ -212,7 +212,7 @@ Zgadywanie obecnego hasła podlega **temu samemu limitowi co logowanie**.
 | Rola | Co może |
 |------|---------|
 | `STUDENT` (domyślna) | Uczyć się, rozwiązywać testy i egzaminy, zmieniać ustawienia, zgłaszać błędy, zarządzać własnym kontem |
-| `ADMIN` | Wszystko jak `STUDENT` oraz trzy operacje: ukrycie pytania (`PUT /api/questions/{id}/hidden`), ukrycie samej fiszki (`PUT /api/questions/{id}/flashcard-hidden`) i ustawienie terminu egzaminu ścieżki (`PUT /api/exam-terms/{trackId}`). Treści (akty prawne, pytania) administrator wczytuje skryptami SQL, nie przez API |
+| `ADMIN` | Wszystko jak `STUDENT` oraz operacje administratora: ukrycie pytania (`PUT /api/questions/{id}/hidden`), ukrycie samej fiszki (`PUT /api/questions/{id}/flashcard-hidden`), ustawienie terminu egzaminu ścieżki (`PUT /api/exam-terms/{trackId}`) i zarządzanie oznaczeniami pytań (`/api/admin/question-marks/**`). Cała ścieżka `/api/admin/**` jest w `SecurityConfig` zarezerwowana dla roli `ADMIN` (osobna reguła przed „każde inne żądanie wymaga logowania”), a kontroler ma jeszcze `@PreAuthorize`. Treści (akty prawne, pytania) administrator wczytuje skryptami SQL, nie przez API |
 
 Uprawnienia wymusza adnotacja `@PreAuthorize("hasRole('ADMIN')")` na metodach kontrolerów. Zwykły użytkownik
 dostaje wtedy **403**.

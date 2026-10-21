@@ -8,6 +8,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 import pl.tutlaw.backend.course.CourseRepository;
+import pl.tutlaw.backend.mark.QuestionMarkRepository;
+import pl.tutlaw.backend.mark.QuestionMarkType;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.question.LawChangePolicy;
@@ -52,6 +54,7 @@ class CustomTestServiceTest {
     @Mock private MistakesService mistakesService;
     @Mock private CurrentUserResolver currentUserResolver;
     @Mock private CourseRepository courseRepository;
+    @Mock private QuestionMarkRepository markRepository;
     private final Authentication authentication = mock(Authentication.class);
     /** Pula użytkownika; testy filtra źródeł ją podmieniają. */
     private Pool pool = Pools.all();
@@ -62,7 +65,7 @@ class CustomTestServiceTest {
     void setUp() {
         service = new CustomTestService(questionRepository, stateRepository, mistakesService, currentUserResolver,
                 new FsrsEngine(FsrsWeights.defaults(), 0.9), clock, Pools.holding(() -> pool),
-                new LawChangePolicy(clock, 365), courseRepository);
+                new LawChangePolicy(clock, 365), courseRepository, markRepository);
         User user = new User();
         user.setId(5L);
         lenient().when(currentUserResolver.resolve(authentication)).thenReturn(user);
@@ -171,7 +174,7 @@ class CustomTestServiceTest {
 
         CustomTestCountsResponse counts = counts();
 
-        assertThat(counts).isEqualTo(new CustomTestCountsResponse(0, 0, 0, 0, 0));
+        assertThat(counts).isEqualTo(new CustomTestCountsResponse(0, 0, 0, 0, 0, 0, 0));
         verify(mistakesService, never()).recentMistakeQuestionIds(ArgumentMatchers.anyLong());
     }
 
@@ -347,6 +350,7 @@ class CustomTestServiceTest {
         schedule(state(1, NOW.minusDays(1), NOW.minusDays(5), true), state(2, NOW.minusDays(1), NOW.minusDays(5), true),
                 overdue(3, 5));
         when(mistakesService.recentMistakeQuestionIds(5L)).thenReturn(List.of(1L, 2L, 3L));
+        confirmedMarks(List.of(1L, 2L, 3L, 4L), List.of(1L, 2L, 3L, 4L)); // także oznaczone pytania zawieszone nie wchodzą
 
         for (CustomTestKind kind : CustomTestKind.values()) {
             assertThat(service.select(request(kind, 10), authentication).questionIds())
@@ -371,6 +375,64 @@ class CustomTestServiceTest {
         assertThat(counts.all()).isEqualTo(5);
         assertThat(set(service.select(request(CustomTestKind.LAW_CHANGE, 10), authentication).questionIds()))
                 .containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    // ---------------------------------------------------------------- terminy i pułapki (oznaczenia administratora)
+
+    /** Numery pytań z zatwierdzonym oznaczeniem terminu i któregokolwiek podtypu pułapki (propozycji baza nie zwraca). */
+    private void confirmedMarks(List<Long> timeLimit, List<Long> traps) {
+        lenient().doReturn(timeLimit).when(markRepository).findConfirmedQuestionIds(List.of(QuestionMarkType.TIME_LIMIT));
+        lenient().doReturn(traps).when(markRepository).findConfirmedQuestionIds(CustomTestService.TRAP_MARKS);
+    }
+
+    @Test
+    void timeLimit_takesOnlyQuestionsWithAConfirmedMark_thatAreInThePool() {
+        wholePool(refs(1, 5));
+        // 3 ma zatwierdzone oznaczenie, 99 jest poza pulą; propozycji i odrzuconych repozytorium w ogóle nie zwraca
+        confirmedMarks(List.of(3L, 99L), List.of());
+
+        assertThat(counts().timeLimits()).isEqualTo(1);
+        assertThat(set(service.select(request(CustomTestKind.TIME_LIMIT, 10), authentication).questionIds()))
+                .containsExactly(3L);
+    }
+
+    @Test
+    void traps_takeQuestionsWithAnyConfirmedTrapMark_butNotTheTimeLimitOnes() {
+        wholePool(refs(1, 6));
+        confirmedMarks(List.of(5L), List.of(2L, 4L));
+
+        assertThat(counts().traps()).isEqualTo(2);
+        assertThat(set(service.select(request(CustomTestKind.TRAPS, 10), authentication).questionIds()))
+                .containsExactlyInAnyOrder(2L, 4L);
+        // do pułapek należą wszystkie podtypy TRAP_*, a pytanie o termin nie jest pułapką samo z siebie
+        assertThat(CustomTestService.TRAP_MARKS).containsExactlyInAnyOrder(
+                QuestionMarkType.TRAP_NEGATION, QuestionMarkType.TRAP_ABSOLUTE, QuestionMarkType.TRAP_NUMBERS,
+                QuestionMarkType.TRAP_CONJUNCTION, QuestionMarkType.TRAP_OUTDATED_LAW);
+    }
+
+    @Test
+    void timeLimitAndTraps_areStillSubjectToTheSuspendedQuestions() {
+        wholePool(refs(1, 3));
+        schedule(state(2, NOW.plusDays(1), NOW.minusDays(5), true)); // 2 zawieszone w testach
+        confirmedMarks(List.of(1L, 2L), List.of(2L, 3L));
+
+        CustomTestCountsResponse counts = counts();
+
+        assertThat(counts.timeLimits()).isEqualTo(1);
+        assertThat(counts.traps()).isEqualTo(1);
+    }
+
+    @Test
+    void timeLimitAndTraps_withNothingMarkedSaySo() {
+        wholePool(refs(1, 3));
+        confirmedMarks(List.of(), List.of());
+
+        assertThatThrownBy(() -> service.select(request(CustomTestKind.TIME_LIMIT, 10), authentication))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("terminy");
+        assertThatThrownBy(() -> service.select(request(CustomTestKind.TRAPS, 10), authentication))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pułapek");
     }
 
     @Test

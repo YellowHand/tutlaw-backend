@@ -1,5 +1,6 @@
 package pl.tutlaw.backend.question;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -40,6 +41,17 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
             WHERE q.hidden = false AND q.source.id IN :sourceIds
             ORDER BY q.id""")
     List<QuestionRef> findRefsInSources(@Param("sourceIds") Collection<Long> sourceIds);
+
+    /**
+     * Treści pytań o numerach większych od podanego, od najmniejszego numeru (do analizy oznaczeń partiami: całą tabelę
+     * z treściami ładuje się po kawałku, a nie naraz). Liczbę pytań w partii ogranicza {@code pageable}.
+     */
+    @Query("""
+            SELECT q.id AS id, q.body AS body, q.optionA AS optionA, q.optionB AS optionB, q.optionC AS optionC
+            FROM Question q
+            WHERE q.id > :afterId
+            ORDER BY q.id""")
+    List<QuestionText> findTextsAfter(@Param("afterId") Long afterId, Pageable pageable);
 
     /** Numery aktów, do których należą pytania z podanych źródeł (akty własnych arkuszy ścieżki). */
     @Query("SELECT DISTINCT q.legalAct.id FROM Question q WHERE q.source.id IN :sourceIds")

@@ -5,9 +5,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pl.tutlaw.backend.common.PageParams;
+import pl.tutlaw.backend.common.PageResponse;
+import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
 import pl.tutlaw.backend.pool.SourceMode;
+import pl.tutlaw.backend.question.CorrectOption;
 import pl.tutlaw.backend.question.Question;
 import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.question.QuestionRef;
@@ -54,7 +58,8 @@ import java.util.Set;
  * tylko źródło pytań ({@link SourceMode}: wszystkie, Ministerstwo Sprawiedliwości albo autorskie) albo konkretny
  * <b>egzamin MS</b>: arkusz jednej aplikacji z jednego roku, w całości i w oryginalnej kolejności ({@link #sheets},
  * {@link #start(SourceMode, Long, Authentication)}).
- * Ocena i próg są po stronie serwera, a podsumowanie podejścia jest zapisywane.
+ * Ocena i próg są po stronie serwera, a podsumowanie podejścia jest zapisywane razem z odpowiedziami, żeby do raportu dało się
+ * wrócić w „Moich testach" ({@link #attempt}).
  * Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek (FSRS), dziennika odpowiedzi, dziennych limitów
  * ani licznika błędów. Po egzaminie użytkownik może przerobić swoje błędy zwykłą sesją testową.
  * Ćwiczenie z wybranego działu to osobna funkcja bez oceny "zdał / nie zdał" (własny test).
@@ -63,8 +68,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ExamService {
 
-    /** Ile ostatnich podejść zwraca historia. */
-    static final int HISTORY_LIMIT = 50;
     /** Nazwa zakresu w raporcie i historii: egzamin zawsze obejmuje cały materiał wybranego źródła. */
     static final String SCOPE_LABEL = "Cała pula";
     /** Początek podpisu egzaminu MS z wybranego roku („Egzamin MS: Notarialna 2024"). */
@@ -75,6 +78,7 @@ public class ExamService {
     private final QuestionRepository questionRepository;
     private final UserQuestionStateRepository stateRepository;
     private final ExamAttemptRepository attemptRepository;
+    private final ExamAttemptAnswerRepository answerRepository;
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
     private final PoolService poolService;
@@ -230,7 +234,10 @@ public class ExamService {
         };
     }
 
-    /** Ocenia egzamin, zapisuje podsumowanie podejścia i zwraca raport ze wszystkimi pytaniami w kolejności egzaminu. */
+    /**
+     * Ocenia egzamin, zapisuje podsumowanie podejścia razem z odpowiedziami i zwraca raport ze wszystkimi pytaniami
+     * w kolejności egzaminu.
+     */
     @Transactional
     public ExamResultResponse submit(ExamSubmitRequest request, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
@@ -248,43 +255,24 @@ public class ExamService {
             found.put(question.getId(), question);
         }
 
-        List<ExamResultResponse.QuestionResult> questions = new ArrayList<>();
-        Map<String, int[]> bySource = new LinkedHashMap<>(); // [wszystkie, poprawne]
-        int answered = 0;
-        int correct = 0;
+        // Tylko pytania, które da się ocenić, w kolejności egzaminu; reszta to „wykluczone".
+        List<GradedAnswer> graded = new ArrayList<>();
         int excluded = 0;
         for (ExamSubmitRequest.Answer answer : answers) {
             Question question = found.get(answer.questionId());
             if (question == null) {
                 excluded++;
-                continue;
+            } else {
+                graded.add(new GradedAnswer(question, answer.selectedOption()));
             }
-            boolean isCorrect = answer.selectedOption() != null && answer.selectedOption() == question.getCorrectOption();
-            if (answer.selectedOption() != null) {
-                answered++;
-            }
-            if (isCorrect) {
-                correct++;
-            }
-            String sourceName = question.getSource().getName();
-            int[] counts = bySource.computeIfAbsent(sourceName == null ? "" : sourceName, k -> new int[2]);
-            counts[0]++;
-            if (isCorrect) {
-                counts[1]++;
-            }
-            questions.add(new ExamResultResponse.QuestionResult(
-                    question.getId(), question.getBody(), question.getOptionA(), question.getOptionB(), question.getOptionC(),
-                    answer.selectedOption(), question.getCorrectOption(), isCorrect,
-                    question.getExplanation(), question.getLegalBasis(), question.getValidAsOf(), sourceName,
-                    question.getSource().getKind(), question.getSource().getExamYear(),
-                    question.getLegalAct().getName(), question.getLegalAct().getShortName(),
-                    LawChangeInfo.of(question)));
         }
-        if (questions.isEmpty()) {
+        if (graded.isEmpty()) {
             throw new IllegalArgumentException("Żadne z przesłanych pytań nie jest już dostępne, więc nie ma czego oceniać.");
         }
 
-        int total = questions.size();
+        int total = graded.size();
+        int answered = (int) graded.stream().filter(g -> g.selected() != null).count();
+        int correct = (int) graded.stream().filter(GradedAnswer::isCorrect).count();
         // Próg ustala serwer (format jest stały), nie klient.
         int passPoints = ExamFormat.passPointsFor(total);
         ExamAttempt attempt = new ExamAttempt();
@@ -305,24 +293,87 @@ public class ExamService {
         attempt.setTimeLimitMinutes(request.timeLimitMinutes());
         attempt.setDurationSeconds(request.durationSeconds());
         attempt.setTimedOut(Boolean.TRUE.equals(request.timedOut()));
+        attempt.setExcludedCount(excluded);
+        attempt.setHasAnswers(true);
         attemptRepository.save(attempt);
+        answerRepository.saveAll(toAnswerRows(attempt, graded));
 
+        return report(attempt, graded);
+    }
+
+    /**
+     * Raport podejścia z zapisanych odpowiedzi („Moje testy" → Egzaminy). Treść pytań, poprawne odpowiedzi i ocena
+     * poszczególnych pytań pochodzą z AKTUALNYCH pytań (poprawione pytanie pokazuje się w raporcie poprawione), a wynik
+     * w nagłówku to wynik z chwili egzaminu. Podejście bez zapisanych odpowiedzi (sprzed poprawki 2 etapu 34), cudze
+     * albo nieistniejące to 404.
+     */
+    @Transactional(readOnly = true)
+    public ExamResultResponse attempt(Long attemptId, Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        ExamAttempt attempt = attemptRepository.findByIdAndUserId(attemptId, user.getId())
+                .filter(ExamAttempt::isHasAnswers)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Nie ma raportu tego egzaminu. Starsze podejścia mają zapisany tylko wynik."));
+        List<GradedAnswer> graded = answerRepository.findDetailed(attempt.getId()).stream()
+                .map(row -> new GradedAnswer(row.getQuestion(), row.getSelectedOption()))
+                .toList();
+        return report(attempt, graded);
+    }
+
+    /** Jedna ocenione pytanie egzaminu: pytanie i to, co użytkownik wybrał ({@code null} = bez odpowiedzi). */
+    private record GradedAnswer(Question question, CorrectOption selected) {
+        boolean isCorrect() {
+            return selected != null && selected == question.getCorrectOption();
+        }
+    }
+
+    private static List<ExamAttemptAnswer> toAnswerRows(ExamAttempt attempt, List<GradedAnswer> graded) {
+        List<ExamAttemptAnswer> rows = new ArrayList<>();
+        for (GradedAnswer answer : graded) {
+            ExamAttemptAnswer row = new ExamAttemptAnswer();
+            row.setAttempt(attempt);
+            row.setQuestion(answer.question());
+            row.setPosition(rows.size() + 1);
+            row.setSelectedOption(answer.selected());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /** Raport: nagłówek z podsumowania podejścia, podział na źródła i pytania w kolejności egzaminu. */
+    private static ExamResultResponse report(ExamAttempt attempt, List<GradedAnswer> graded) {
+        Map<String, int[]> bySource = new LinkedHashMap<>(); // [wszystkie, poprawne]
+        List<ExamResultResponse.QuestionResult> questions = new ArrayList<>();
+        for (GradedAnswer answer : graded) {
+            Question question = answer.question();
+            String sourceName = question.getSource().getName();
+            int[] counts = bySource.computeIfAbsent(sourceName == null ? "" : sourceName, k -> new int[2]);
+            counts[0]++;
+            if (answer.isCorrect()) {
+                counts[1]++;
+            }
+            questions.add(new ExamResultResponse.QuestionResult(
+                    question.getId(), question.getBody(), question.getOptionA(), question.getOptionB(), question.getOptionC(),
+                    answer.selected(), question.getCorrectOption(), answer.isCorrect(),
+                    question.getExplanation(), question.getLegalBasis(), question.getValidAsOf(), sourceName,
+                    question.getSource().getKind(), question.getSource().getExamYear(),
+                    question.getLegalAct().getName(), question.getLegalAct().getShortName(),
+                    LawChangeInfo.of(question)));
+        }
         List<ExamResultResponse.SourceBreakdown> breakdown = bySource.entrySet().stream()
                 .map(e -> new ExamResultResponse.SourceBreakdown(e.getKey(), e.getValue()[0], e.getValue()[1]))
                 .sorted(Comparator.comparingInt(ExamResultResponse.SourceBreakdown::total).reversed()
                         .thenComparing(ExamResultResponse.SourceBreakdown::sourceName))
                 .toList();
-
-        return new ExamResultResponse(toResponse(attempt), excluded, breakdown, questions);
+        return new ExamResultResponse(toResponse(attempt), attempt.getExcludedCount(), breakdown, questions);
     }
 
-    /** Ostatnie podejścia użytkownika, od najnowszego. */
+    /** Jedna strona podejść użytkownika, od najnowszego. */
     @Transactional(readOnly = true)
-    public List<ExamAttemptResponse> history(Authentication authentication) {
+    public PageResponse<ExamAttemptResponse> history(PageParams params, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        return attemptRepository.findRecent(user.getId(), PageRequest.of(0, HISTORY_LIMIT)).stream()
-                .map(ExamService::toResponse)
-                .toList();
+        return PageResponse.of(attemptRepository.findPage(user.getId(), PageRequest.of(params.page(), params.size()))
+                .map(ExamService::toResponse));
     }
 
     static ExamAttemptResponse toResponse(ExamAttempt attempt) {
@@ -331,6 +382,7 @@ public class ExamService {
                 attempt.getQuestionCount(), attempt.getAnsweredCount(), attempt.getCorrectCount(),
                 ExamScoring.scorePercent(attempt.getCorrectCount(), attempt.getQuestionCount()),
                 attempt.getPassThresholdPercent(), attempt.getPassPoints(), attempt.isPassed(),
-                attempt.getTimeLimitMinutes(), attempt.getDurationSeconds(), attempt.isTimedOut());
+                attempt.getTimeLimitMinutes(), attempt.getDurationSeconds(), attempt.isTimedOut(),
+                attempt.isHasAnswers());
     }
 }

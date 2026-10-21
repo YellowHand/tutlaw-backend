@@ -6,15 +6,21 @@ Baza to **PostgreSQL 16**. Schemat tworzą wyłącznie migracje **Flyway** (`src
 uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność (`ddl-auto: validate`), niczego nie
 tworzy i nie zmienia.
 
-Są trzy migracje:
+Są cztery migracje po schemacie bazowym (łącznie pięć):
 
-- `V1__init_schema.sql` — **cały schemat** (23 tabele; `V3` dodaje 24., `V4` 25., ograniczenia, indeksy). To nowa baza startowa (*baseline*): zastąpiła
+- `V1__init_schema.sql` — **cały schemat** (23 tabele; `V3` dodaje 24., `V4` 25., `V5` 26. i 27., ograniczenia, indeksy). To nowa baza startowa (*baseline*): zastąpiła
   dawne migracje V1–V25, a wraz z nią zniknął stary model (kategorie, przedmioty, podręczniki, rozdziały, karty, tagi).
 - `V2__reference_data.sql` — **dane słownikowe**, bez których aplikacja nie ruszy: 11 dziedzin, 6 ścieżek, puste terminy
   egzaminów pięciu aplikacji i źródło „Pytania autorskie”.
 - `V3__law_changes_and_user_courses.sql` — **zmiany w prawie** (dwie kolumny przy pytaniu i nowy rodzaj własnego testu),
   **przedmioty wybierane przez Studenta** (tabela `user_courses`) i kolumna `course_ids` zapisanego własnego testu. Niczego
   nie zmienia w istniejących danych: nowe kolumny są puste, nowa tabela jest pusta.
+
+- `V4__act_sections.sql` — **rozdziały aktów** (tabela `act_sections`, `questions.section_id`, `custom_test_sessions.section_ids`).
+- `V5__question_marks_and_exam_answers.sql` — **oznaczenia pytań** (tabela `question_marks`: terminy i pułapki), nowe rodzaje
+  własnego testu `TIME_LIMIT` i `TRAPS`, **odpowiedzi z egzaminów próbnych** (tabela `exam_attempt_answers`, kolumny
+  `exam_attempts.excluded_count` i `has_answers`). Niczego nie zmienia w istniejących danych: nowe tabele są puste, a starsze
+  podejścia do egzaminu mają `has_answers = false` (zostają na liście tylko z wynikiem).
 
 Akty prawne, listy aktów ścieżek, przedmioty studenta, arkusze i pytania **nie są migracją**: wczytuje się je skryptami
 SQL z katalogu `baza/` (patrz [05](05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)).
@@ -55,6 +61,9 @@ erDiagram
     users ||--o{ question_reports : "zgłoszenia błędów"
     questions ||--o{ question_reports : ""
     users ||--o{ exam_attempts : "egzaminy próbne"
+    exam_attempts ||--o{ exam_attempt_answers : "odpowiedzi z egzaminu"
+    questions ||--o{ exam_attempt_answers : ""
+    questions ||--o{ question_marks : "oznaczenia (terminy, pułapki)"
     users ||--o{ custom_test_sessions : "zapisane własne testy"
     custom_test_sessions ||--o{ custom_test_session_questions : "pytania testu"
     questions ||--o{ custom_test_session_questions : ""
@@ -70,7 +79,7 @@ Trzy grupy tabel:
    `course_acts`, `question_sources`, `questions`, `exam_terms`.
 2. **Dane użytkownika (osobne dla każdego konta):** `users`, tokeny (aktywacji, resetu hasła i odświeżające),
    `user_settings`, `user_pool_acts`, `user_courses`, `user_question_states`, `review_logs`, `flashcard_additions`, `question_reports`,
-   `custom_test_sessions` (z pytaniami), `exam_attempts`, `study_time_daily`.
+   `custom_test_sessions` (z pytaniami), `exam_attempts` (z odpowiedziami w `exam_attempt_answers`), `study_time_daily`.
 3. **Ustawiane przez administratora:** `exam_terms` (terminy egzaminów), `courses`, `track_acts` i `course_acts` (które
    akty należą do ścieżki albo przedmiotu), ukrywanie pytań (`questions.hidden`, `questions.flashcard_hidden`) oraz zmiany
    w prawie (`questions.law_changed_at`, `questions.law_change_note`).
@@ -395,19 +404,57 @@ Powtórki, „Popraw błędy” i egzamin próbny tu nie trafiają. Sesje znikaj
 
 | Tabela | Kolumny | Uwagi |
 |--------|---------|-------|
-| `custom_test_sessions` | `id`, `user_id` (ON DELETE CASCADE), `started_at`, `finished_at` (NULL = nieukończony), `kind` (`ALL`, `NEW`, `MISTAKES`, `DUE`, `LAW_CHANGE`), `scope_label` (nazwa zakresu w chwili układania), `field_ids`, `act_ids` (numery po przecinku; `act_ids` zawiera też akty wybranych przedmiotów), `course_ids` (numery wybranych przedmiotów po przecinku, domyślnie pusty; wszystkie cztery listy puste = cała pula), `section_ids` (numery wybranych rozdziałów po przecinku, domyślnie pusty; od V4), `source_groups` (źródło z tej chwili jako grupy: `OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED` po przecinku, albo NULL; tryb `ALL`, `MINISTRY` albo `AUTHORED` jest z nich wyprowadzany), `requested_count`, `available_count` | CHECK `chk_custom_test_sessions_kind`; CHECK `chk_custom_test_sessions_counts` (`requested_count` 1–150, `available_count` ≥ 1). Indeks `idx_custom_test_sessions_user_started` (`user_id`, `started_at DESC`) pod listę „Moje testy”. Z `field_ids`, `act_ids`, `course_ids`, `section_ids` i źródła frontend układa test ponownie |
+| `custom_test_sessions` | `id`, `user_id` (ON DELETE CASCADE), `started_at`, `finished_at` (NULL = nieukończony), `kind` (`ALL`, `NEW`, `MISTAKES`, `DUE`, `LAW_CHANGE`, `TIME_LIMIT`, `TRAPS`), `scope_label` (nazwa zakresu w chwili układania), `field_ids`, `act_ids` (numery po przecinku; `act_ids` zawiera też akty wybranych przedmiotów), `course_ids` (numery wybranych przedmiotów po przecinku, domyślnie pusty; wszystkie cztery listy puste = cała pula), `section_ids` (numery wybranych rozdziałów po przecinku, domyślnie pusty; od V4), `source_groups` (źródło z tej chwili jako grupy: `OWN_SHEETS`, `OTHER_SHEETS`, `AUTHORED` po przecinku, albo NULL; tryb `ALL`, `MINISTRY` albo `AUTHORED` jest z nich wyprowadzany), `requested_count`, `available_count` | CHECK `chk_custom_test_sessions_kind`; CHECK `chk_custom_test_sessions_counts` (`requested_count` 1–150, `available_count` ≥ 1). Indeks `idx_custom_test_sessions_user_started` (`user_id`, `started_at DESC`) pod listę „Moje testy”. Z `field_ids`, `act_ids`, `course_ids`, `section_ids` i źródła frontend układa test ponownie |
 | `custom_test_session_questions` | `id`, `session_id` (ON DELETE CASCADE), `question_id` (ON DELETE CASCADE), `position`, `selected_option` (`A`/`B`/`C` pod oryginalnym kluczem z bazy), `was_correct`, `was_guessed`, `time_spent_seconds`, `answered_at` | Wiersz bez odpowiedzi ma `answered_at = NULL` (CHECK `chk_custom_test_session_questions_answer` pilnuje, że `selected_option`, `was_correct` i `answered_at` są puste razem; `chk_custom_test_session_questions_option` dopuszcza A/B/C). Para (`session_id`, `position`) i para (`session_id`, `question_id`) są unikalne (`uq_custom_test_session_questions_position`, `uq_custom_test_session_questions_question`). Indeks `idx_custom_test_session_questions_question` |
+
+### `question_marks` — oznaczenia pytań (od V5)
+
+Znaczniki administratora przy pytaniach, niewidoczne dla użytkowników: służą wyłącznie do układania testów „Pytania z terminów”
+(`TIME_LIMIT`) i „Pułapki” (`TRAPS`, dowolny podtyp pułapki). Opis działania i API: [api/04](api/04-pytania-admin.md#oznaczenia-pytań-apiadminquestion-marks).
+
+| Kolumna | Typ | Znaczenie |
+|---------|-----|-----------|
+| `id` | bigserial, PK | |
+| `question_id` | FK → `questions`, NOT NULL (ON DELETE CASCADE) | Oznaczone pytanie |
+| `mark` | varchar(20) | `TIME_LIMIT`, `TRAP_NEGATION`, `TRAP_ABSOLUTE`, `TRAP_NUMBERS`, `TRAP_CONJUNCTION`, `TRAP_OUTDATED_LAW` (CHECK `chk_question_marks_mark`) |
+| `origin` | varchar(6) | Kto utworzył wiersz: `AUTO` (automat) albo `MANUAL` (administrator); zostaje także po późniejszej decyzji (CHECK `chk_question_marks_origin`) |
+| `status` | varchar(9) | `SUGGESTED` (propozycja), `CONFIRMED` (zatwierdzone, tylko takie liczą się w testach), `REJECTED` (odrzucone) (CHECK `chk_question_marks_status`) |
+| `created_at` | timestamp | Kiedy powstał wiersz |
+| `reviewed_at` | timestamp, opcjonalny | Kiedy administrator zdecydował; puste tylko przy propozycji |
+| `reviewed_by` | FK → `users`, opcjonalny (ON DELETE SET NULL) | Kto zdecydował |
+
+Para (`question_id`, `mark`) jest unikalna (`uq_question_marks_question_mark`): pytanie ma najwyżej jedno oznaczenie danego
+rodzaju, więc odrzucona propozycja nie wraca po ponownym uruchomieniu automatu. CHECK `chk_question_marks_review` pilnuje, że
+propozycja (`SUGGESTED`) nie ma daty przejrzenia i pochodzi od automatu, a każda decyzja ma datę. Indeks
+`idx_question_marks_mark_status` (`mark`, `status`).
+
+### `exam_attempt_answers` — odpowiedzi z egzaminów próbnych (od V5)
+
+Odpowiedzi użytkownika z jednego podejścia, w kolejności egzaminu. Zapisana jest tylko odpowiedź; treść pytania i poprawny
+klucz bierze raport z aktualnego pytania.
+
+| Kolumna | Typ | Znaczenie |
+|---------|-----|-----------|
+| `id` | bigserial, PK | |
+| `attempt_id` | FK → `exam_attempts`, NOT NULL (ON DELETE CASCADE) | Podejście; jego skasowanie (zerowanie postępów, usunięcie konta) kasuje odpowiedzi |
+| `question_id` | FK → `questions`, NOT NULL (ON DELETE CASCADE) | Pytanie. Indeks `idx_exam_attempt_answers_question` |
+| `position` | int ≥ 1 | Numer pytania na egzaminie (CHECK `chk_exam_attempt_answers_position`) |
+| `selected_option` | varchar(1), opcjonalny | `A`, `B` albo `C`; `NULL` = bez odpowiedzi (CHECK `chk_exam_attempt_answers_option`) |
+
+Para (`attempt_id`, `position`) i para (`attempt_id`, `question_id`) są unikalne (`uq_exam_attempt_answers_position`,
+`uq_exam_attempt_answers_question`).
 
 ### `exam_attempts` — podejścia do egzaminu próbnego
 
 Zapisuje **tylko podsumowanie** podejścia: `id`, `user_id` (kto zdawał; `ON DELETE CASCADE`), `finished_at`, `scope_label` (nazwa
 zakresu w chwili egzaminu: „Cała pula”, „Ministerstwo Sprawiedliwości”, „Pytania autorskie” albo „Egzamin MS: Notarialna 2024”), `question_count`, `answered_count`, `correct_count`,
-`pass_threshold_percent`, `pass_points`, `passed`, `time_limit_minutes`, `duration_seconds`, `timed_out`.
-Pojedynczych odpowiedzi baza nie przechowuje; szczegółowy raport użytkownik dostaje w odpowiedzi tuż po zakończeniu.
+`pass_threshold_percent`, `pass_points`, `passed`, `time_limit_minutes`, `duration_seconds`, `timed_out` oraz (od V5)
+`excluded_count` (pytania z przesłanej listy, których nie dało się ocenić) i `has_answers` (czy podejście ma zapisane odpowiedzi;
+starsze mają `false`). Odpowiedzi leżą w osobnej tabeli `exam_attempt_answers`.
 
 CHECK-i pilnują zakresów: `chk_exam_attempts_counts` (1–200 pytań, odpowiedzi i poprawne w granicach),
 `chk_exam_attempts_threshold` (próg 1–100%), `chk_exam_attempts_pass_points` (`pass_points` od 1 do liczby pytań),
-`chk_exam_attempts_time_limit` (limit czasu 1–600 minut albo brak), `chk_exam_attempts_duration` (czas trwania 0–172 800 s).
+`chk_exam_attempts_time_limit` (limit czasu 1–600 minut albo brak), `chk_exam_attempts_duration` (czas trwania 0–172 800 s), `chk_exam_attempts_excluded` (`excluded_count` ≥ 0).
 Indeks `idx_exam_attempts_user_finished` (`user_id`, `finished_at DESC`).
 
 `pass_points` to próg zaliczenia w punktach: 100 przy pełnym egzaminie 150 pytań. Zapisuje go serwer. Kolumna dopuszcza
@@ -471,6 +518,7 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 | V2 | Dane słownikowe: 11 dziedzin, 6 ścieżek, puste terminy egzaminów pięciu aplikacji, źródło „Pytania autorskie” |
 | V3 | Zmiany w prawie (`questions.law_changed_at`, `law_change_note`, rodzaj własnego testu `LAW_CHANGE`), przedmioty wybierane przez Studenta (`user_courses`), `custom_test_sessions.course_ids` |
 | V4 | Rozdziały aktów prawnych: tabela `act_sections` (rozdział należy do aktu, nazwa z numerem), `questions.section_id` (NULL = pytanie bez rozdziału), `custom_test_sessions.section_ids`. Migracja nie rusza istniejących danych |
+| V5 | Oznaczenia pytań (`question_marks`), rodzaje własnego testu `TIME_LIMIT` i `TRAPS`, odpowiedzi z egzaminów próbnych (`exam_attempt_answers`, `exam_attempts.excluded_count`, `has_answers`). Migracja nie rusza istniejących danych |
 
 Dawne migracje V1–V25 (model kategorii, przedmiotów, podręczników i kart) zostały zastąpione i **nie ma ścieżki
 przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje skryptami z katalogu `baza/`.
@@ -478,7 +526,7 @@ przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje 
 ## Przydatne zapytania SQL (ręczna administracja)
 
 Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1–V4. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
+pasują do schematu z migracji V1–V5. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
 pytania, szablon importu, kontrola) są w katalogu `baza/` razem z instrukcją.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się

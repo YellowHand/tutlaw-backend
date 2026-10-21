@@ -1,10 +1,13 @@
 package pl.tutlaw.backend.review;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pl.tutlaw.backend.common.PageParams;
+import pl.tutlaw.backend.common.PageResponse;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.course.Course;
 import pl.tutlaw.backend.course.CourseRepository;
@@ -46,9 +49,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CustomTestSessionService {
-
-    /** Ile ostatnich testów zwraca lista. */
-    static final int LIST_LIMIT = 50;
 
     private final CustomTestService customTestService;
     private final CustomTestSessionRepository sessionRepository;
@@ -151,12 +151,15 @@ public class CustomTestSessionService {
         }
     }
 
-    /** Ostatnie testy użytkownika, od najnowszego. */
+    /** Jedna strona testów użytkownika, od najnowszego. */
     @Transactional(readOnly = true)
-    public List<CustomTestSessionSummaryResponse> list(Authentication authentication) {
+    public PageResponse<CustomTestSessionSummaryResponse> list(PageParams params, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        List<CustomTestSession> sessions = sessionRepository.findRecent(user.getId(), PageRequest.of(0, LIST_LIMIT));
-        return summarize(sessions);
+        Page<CustomTestSession> sessions = sessionRepository.findPage(
+                user.getId(), PageRequest.of(params.page(), params.size()));
+        return new PageResponse<>(
+                summarize(sessions.getContent()), sessions.getNumber(), sessions.getSize(),
+                sessions.getTotalElements(), sessions.getTotalPages());
     }
 
     /** Wszystkie testy użytkownika (do eksportu danych). */

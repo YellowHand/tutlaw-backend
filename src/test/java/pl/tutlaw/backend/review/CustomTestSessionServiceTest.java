@@ -2,7 +2,11 @@ package pl.tutlaw.backend.review;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
+import pl.tutlaw.backend.common.PageParams;
+import pl.tutlaw.backend.common.PageResponse;
 import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.course.Course;
 import pl.tutlaw.backend.course.CourseRepository;
@@ -114,12 +118,15 @@ class CustomTestSessionServiceTest {
                 case "findByIdAndUserId":
                     return sessions.stream()
                             .filter(s -> s.getId().equals(args[0]) && s.getUser().getId().equals(args[1])).findFirst();
-                case "findRecent":
                 case "findAllForUser":
-                    return sessions.stream().filter(s -> s.getUser().getId().equals(args[0]))
-                            .sorted((a, b) -> b.getStartedAt().compareTo(a.getStartedAt()) != 0
-                                    ? b.getStartedAt().compareTo(a.getStartedAt()) : b.getId().compareTo(a.getId()))
-                            .toList();
+                    return newestFirst(args[0]);
+                case "findPage": {
+                    List<CustomTestSession> all = newestFirst(args[0]);
+                    Pageable pageable = (Pageable) args[1];
+                    int from = Math.min(all.size(), pageable.getPageNumber() * pageable.getPageSize());
+                    int to = Math.min(all.size(), from + pageable.getPageSize());
+                    return new PageImpl<>(all.subList(from, to), pageable, all.size());
+                }
                 case "countByUserIdAndFinishedAtIsNotNull":
                     return sessions.stream()
                             .filter(s -> s.getUser().getId().equals(args[0]) && s.isFinished()).count();
@@ -127,6 +134,17 @@ class CustomTestSessionServiceTest {
                     throw new UnsupportedOperationException("CustomTestSessionRepository." + method);
             }
         });
+    }
+
+    private List<CustomTestSession> newestFirst(Object userId) {
+        return sessions.stream().filter(s -> s.getUser().getId().equals(userId))
+                .sorted((a, b) -> b.getStartedAt().compareTo(a.getStartedAt()) != 0
+                        ? b.getStartedAt().compareTo(a.getStartedAt()) : b.getId().compareTo(a.getId()))
+                .toList();
+    }
+
+    private PageResponse<CustomTestSessionSummaryResponse> firstPage() {
+        return service.list(PageParams.ofList(null, null), authentication);
     }
 
     private CustomTestSessionQuestionRepository questionRepo() {
@@ -355,7 +373,7 @@ class CustomTestSessionServiceTest {
         Long id = startTest(List.of(1L, 2L, 3L));
         answer(id, 1, CorrectOption.B, true, false, 5.0);
 
-        CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
+        CustomTestSessionSummaryResponse summary = firstPage().items().get(0);
 
         assertThat(summary.finished()).isFalse();
         assertThat(summary.finishedAt()).isNull();
@@ -401,7 +419,7 @@ class CustomTestSessionServiceTest {
         answer(id, 3, CorrectOption.A, false, false, 500.0);   // przycinane do 120 s
         answer(id, 4, CorrectOption.B, true, false, null);     // brak pomiaru
 
-        CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
+        CustomTestSessionSummaryResponse summary = firstPage().items().get(0);
 
         assertThat(summary.id()).isEqualTo(id);
         assertThat(summary.finished()).isTrue();
@@ -426,7 +444,7 @@ class CustomTestSessionServiceTest {
         startTest(List.of(1L), new CustomTestRequest(List.of(2L, 4L), List.of(9L), null, null, SourceMode.MINISTRY,
                 CustomTestKind.DUE, 10));
 
-        CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
+        CustomTestSessionSummaryResponse summary = firstPage().items().get(0);
         assertThat(summary.fieldIds()).containsExactly(2L, 4L);
         assertThat(summary.actIds()).containsExactly(9L);
         assertThat(summary.source()).isEqualTo(SourceMode.MINISTRY);
@@ -446,7 +464,7 @@ class CustomTestSessionServiceTest {
         foreign.setScopeLabel("Cudzy");
         sessions.add(foreign);
 
-        List<CustomTestSessionSummaryResponse> list = service.list(authentication);
+        List<CustomTestSessionSummaryResponse> list = firstPage().items();
 
         assertThat(list).hasSize(2);
         assertThat(list.get(0).id()).isEqualTo(newer);
@@ -454,7 +472,37 @@ class CustomTestSessionServiceTest {
 
     @Test
     void theListIsEmptyWhenThereAreNoTests() {
-        assertThat(service.list(authentication)).isEmpty();
+        assertThat(firstPage().items()).isEmpty();
+        assertThat(firstPage().totalElements()).isZero();
+    }
+
+    @Test
+    void theListIsPaged_withTheTotalsOfAllTheCallersTests() {
+        Long oldest = startTest(List.of(1L));
+        clock.advance(Duration.ofHours(1));
+        Long middle = startTest(List.of(2L));
+        clock.advance(Duration.ofHours(1));
+        Long newest = startTest(List.of(3L));
+
+        PageResponse<CustomTestSessionSummaryResponse> first = service.list(PageParams.ofList(0, 2), authentication);
+        PageResponse<CustomTestSessionSummaryResponse> second = service.list(PageParams.ofList(1, 2), authentication);
+
+        assertThat(first.items()).extracting(CustomTestSessionSummaryResponse::id).containsExactly(newest, middle);
+        assertThat(second.items()).extracting(CustomTestSessionSummaryResponse::id).containsExactly(oldest);
+        assertThat(first.totalElements()).isEqualTo(3);
+        assertThat(first.totalPages()).isEqualTo(2);
+        assertThat(second.page()).isEqualTo(1);
+        assertThat(second.size()).isEqualTo(2);
+    }
+
+    @Test
+    void aPageBeyondTheEndIsEmpty_butStillReportsTheTotals() {
+        startTest(List.of(1L));
+
+        PageResponse<CustomTestSessionSummaryResponse> beyond = service.list(PageParams.ofList(5, 20), authentication);
+
+        assertThat(beyond.items()).isEmpty();
+        assertThat(beyond.totalElements()).isEqualTo(1);
     }
 
     @Test
@@ -587,7 +635,7 @@ class CustomTestSessionServiceTest {
 
         startTest(List.of(1L), new CustomTestRequest(null, null, null, List.of(7L), SourceMode.AUTHORED, CustomTestKind.NEW, 10));
 
-        CustomTestSessionSummaryResponse summary = service.list(authentication).get(0);
+        CustomTestSessionSummaryResponse summary = firstPage().items().get(0);
         assertThat(summary.sectionIds()).containsExactly(7L);
         assertThat(summary.source()).isEqualTo(SourceMode.AUTHORED);
     }

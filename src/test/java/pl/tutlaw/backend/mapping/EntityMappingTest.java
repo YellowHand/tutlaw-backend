@@ -98,8 +98,22 @@ class EntityMappingTest {
     void theRealSchemaIncludesTheColumnsAddedByLaterMigrations() {
         assertThat(schema.get("questions").columns()).containsKeys("law_changed_at", "law_change_note");
         assertThat(schema.get("custom_test_sessions").columns().get("kind").allowedValues())
-                .containsExactlyInAnyOrder("ALL", "NEW", "MISTAKES", "DUE", "LAW_CHANGE");
+                .containsExactlyInAnyOrder("ALL", "NEW", "MISTAKES", "DUE", "LAW_CHANGE", "TIME_LIMIT", "TRAPS");
         assertThat(schema).containsKey("user_courses");
+    }
+
+    @Test
+    void theRealSchemaIncludesTheMarksAndExamAnswersAddedByTheLatestMigration() {
+        assertThat(schema.get("question_marks").columns())
+                .containsKeys("question_id", "mark", "origin", "status", "created_at", "reviewed_at", "reviewed_by");
+        assertThat(schema.get("question_marks").columns().get("mark").allowedValues())
+                .containsExactlyInAnyOrder("TIME_LIMIT", "TRAP_NEGATION", "TRAP_ABSOLUTE", "TRAP_NUMBERS",
+                        "TRAP_CONJUNCTION", "TRAP_OUTDATED_LAW");
+        assertThat(schema.get("question_marks").columns().get("status").allowedValues())
+                .containsExactlyInAnyOrder("SUGGESTED", "CONFIRMED", "REJECTED");
+        assertThat(schema.get("exam_attempts").columns()).containsKeys("excluded_count", "has_answers");
+        assertThat(schema.get("exam_attempt_answers").columns())
+                .containsKeys("attempt_id", "question_id", "position", "selected_option");
     }
 
     // ---------------------------------------------------------------- tabele i kolumny

@@ -106,11 +106,11 @@ zmienili.
 ## Baza danych i migracje
 
 - Schemat tworzą wyłącznie migracje (`src/main/resources/db/migration`): `V1__init_schema.sql` (cały schemat),
-  `V2__reference_data.sql` (dane słownikowe) i `V3__law_changes_and_user_courses.sql` (zmiany w prawie, przedmioty
-  Studenta). Opis tabel: [02](02-baza-danych.md).
+  `V2__reference_data.sql` (dane słownikowe), `V3__law_changes_and_user_courses.sql` (zmiany w prawie, przedmioty
+  Studenta), `V4` (rozdziały aktów) i `V5__question_marks_and_exam_answers.sql` (oznaczenia pytań, odpowiedzi z egzaminów). Opis tabel: [02](02-baza-danych.md).
 - Dawne migracje `V1`–`V25` zostały zastąpione nowym stanem wyjściowym, więc **bazę ze starego modelu trzeba założyć od
   nowa** (konta użytkowników też). Nie ma migracji przenoszącej dane.
-- Nowa zmiana schematu = nowy plik `V4__krotki_opis.sql`. Nie edytuj wykonanych migracji.
+- Nowa zmiana schematu = nowy plik `V6__krotki_opis.sql`. Nie edytuj wykonanych migracji.
 - **Kopia zapasowa bazy:** `docker exec tutlaw-postgres pg_dump -U <POSTGRES_USER> <POSTGRES_DB> > kopia.sql`.
 - **Reset postępów nauki** (nieodwracalne): `docs/reset-study-progress.sql`.
 - **Pusta baza od nowa** (kasuje wszystko, także treść): `docker compose down -v` usuwa kontener i wolumen z danymi;
@@ -130,6 +130,7 @@ pytania wczytuje się **skryptami SQL**. Skrypty są w katalogu `baza/` (poza re
 | `03-pytania-przykladowe.sql` | Arkusze i pytania **przykładowe** do testów aplikacji (wymagają weryfikacji merytorycznej przed publikacją) |
 | `04-import-szablon.sql` | Szablon do wczytywania własnych pytań (funkcje `pg_temp.pytanie`, `pg_temp.arkusz`, `pg_temp.zrodlo`) |
 | `05-kontrola.sql` | Raport tylko do odczytu: pytania według dziedzin, aktów i arkuszy oraz pula każdej ścieżki |
+| `09-oznaczenia.sql` | Oznaczenia pytań („Pytania z terminów”, „Pułapki”): zatwierdzanie i odrzucanie propozycji automatu oraz ręczne oznaczanie, jak panel administratora, ale zapytaniami SQL (domyślnie ROLLBACK z raportem) |
 
 Pierwsze uruchomienie na świeżej bazie (kolejność ma znaczenie):
 

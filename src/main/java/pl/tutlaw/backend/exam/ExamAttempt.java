@@ -8,7 +8,10 @@ import pl.tutlaw.backend.user.User;
 
 import java.time.LocalDateTime;
 
-/** Podsumowanie jednego podejścia do egzaminu próbnego (bez pojedynczych odpowiedzi). */
+/**
+ * Podsumowanie jednego podejścia do egzaminu próbnego. Odpowiedzi na poszczególne pytania ({@link ExamAttemptAnswer})
+ * zapisują się od poprawki 2 etapu 34; starsze podejścia mają {@link #hasAnswers} = false i zostają tylko z wynikiem.
+ */
 @Entity
 @Table(name = "exam_attempts")
 @Getter
@@ -64,4 +67,12 @@ public class ExamAttempt {
     /** Czy egzamin został zakończony automatycznie, bo skończył się czas. */
     @Column(name = "timed_out", nullable = false)
     private boolean timedOut;
+
+    /** Pytania z przesłanej listy, których nie dało się ocenić (usunięte albo niedostępne); nie wliczają się do wyniku. */
+    @Column(name = "excluded_count", nullable = false)
+    private int excludedCount;
+
+    /** Czy odpowiedzi tego podejścia są zapisane, więc da się otworzyć jego raport. Starsze podejścia: nie. */
+    @Column(name = "has_answers", nullable = false)
+    private boolean hasAnswers;
 }

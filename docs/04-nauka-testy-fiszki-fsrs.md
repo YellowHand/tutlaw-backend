@@ -390,10 +390,10 @@ Obie sesje (i test z kreatora poniżej) to zwykłe sesje testowe: odpowiedzi id�
 Użytkownik składa sesję sam (`CustomTestService`, `POST /api/review/custom-test`): wybiera **źródło pytań** (wszystkie, Ministerstwo Sprawiedliwości, autorskie),
 dowolne **dziedziny, akty prawne i rozdziały aktów** (Student: **przedmioty**; zakres to ich suma, bez powtórzeń; bez wyboru
 cała pula), **które pytania** mają w niej być
-(wszystkie, nowe, z błędną ostatnią odpowiedzią, zaległe, ze zmianą w prawie z ostatniego roku) i **liczbę pytań**: **10, 20, 50, 100 albo 150** (własnej liczby ani wyboru lat egzaminu nie ma).
+(wszystkie, nowe, z błędną ostatnią odpowiedzią, zaległe, ze zmianą w prawie z ostatniego roku, o terminach, pułapki) i **liczbę pytań**: **10, 20, 50, 100 albo 150** (własnej liczby ani wyboru lat egzaminu nie ma).
 Gdy w zakresie jest mniej niż 10 pytań, jedyny wybór to wszystkie z nich. Liczby pytań dla każdego rodzaju
 daje `GET /api/review/custom-test/counts`, który liczy to samo co losowanie. Tym samym `POST` zaczynają się też „Losuj z całej
-puli” (cała pula, wszystkie źródła, rodzaj `ALL`) i szybkie zestawy (cała pula, rodzaje `MISTAKES`, `LAW_CHANGE` albo `NEW`, do 20 pytań).
+puli” (cała pula, wszystkie źródła, rodzaj `ALL`) i szybkie zestawy (cała pula, rodzaje `MISTAKES`, `LAW_CHANGE`, `NEW`, `TIME_LIMIT` albo `TRAPS`, do 20 pytań).
 
 - **To nauka, nie egzamin.** Serwer losuje numery pytań, a sesję otwiera się zwykłą kolejką ćwiczeń
   (`/practice-queue`), więc odpowiedzi mają ocenę pamięci i terminy, a pomyłki trafiają do „Moich błędów”.
@@ -402,7 +402,7 @@ puli” (cała pula, wszystkie źródła, rodzaj `ALL`) i szybkie zestawy (cała
   `custom_test_sessions` i `custom_test_session_questions`): zakres, rodzaj pytań, źródło i
   wylosowane pytania w kolejności sesji. Odpowiedzi wysyłane z numerem testu (`sessionId`) dopisują się do niego; po
   odpowiedzi na ostatnie pytanie test jest ukończony, a porzucony w połowie zostaje na liście jako **nieukończony**.
-  Lista (`GET /api/custom-tests/sessions`, 50 ostatnich) i szczegóły z odpowiedziami (`/{id}`) służą ekranowi „Moje
+  Lista (`GET /api/custom-tests/sessions`, stronami po 20, najwyżej 100) i szczegóły z odpowiedziami (`/{id}`) służą ekranowi „Moje
   testy”, z którego da się ułożyć test ponownie z tymi samymi ustawieniami. Sesja z paska zaległych, „Popraw błędy” i egzamin nie są
   zapisywane jako testy. Własne testy liczą się osobno od egzaminów w „Podsumowaniu nauki”.
 - **Zakres**: dziedziny, akty, **rozdziały** i **przedmioty** (Student), w sumie bez powtórzeń. Przedmiot oznacza wszystkie
@@ -467,7 +467,12 @@ W raporcie pytania, które w międzyczasie zniknęły (usunięte z bazy), nie s�
 jeszcze nie odtwarza: 150 pytań jest losowane z wybranego źródła (więc proporcje wynikają z tego, ile pytań ma każdy dział w
 bazie). Wyjątkiem jest Egzamin MS, który jest prawdziwym arkuszem z danego roku, więc ma układ pytań z oryginału. Gdy proporcje zostaną ustalone, trzeba tylko zmienić losowanie w `ExamService.start`.
 
-Historia obejmuje ostatnie 50 podejść. Tabela `exam_attempts` trzyma tylko podsumowania.
+**Historia i raporty.** Lista podejść (`GET /api/exams/history`) jest stronicowana (domyślnie 20, najwyżej 100). Od poprawki 2
+etapu 34 serwer zapisuje przy podejściu też **odpowiedzi użytkownika** (tabela `exam_attempt_answers`; w `exam_attempts`
+`has_answers = true` i `excluded_count`), więc raport można otworzyć później (`GET /api/exams/attempts/{id}`). Nagłówek raportu
+(wynik, czas, próg, podpis) jest z chwili egzaminu, a treść pytań, poprawny klucz i ocena przy każdym pytaniu z **aktualnych**
+pytań: poprawione pytanie pokaże się poprawione. Podejścia sprzed poprawki 2 nie mają odpowiedzi (`detailsAvailable = false`) i
+zostają na liście tylko z wynikiem. Zerowanie postępów i usunięcie konta kasują podejścia razem z odpowiedziami (kaskada w bazie).
 
 ## Źródło pytań w teście
 
@@ -514,6 +519,33 @@ Dwa skutki dla użytkownika:
    Okno liczy się w chwili zapytania, więc pytanie wypada z kategorii samo po roku. Kategoria ma licznik
    `lawChanges` w `GET /api/review/custom-test/counts` i podlega puli, wybranemu źródłu i wyborowi zakresu jak inne rodzaje.
    Zawieszonych pytań nie obejmuje żaden rodzaj.
+3. **Kategorie „Terminy” i „Pułapki”** (`kind = TIME_LIMIT` i `TRAPS`): pytania z **zatwierdzonym oznaczeniem** administratora
+   (tabela `question_marks`). `TIME_LIMIT` to pytania o terminy, `TRAPS` to pytania z dowolnym zatwierdzonym podtypem pułapki
+   (`TRAP_NEGATION`, `TRAP_ABSOLUTE`, `TRAP_NUMBERS`, `TRAP_CONJUNCTION`, `TRAP_OUTDATED_LAW`). Liczniki `timeLimits` i `traps` w
+   `GET /api/review/custom-test/counts`; rodzaje podlegają puli, źródłu i zakresowi jak pozostałe i nie obejmują pytań
+   zawieszonych. Oznaczeń nie widać w żadnym pytaniu ani odpowiedzi API.
+
+### Oznaczenia pytań
+
+Oznaczenia nadaje administrator, a **automat tylko je proponuje** (`QuestionMarkDetector`, czysta klasa bez bazy, `QuestionMarkService`
+czyta pytania porcjami po 500). Propozycje mają stan `SUGGESTED` i nie wpływają na testy; liczą się dopiero oznaczenia
+`CONFIRMED`. Ponowne uruchomienie automatu dodaje propozycje tylko dla par pytanie–oznaczenie, których jeszcze nie ma, więc
+nie nadpisuje decyzji (także odrzuceń). Reguły są ostrożne i oparte na słowach; lepiej pominąć pytanie niż zalać
+administratora fałszywymi trafieniami:
+
+| Oznaczenie | Reguła automatu |
+|------------|-----------------|
+| `TIME_LIMIT` | W treści albo odpowiedziach jest liczba dni lub tygodni, albo słowo o terminie („termin”, „w ciągu”, „najpóźniej”, „upływa”, „przedawnienie”, „zawity”, „prekluzyjny”). Lata, miesiące i godziny liczą się dopiero razem ze słowem o terminie |
+| `TRAP_NEGATION` | W treści jest wyraźne przeczenie albo wyjątek („nie jest”, „nieprawidłowe”, „z wyjątkiem”, „niedopuszczalne”, „wskaż zdanie fałszywe”) |
+| `TRAP_ABSOLUTE` | Słowo absolutne („zawsze”, „nigdy”, „wyłącznie”, „jedynie”, „w każdym przypadku”) jest w jednej albo dwóch odpowiedziach z trzech |
+| `TRAP_NUMBERS` | Co najmniej dwie odpowiedzi mają różne liczby z tą samą jednostką (dni, tygodnie, miesiące, lata, godziny, %, zł) |
+| `TRAP_CONJUNCTION` | Dwie odpowiedzi różnią się tylko spójnikiem („i” / „oraz” zamiast „lub” / „albo”) |
+| `TRAP_OUTDATED_LAW` | Automat go nie proponuje (z treści nie da się go rozpoznać); tylko ręcznie |
+
+Obsługa: `POST /api/admin/question-marks/analyze` (uruchom automat), `GET /api/admin/question-marks` (kolejka propozycji),
+`POST /api/admin/question-marks/bulk` (np. zatwierdź wszystkie), `PUT /api/admin/question-marks/questions/{id}/{mark}` (jedna
+decyzja), `GET /api/admin/question-marks/summary` (liczby); opis w [api/04](api/04-pytania-admin.md#oznaczenia-pytań-apiadminquestion-marks).
+Do czasu powstania panelu można też wczytać oznaczenia skryptem SQL `baza/09-oznaczenia.sql`.
 
 Przy każdym pytaniu, które ma zapisaną zmianę, aplikacja pokazuje plakietkę **„Zmiana w prawie: data”** z opisem
 (`lawChange` w odpowiedziach API), także po upływie roku (to informacja o treści pytania, a nie o kategorii). Pytania

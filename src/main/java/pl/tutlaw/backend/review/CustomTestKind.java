@@ -14,5 +14,9 @@ public enum CustomTestKind {
     /** Pytania z minionym terminem powtórki. */
     DUE,
     /** Pytania ze zmianą w prawie z ostatniego roku (zob. {@code LawChangePolicy}). */
-    LAW_CHANGE
+    LAW_CHANGE,
+    /** Pytania o terminy: administrator zatwierdził oznaczenie {@code TIME_LIMIT} (zob. pakiet {@code mark}). */
+    TIME_LIMIT,
+    /** Pułapki: administrator zatwierdził któreś z oznaczeń {@code TRAP_*} (zob. pakiet {@code mark}). */
+    TRAPS
 }

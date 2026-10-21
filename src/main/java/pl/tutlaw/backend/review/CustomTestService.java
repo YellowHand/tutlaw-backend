@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import pl.tutlaw.backend.course.CourseRepository;
+import pl.tutlaw.backend.mark.QuestionMarkRepository;
+import pl.tutlaw.backend.mark.QuestionMarkType;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
 import pl.tutlaw.backend.pool.SourceMode;
@@ -19,6 +21,8 @@ import pl.tutlaw.backend.user.CurrentUserResolver;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,7 +36,7 @@ import java.util.Set;
 /**
  * Własny test: użytkownik składa sesję z wybranych dziedzin, aktów prawnych i rozdziałów, wybiera, z jakiego źródła mają
  * być pytania (wszystkie, Ministerstwo Sprawiedliwości, autorskie), które pytania mają w niej być
- * (wszystkie, nowe, błędy, zaległe, zmiany w prawie) i mówi, ile pytań chce (10, 20, 50, 100 albo 150). Serwis tylko LOSUJE numery
+ * (wszystkie, nowe, błędy, zaległe, zmiany w prawie, pytania o terminy, pułapki) i mówi, ile pytań chce (10, 20, 50, 100 albo 150). Serwis tylko LOSUJE numery
  * pytań (zapisuje je jako sesję {@link CustomTestSessionService}); samą sesję otwiera się zwykłą kolejką ćwiczeń
  * ({@link PracticeQueueService}), więc odpowiedzi idą normalną drogą testu: z oceną pamięci, a pomyłki trafiają do
  * „Moich błędów".
@@ -47,6 +51,10 @@ public class CustomTestService {
 
     /** Liczby pytań do wyboru. Własnej liczby nie ma. */
     public static final List<Integer> COUNT_CHOICES = List.of(10, 20, 50, 100, 150);
+    /** Podtypy pułapek: pytanie z którymś z zatwierdzonych oznaczeń należy do rodzaju {@link CustomTestKind#TRAPS}. */
+    static final List<QuestionMarkType> TRAP_MARKS = Arrays.stream(QuestionMarkType.values())
+            .filter(QuestionMarkType::isTrap)
+            .toList();
     /** Największa możliwa sesja (musi mieścić się w limicie kolejki ćwiczeń, przez którą jest otwierana). */
     static final int MAX_QUESTIONS = COUNT_CHOICES.get(COUNT_CHOICES.size() - 1);
 
@@ -59,6 +67,7 @@ public class CustomTestService {
     private final PoolService poolService;
     private final LawChangePolicy lawChangePolicy;
     private final CourseRepository courseRepository;
+    private final QuestionMarkRepository markRepository;
 
     private final Random random = new Random();
 
@@ -74,7 +83,9 @@ public class CustomTestService {
                 candidates(CustomTestKind.NEW, pool, userId, now).size(),
                 candidates(CustomTestKind.MISTAKES, pool, userId, now).size(),
                 candidates(CustomTestKind.DUE, pool, userId, now).size(),
-                candidates(CustomTestKind.LAW_CHANGE, pool, userId, now).size());
+                candidates(CustomTestKind.LAW_CHANGE, pool, userId, now).size(),
+                candidates(CustomTestKind.TIME_LIMIT, pool, userId, now).size(),
+                candidates(CustomTestKind.TRAPS, pool, userId, now).size());
     }
 
     /**
@@ -190,7 +201,18 @@ public class CustomTestService {
                     .filter(ref -> lawChangePolicy.isRecent(ref.getLawChangedAt()))
                     .map(QuestionRef::getId)
                     .toList();
+            case TIME_LIMIT -> confirmedMarked(pool, List.of(QuestionMarkType.TIME_LIMIT));
+            case TRAPS -> confirmedMarked(pool, TRAP_MARKS);
         };
+    }
+
+    /** Pytania puli z zatwierdzonym oznaczeniem któregokolwiek z podanych rodzajów (propozycje i odrzucone się nie liczą). */
+    private List<Long> confirmedMarked(Candidates pool, Collection<QuestionMarkType> marks) {
+        Set<Long> confirmed = new HashSet<>(markRepository.findConfirmedQuestionIds(marks));
+        return pool.refs().stream()
+                .map(QuestionRef::getId)
+                .filter(confirmed::contains)
+                .toList();
     }
 
     /** Zaległe od tych, które najpewniej już zapomniałeś (jak w kolejce nauki). */
@@ -243,6 +265,8 @@ public class CustomTestService {
             case MISTAKES -> "W wybranym zakresie nie ma teraz pytań z błędną ostatnią odpowiedzią.";
             case DUE -> "W wybranym zakresie nie ma teraz zaległych powtórek.";
             case LAW_CHANGE -> "W wybranym zakresie nie ma pytań ze zmianą w prawie z ostatniego roku.";
+            case TIME_LIMIT -> "W wybranym zakresie nie ma pytań o terminy.";
+            case TRAPS -> "W wybranym zakresie nie ma pytań-pułapek.";
             case ALL -> "W wybranym zakresie nie ma teraz pytań, które możesz rozwiązać.";
         };
     }
