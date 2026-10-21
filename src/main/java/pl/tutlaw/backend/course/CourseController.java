@@ -40,7 +40,8 @@ public class CourseController {
             actsByCourse.computeIfAbsent(pair.getCourseId(), k -> new ArrayList<>()).add(pair.getActId());
         }
         if (!actIds.isEmpty()) {
-            List<Long> allSources = sourceRepository.findAll().stream().map(s -> s.getId()).toList();
+            List<Long> allSources = sourceRepository.findAllRows().stream()
+                    .map(QuestionSourceRepository.SourceRow::getId).toList();
             for (GroupCount row : questionRepository.countByAct(actIds, allSources.isEmpty() ? List.of(Pool.NO_SUCH_ID) : allSources)) {
                 perAct.put(row.getGroupId(), row.getTotal());
             }

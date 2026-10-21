@@ -76,15 +76,15 @@ def check_endpoints() -> int:
 
     # nagłówki w plikach grup: `METHOD /ścieżka` (ścieżka może mieć ?parametry)
     in_groups: set[tuple[str, str]] = set()
-    for md in sorted((DOCS / "api").glob("0*.md")):
+    for md in sorted((DOCS / "api").glob("[0-9]*.md")):
         for m in re.finditer(r"`(GET|POST|PUT|DELETE|PATCH) (/[^` ]*)`", read(md)):
             in_groups.add((m.group(1), m.group(2).split("?")[0]))
     for ep in sorted(code - in_groups):
-        fail(f"endpoint w kodzie bez opisu w żadnym pliku docs/api/0*.md: {ep[0]} {ep[1]}")
+        fail(f"endpoint w kodzie bez opisu w żadnym pliku docs/api/[0-9]*.md: {ep[0]} {ep[1]}")
     for ep in sorted(in_groups - code):
         # odnośniki do endpointów zewnętrznych (np. /actuator) pomijamy
         if ep[1].startswith("/api/"):
-            fail(f"endpoint opisany w docs/api/0*.md, którego nie ma w kodzie: {ep[0]} {ep[1]}")
+            fail(f"endpoint opisany w docs/api/[0-9]*.md, którego nie ma w kodzie: {ep[0]} {ep[1]}")
 
     stated = re.search(r"(\d+) endpoint", read(DOCS / "api" / "README.md"))
     if stated and int(stated.group(1)) != len(code):

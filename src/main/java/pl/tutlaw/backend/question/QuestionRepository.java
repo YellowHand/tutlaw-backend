@@ -182,4 +182,60 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
             WHERE q.id IN :ids
             """)
     List<Question> findForGrading(@Param("ids") Collection<Long> ids);
+
+    // ------------------------------------------------------------------------------------------ panel administratora
+
+    /** Liczba pytań w grupie i ile z nich jest ukrytych (zliczane są także pytania ukryte, bo to widok administratora). */
+    interface GroupTotals {
+
+        Long getGroupId();
+
+        Long getTotal();
+
+        Long getHiddenTotal();
+    }
+
+    /** Wszystkie pytania (także ukryte) w każdym akcie prawnym. */
+    @Query("""
+            SELECT q.legalAct.id AS groupId, COUNT(q) AS total,
+                   SUM(CASE WHEN q.hidden = true THEN 1 ELSE 0 END) AS hiddenTotal
+            FROM Question q
+            GROUP BY q.legalAct.id
+            """)
+    List<GroupTotals> totalsByAct();
+
+    /** Wszystkie pytania (także ukryte) w każdym źródle (arkuszu). */
+    @Query("""
+            SELECT q.source.id AS groupId, COUNT(q) AS total,
+                   SUM(CASE WHEN q.hidden = true THEN 1 ELSE 0 END) AS hiddenTotal
+            FROM Question q
+            GROUP BY q.source.id
+            """)
+    List<GroupTotals> totalsBySource();
+
+    /** Wszystkie pytania (także ukryte) w każdym rozdziale; pytania bez rozdziału nie liczą się nigdzie. */
+    @Query("""
+            SELECT q.section.id AS groupId, COUNT(q) AS total,
+                   SUM(CASE WHEN q.hidden = true THEN 1 ELSE 0 END) AS hiddenTotal
+            FROM Question q
+            WHERE q.section IS NOT NULL
+            GROUP BY q.section.id
+            """)
+    List<GroupTotals> totalsBySection();
+
+    /** Ile pytań (także ukrytych) ma akt: akt z pytaniami nie może zostać usunięty. */
+    @Query("SELECT COUNT(q) FROM Question q WHERE q.legalAct.id = :actId")
+    long countInAct(@Param("actId") Long actId);
+
+    /** Ile pytań (także ukrytych) ma źródło: arkusz z pytaniami nie może zostać usunięty. */
+    @Query("SELECT COUNT(q) FROM Question q WHERE q.source.id = :sourceId")
+    long countInSource(@Param("sourceId") Long sourceId);
+
+    /** Ile pytań (także ukrytych) ma rozdział: rozdział z pytaniami nie może zostać usunięty. */
+    @Query("SELECT COUNT(q) FROM Question q WHERE q.section.id = :sectionId")
+    long countInSection(@Param("sectionId") Long sectionId);
+
+    /** Ile jest wszystkich ukrytych pytań (do przeglądu panelu). */
+    @Query("SELECT COUNT(q) FROM Question q WHERE q.hidden = true")
+    long countHidden();
 }

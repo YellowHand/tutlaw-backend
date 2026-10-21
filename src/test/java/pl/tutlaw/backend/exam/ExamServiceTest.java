@@ -759,6 +759,18 @@ class ExamServiceTest {
     }
 
     @Test
+    void startSheet_withAHiddenSheet_isABadRequest_asIfItDidNotExist() {
+        QuestionSource hidden = sheet(7, "Notarialna 2024", 2024);
+        hidden.setHidden(true);
+        when(sourceRepository.findById(7L)).thenReturn(java.util.Optional.of(hidden));
+
+        assertThatThrownBy(() -> service.start(null, 7L, authentication))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Nie ma takiego egzaminu MS");
+        verify(questionRepository, never()).findRefsInSources(any());
+    }
+
+    @Test
     void startSheet_withAnAuthoredSource_isABadRequest_becauseItIsNotAnExam() {
         QuestionSource authored = QuestionRefs.source(QuestionRefs.AUTHORED);
         when(sourceRepository.findById(QuestionRefs.AUTHORED)).thenReturn(java.util.Optional.of(authored));

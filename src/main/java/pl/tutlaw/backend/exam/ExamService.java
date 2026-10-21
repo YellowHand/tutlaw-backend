@@ -131,6 +131,7 @@ public class ExamService {
     private ExamStartResponse startSheet(User user, Long sheetId) {
         QuestionSource sheet = sourceRepository.findById(sheetId)
                 .filter(QuestionSource::isExamSheet)
+                .filter(source -> !source.isHidden())
                 .orElseThrow(() -> new IllegalArgumentException("Nie ma takiego egzaminu MS. Wybierz inny."));
         Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedQuestionIds(user.getId(), ReviewMode.TEST));
         List<Long> drawn = questionRepository.findRefsInSources(List.of(sheet.getId())).stream()

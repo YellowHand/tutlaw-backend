@@ -41,4 +41,11 @@ public class LegalAct {
 
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 100;
+
+    /**
+     * Ukryty akt znika wszystkim użytkownikom (testy, fiszki, liczniki, egzamin), a jego pytania i historia odpowiedzi
+     * zostają. Akt z pytaniami nie może zostać usunięty, tylko ukryty (panel administratora).
+     */
+    @Column(nullable = false)
+    private boolean hidden = false;
 }

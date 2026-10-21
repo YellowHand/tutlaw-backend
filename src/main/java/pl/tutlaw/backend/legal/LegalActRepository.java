@@ -13,14 +13,18 @@ public interface LegalActRepository extends JpaRepository<LegalAct, Long> {
     @Query("SELECT a FROM LegalAct a JOIN FETCH a.legalField WHERE a.id IN :ids")
     List<LegalAct> findAllWithFieldByIdIn(@Param("ids") Collection<Long> ids);
 
-    /** Numery wszystkich aktów prawnych. */
-    @Query("SELECT a.id FROM LegalAct a")
+    /** Numery wszystkich widocznych (nieukrytych) aktów prawnych. */
+    @Query("SELECT a.id FROM LegalAct a WHERE a.hidden = false")
     List<Long> findAllIds();
 
     @Query("SELECT a FROM LegalAct a JOIN FETCH a.legalField")
     List<LegalAct> findAllWithField();
 
+    /** Ile aktów (także ukrytych) ma dany adres (slug); do wyboru wolnego adresu przy dodawaniu aktu. */
+    @Query("SELECT COUNT(a) FROM LegalAct a WHERE a.slug = :slug")
+    long countBySlugValue(@Param("slug") String slug);
+
     /** Numery wszystkich aktów podanych dziedzin. */
-    @Query("SELECT a.id FROM LegalAct a WHERE a.legalField.id IN :fieldIds")
+    @Query("SELECT a.id FROM LegalAct a WHERE a.hidden = false AND a.legalField.id IN :fieldIds")
     List<Long> findIdsByFieldIds(@Param("fieldIds") Collection<Long> fieldIds);
 }

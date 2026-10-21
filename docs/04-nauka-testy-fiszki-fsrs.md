@@ -64,6 +64,10 @@ dostępie do pytań. Zasada jest **regułą**, a nie ręcznym przypisaniem pyta�
 4. **Źródło pytań** nie jest trwałą częścią puli: użytkownik wybiera je osobno **przy każdym teście** (`SourceMode`:
    wszystkie, Ministerstwo Sprawiedliwości, autorskie; patrz [Źródło pytań w teście](#źródło-pytań-w-teście)).
 
+Ukryty akt (`legal_acts.hidden`) i ukryty arkusz (`question_sources.hidden`) **nie należą do żadnej puli**: zapytania
+składające pulę (`PoolService`) ich nie widzą, więc znikają z testów, fiszek, liczników, kreatora, statystyk źródeł i
+egzaminu, a pytania i historia odpowiedzi zostają (przywrócenie oddaje wszystko). Ukrywa je administrator w panelu.
+
 Użytkownik widzi dziedziny, w których ma **akty w swojej puli**, i w każdej tylko te akty (dziedzina bez jego aktów, np.
 „Student” u użytkownika aplikacji, jest pomijana). Zmiana ścieżki czyści zawężenie aktami;
 wybrane przedmioty Studenta zostają.
@@ -545,7 +549,7 @@ administratora fałszywymi trafieniami:
 Obsługa: `POST /api/admin/question-marks/analyze` (uruchom automat), `GET /api/admin/question-marks` (kolejka propozycji),
 `POST /api/admin/question-marks/bulk` (np. zatwierdź wszystkie), `PUT /api/admin/question-marks/questions/{id}/{mark}` (jedna
 decyzja), `GET /api/admin/question-marks/summary` (liczby); opis w [api/04](api/04-pytania-admin.md#oznaczenia-pytań-apiadminquestion-marks).
-Do czasu powstania panelu można też wczytać oznaczenia skryptem SQL `baza/09-oznaczenia.sql`.
+Oznaczenia można też wczytać skryptem SQL `baza/09-oznaczenia.sql` (ekran do ich przeglądania będzie w kolejnym etapie panelu).
 
 Przy każdym pytaniu, które ma zapisaną zmianę, aplikacja pokazuje plakietkę **„Zmiana w prawie: data”** z opisem
 (`lawChange` w odpowiedziach API), także po upływie roku (to informacja o treści pytania, a nie o kategorii). Pytania

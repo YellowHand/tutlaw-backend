@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **70 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **101 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -45,7 +45,7 @@ Każdy błąd ma ten sam kształt:
 |-----|-------|------------------------|
 | **400** Bad Request | Błędne dane: walidacja pól, zły JSON, nieznana wartość enum, naruszona reguła (np. zbyt słabe hasło) | „Hasło: musi mieć od 8 do 72 znaków” |
 | **401** Unauthorized | Brak tokenu, zły lub wygasły token dostępu (30 minut), konto usunięte, sesja unieważniona zmianą hasła. Klient odpowiada na to wywołaniem `POST /api/auth/refresh` i ponawia żądanie | „Wymagane zalogowanie” |
-| **403** Forbidden | Brak uprawnień (endpoint tylko dla `ADMIN`: ukrywanie pytań, terminy egzaminów, oznaczenia pytań `/api/admin/**`) | — |
+| **403** Forbidden | Brak uprawnień (endpoint tylko dla `ADMIN`: ukrywanie pytań, terminy egzaminów, panel administratora i oznaczenia pytań `/api/admin/**`) | — |
 | **404** Not Found | Nie ma takiego zasobu albo jest niedostępny dla użytkownika (np. nieistniejące albo ukryte pytanie) | „Question not found” |
 | **405 / 415** | Zła metoda HTTP / zły typ treści (standardowe odpowiedzi Springa) | — |
 | **409** Conflict | Duplikat, konflikt danych, równoległa zmiana tego samego stanu nauki, konto nieaktywowane, link wygasł | „Taki adres e-mail jest już zajęty” |
@@ -173,6 +173,42 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | DELETE | `/api/me/study-progress` | zalogowany | Zerowanie postępów w nauce (wymaga `confirm: "WYZERUJ"`) |
 | GET | `/api/exam-terms` | zalogowany | Terminy egzaminów pięciu aplikacji |
 | PUT | `/api/exam-terms/{trackId}` | ADMIN | Ustawienie albo usunięcie terminu egzaminu aplikacji |
+
+### Panel administratora: aplikacje, przedmioty, akty, rozdziały, arkusze — [10-panel-administratora.md](10-panel-administratora.md)
+
+| Metoda | Adres | Dostęp | Opis |
+|--------|-------|--------|------|
+| GET | `/api/admin/overview` | ADMIN | Liczby na ekranie startowym panelu (aplikacje, akty, arkusze, pytania, zgłoszenia) |
+| GET | `/api/admin/tracks` | ADMIN | Aplikacje i Student: akty, liczba arkuszy i użytkowników, termin egzaminu |
+| POST | `/api/admin/tracks` | ADMIN | Nowa aplikacja |
+| PUT | `/api/admin/tracks/{id}` | ADMIN | Zmiana nazwy, krótkiej nazwy i kolejności aplikacji |
+| DELETE | `/api/admin/tracks/{id}` | ADMIN | Usunięcie pustej aplikacji (bez arkuszy, której nikt nie wybrał) |
+| PUT | `/api/admin/tracks/{id}/acts` | ADMIN | Lista aktów aplikacji (zastępuje dotychczasową) |
+| GET | `/api/admin/courses` | ADMIN | Przedmioty Studenta z aktami i liczbą wyborów |
+| POST | `/api/admin/courses` | ADMIN | Nowy przedmiot Studenta |
+| PUT | `/api/admin/courses/{id}` | ADMIN | Zmiana nazwy i kolejności przedmiotu |
+| DELETE | `/api/admin/courses/{id}` | ADMIN | Usunięcie przedmiotu (zdejmuje go z wyborów studentów) |
+| PUT | `/api/admin/courses/{id}/acts` | ADMIN | Lista aktów przedmiotu (zastępuje dotychczasową) |
+| GET | `/api/admin/fields` | ADMIN | Dziedziny prawa (tylko do odczytu) |
+| GET | `/api/admin/acts` | ADMIN | Akty prawne stronami: wyszukiwanie i filtry (także ukryte, bez przypisania) |
+| GET | `/api/admin/acts/options` | ADMIN | Wszystkie akty w lekkiej postaci do list wyboru |
+| GET | `/api/admin/acts/{id}` | ADMIN | Jeden akt z licznikami i przypisaniami |
+| POST | `/api/admin/acts` | ADMIN | Nowy akt albo zagadnienie |
+| PUT | `/api/admin/acts/{id}` | ADMIN | Zmiana aktu (nazwa, skrót, dziedzina, rodzaj, kolejność) |
+| PUT | `/api/admin/acts/{id}/hidden` | ADMIN | Ukrycie / przywrócenie aktu wszystkim użytkownikom |
+| PUT | `/api/admin/acts/{id}/assignments` | ADMIN | Do jakich aplikacji i przedmiotów należy akt (zastępuje dotychczasowe) |
+| DELETE | `/api/admin/acts/{id}` | ADMIN | Usunięcie aktu bez pytań |
+| GET | `/api/admin/acts/{actId}/sections` | ADMIN | Rozdziały aktu z licznikami pytań |
+| POST | `/api/admin/acts/{actId}/sections` | ADMIN | Nowy rozdział aktu |
+| POST | `/api/admin/acts/{actId}/sections/bulk` | ADMIN | Wiele rozdziałów naraz (wklejony spis) |
+| PUT | `/api/admin/acts/{actId}/sections/order` | ADMIN | Kolejność rozdziałów aktu |
+| PUT | `/api/admin/sections/{id}` | ADMIN | Zmiana nazwy rozdziału |
+| DELETE | `/api/admin/sections/{id}` | ADMIN | Usunięcie rozdziału bez pytań |
+| GET | `/api/admin/sheets` | ADMIN | Arkusze egzaminacyjne (aplikacja i rok), także ukryte |
+| POST | `/api/admin/sheets` | ADMIN | Nowy arkusz (aplikacja i rok) |
+| PUT | `/api/admin/sheets/{id}` | ADMIN | Zmiana roku i nazwy arkusza |
+| PUT | `/api/admin/sheets/{id}/hidden` | ADMIN | Ukrycie / przywrócenie arkusza wszystkim użytkownikom |
+| DELETE | `/api/admin/sheets/{id}` | ADMIN | Usunięcie arkusza bez pytań |
 
 ### Poza `/api`
 

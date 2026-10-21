@@ -57,9 +57,17 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 
 ### Treści i administracja
 
-- **Nie ma panelu administratora w backendzie.** Role nadaje się w bazie (SQL). API pozwala administratorowi
-  **ukrywać pytania i fiszki**, **ustawiać terminy egzaminów** i **zarządzać oznaczeniami pytań** (`/api/admin/question-marks`,
-  bez ekranu: Swagger albo `curl`). Nie ma endpointów do dodawania, edycji i usuwania treści.
+- **Panel administratora jest niepełny.** Od Etapu 35 API (i ekran `/admin`) obsługuje aplikacje, przedmioty Studenta,
+  akty prawne z rozdziałami i przypisaniami, arkusze, ukrywanie aktów i arkuszy oraz terminy egzaminów. Nadal **nie ma**
+  dodawania, edycji i importu **pytań**, listy i wyszukiwarki pytań, ekranu do przeglądania oznaczeń (API oznaczeń
+  `/api/admin/question-marks` jest, bez ekranu: Swagger albo `curl`) ani obsługi zgłoszeń błędów (SQL). Role nadaje się w
+  bazie (SQL). API pozwala też ukrywać pojedyncze pytania i fiszki.
+- **Akt i arkusz z pytaniami nie da się usunąć, tylko ukryć** (to ustalone celowo). Rozdział z pytaniami też nie da się
+  usunąć. Dziedziny prawa nie mają zarządzania w panelu (jest ich 11, zakłada je migracja `V2`); nowy akt trafia do jednej
+  z nich. Panel liczy listy w pamięci (setki aktów to nie problem), więc przy tysiącach aktów wymagałby filtrowania w bazie.
+- **Ukrycie aktu albo arkusza działa od razu u wszystkich**, także w trwającej sesji nauki: pytania, których już nie ma w puli,
+  znikną przy następnym wczytaniu kolejki. Zapisane testy w „Moich testach” i raporty egzaminów dalej pokazują swoje pytania
+  (to historia), ale nowego testu z ukrytego aktu nie da się już ułożyć.
 - **Oznaczenia pytań („Pytania z terminów”, „Pułapki”) wymagają zatwierdzenia.** Automat tylko proponuje (reguły są
   ostrożne i oparte na słowach, więc część pytań pominie, a część trafi do propozycji niesłusznie); w testach liczą się dopiero
   oznaczenia zatwierdzone. Bez uruchomienia automatu (`POST /api/admin/question-marks/analyze`) i zatwierdzenia albo
@@ -164,7 +172,7 @@ Uczciwie o weryfikacji tej dokumentacji:
   aplikacji: pierwsze uruchomienie na prawdziwej bazie (Flyway, walidacja Hibernate, wiązanie zapytań Spring Data) może
   jeszcze ujawnić błąd, którego te testy nie widzą. Przed pierwszym użyciem uruchom backend i sprawdź
   `/actuator/health`.
-- **Migracje `V1`–`V5` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
+- **Migracje `V1`–`V6` oraz skrypty z katalogu `baza/`** zostały wykonane na lokalnym PostgreSQL 16 (świeża baza,
   `ON_ERROR_STOP`). Opisy działania endpointów pochodzą z kodu i testów jednostkowych, a nie z obserwacji
   działającego serwera.
 - **Przykłady JSON są ilustracyjne**: kształt pól pochodzi z klas DTO, ale wartości są wymyślone.

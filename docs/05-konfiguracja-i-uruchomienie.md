@@ -107,10 +107,11 @@ zmienili.
 
 - Schemat tworzą wyłącznie migracje (`src/main/resources/db/migration`): `V1__init_schema.sql` (cały schemat),
   `V2__reference_data.sql` (dane słownikowe), `V3__law_changes_and_user_courses.sql` (zmiany w prawie, przedmioty
-  Studenta), `V4` (rozdziały aktów) i `V5__question_marks_and_exam_answers.sql` (oznaczenia pytań, odpowiedzi z egzaminów). Opis tabel: [02](02-baza-danych.md).
+  Studenta), `V4` (rozdziały aktów), `V5__question_marks_and_exam_answers.sql` (oznaczenia pytań, odpowiedzi z egzaminów)
+  i `V6__hide_acts_and_sheets.sql` (ukrywanie aktów i arkuszy). Opis tabel: [02](02-baza-danych.md).
 - Dawne migracje `V1`–`V25` zostały zastąpione nowym stanem wyjściowym, więc **bazę ze starego modelu trzeba założyć od
   nowa** (konta użytkowników też). Nie ma migracji przenoszącej dane.
-- Nowa zmiana schematu = nowy plik `V6__krotki_opis.sql`. Nie edytuj wykonanych migracji.
+- Nowa zmiana schematu = nowy plik `V7__krotki_opis.sql`. Nie edytuj wykonanych migracji.
 - **Kopia zapasowa bazy:** `docker exec tutlaw-postgres pg_dump -U <POSTGRES_USER> <POSTGRES_DB> > kopia.sql`.
 - **Reset postępów nauki** (nieodwracalne): `docs/reset-study-progress.sql`.
 - **Pusta baza od nowa** (kasuje wszystko, także treść): `docker compose down -v` usuwa kontener i wolumen z danymi;
@@ -118,8 +119,9 @@ zmienili.
 
 ## Wczytywanie treści skryptami SQL
 
-Aplikacja nie ma panelu administratora ani importu z pliku CSV lub JSON. Akty prawne, listy aktów ścieżek, arkusze i
-pytania wczytuje się **skryptami SQL**. Skrypty są w katalogu `baza/` (poza repozytorium kodu, razem z plikiem
+Akty prawne, rozdziały, listy aktów aplikacji, przedmioty Studenta i arkusze można od Etapu 35 prowadzić w **panelu
+administratora** ([API](api/10-panel-administratora.md); ekran pod `/admin` we frontendzie). Nie ma jeszcze edycji ani importu
+**pytań** z pliku CSV lub JSON: pytania wczytuje się **skryptami SQL**; skrypty wczytują też akty, listy i arkusze hurtem. Skrypty są w katalogu `baza/` (poza repozytorium kodu, razem z plikiem
 `INSTRUKCJA-BAZA.txt`; każdy skrypt jest też jako `.txt` do wklejenia w okno pgAdmin lub DBeaver).
 
 | Plik | Do czego |

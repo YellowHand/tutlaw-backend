@@ -14,6 +14,16 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     List<Track> findAllByOrderBySortOrderAscIdAsc();
 
     /** Numery aktów prawnych aplikacji (lista ustawiana przez administratora). */
-    @Query("SELECT a.id FROM Track t JOIN t.acts a WHERE t.id = :trackId")
+    @Query("SELECT a.id FROM Track t JOIN t.acts a WHERE t.id = :trackId AND a.hidden = false")
     List<Long> findActIds(@Param("trackId") Long trackId);
+
+    /** Wszystkie przypisania aktów do aplikacji, także ukrytych aktów (widok administratora). */
+    @Query("SELECT t.id AS trackId, a.id AS actId FROM Track t JOIN t.acts a")
+    List<TrackAct> findAllTrackActs();
+
+    interface TrackAct {
+        Long getTrackId();
+
+        Long getActId();
+    }
 }

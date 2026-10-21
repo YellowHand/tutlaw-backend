@@ -40,6 +40,13 @@ public class QuestionSource {
     @Column(name = "exam_year")
     private Integer examYear;
 
+    /**
+     * Ukryty arkusz znika wszystkim użytkownikom (pula, statystyki źródeł, Egzaminy MS), a jego pytania i historia
+     * odpowiedzi zostają. Arkusz z pytaniami nie może zostać usunięty, tylko ukryty (panel administratora).
+     */
+    @Column(nullable = false)
+    private boolean hidden = false;
+
     public boolean isExamSheet() {
         return kind == SourceKind.EXAM_SHEET;
     }

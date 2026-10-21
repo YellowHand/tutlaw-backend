@@ -2,11 +2,13 @@
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
-Aplikacja nie ma panelu ani endpointów do dodawania, edycji i usuwania pytań, aktów prawnych, ścieżek i arkuszy. **Treść
-wczytuje się skryptami SQL** (katalog `baza/`, szablon importu `04-import-szablon.sql`; opis w
+Aplikacje, przedmioty Studenta, akty prawne z rozdziałami i arkusze egzaminacyjne mają od Etapu 35 własne endpointy
+administratora: [10. Panel administratora](10-panel-administratora.md). **Pytań** (dodawanie, edycja, import) nadal nie ma w
+API: **treść wczytuje się skryptami SQL** (katalog `baza/`, szablon importu `04-import-szablon.sql`; opis w
 [05. Konfiguracja i uruchomienie](../05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)). Administrator
-ma w API tylko dwie rzeczy: **ukrywanie pytań** (poniżej) i [ustawianie terminów egzaminów](09-ustawienia.md#put-apiexam-termstrackid).
-Rozpatrywanie zgłoszeń błędów też odbywa się zapytaniami SQL.
+ma w API dla pytań **ukrywanie** (poniżej), [oznaczenia](#oznaczenia-pytań-apiadminquestion-marks) i
+[ustawianie terminów egzaminów](09-ustawienia.md#put-apiexam-termstrackid). Rozpatrywanie zgłoszeń błędów odbywa się
+zapytaniami SQL.
 
 Oba endpointy ukrywania wymagają roli **ADMIN** (zwykły użytkownik dostaje `403`). Wymagają tokenu jak cała aplikacja.
 

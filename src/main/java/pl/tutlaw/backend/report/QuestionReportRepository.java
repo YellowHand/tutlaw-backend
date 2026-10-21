@@ -16,6 +16,9 @@ public interface QuestionReportRepository extends JpaRepository<QuestionReport, 
     /** Ile zgłoszeń użytkownik wysłał od podanej chwili (do dziennego limitu). */
     long countByUserIdAndCreatedAtAfter(Long userId, LocalDateTime since);
 
+    /** Ile jest zgłoszeń w danym stanie (np. nowych, do rozpatrzenia); przegląd w panelu administratora. */
+    long countByStatus(QuestionReportStatus status);
+
     /** Zgłoszenia użytkownika wraz z treścią pytania, do eksportu jego danych. */
     @Query("""
             SELECT r.question.id AS questionId, r.question.body AS questionBody, r.reason AS reason, r.comment AS comment,

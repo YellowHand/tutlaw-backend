@@ -6,7 +6,7 @@ Baza to **PostgreSQL 16**. Schemat tworzą wyłącznie migracje **Flyway** (`src
 uruchamiane automatycznie przy starcie aplikacji. Hibernate tylko sprawdza zgodność (`ddl-auto: validate`), niczego nie
 tworzy i nie zmienia.
 
-Są cztery migracje po schemacie bazowym (łącznie pięć):
+Jest pięć migracji po schemacie bazowym (łącznie sześć):
 
 - `V1__init_schema.sql` — **cały schemat** (23 tabele; `V3` dodaje 24., `V4` 25., `V5` 26. i 27., ograniczenia, indeksy). To nowa baza startowa (*baseline*): zastąpiła
   dawne migracje V1–V25, a wraz z nią zniknął stary model (kategorie, przedmioty, podręczniki, rozdziały, karty, tagi).
@@ -21,6 +21,8 @@ Są cztery migracje po schemacie bazowym (łącznie pięć):
   własnego testu `TIME_LIMIT` i `TRAPS`, **odpowiedzi z egzaminów próbnych** (tabela `exam_attempt_answers`, kolumny
   `exam_attempts.excluded_count` i `has_answers`). Niczego nie zmienia w istniejących danych: nowe tabele są puste, a starsze
   podejścia do egzaminu mają `has_answers = false` (zostają na liście tylko z wynikiem).
+- `V6__hide_acts_and_sheets.sql` — **ukrywanie aktów i arkuszy** (kolumna `hidden` w `legal_acts` i `question_sources`,
+  domyślnie `false`). Niczego nie zmienia w istniejących danych: nic nie jest ukryte.
 
 Akty prawne, listy aktów ścieżek, przedmioty studenta, arkusze i pytania **nie są migracją**: wczytuje się je skryptami
 SQL z katalogu `baza/` (patrz [05](05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)).
@@ -134,6 +136,7 @@ opłaty, Student oraz Pozostałe. Prawa cywilnego nie rozdzielono na materialne 
 | `slug` | varchar(100), unikalny | |
 | `kind` | varchar(10), domyślnie `ACT` | `ACT` (akt prawny) albo `TOPIC` (zagadnienie). CHECK `chk_legal_acts_kind` |
 | `sort_order` | int ≥ 0, domyślnie 100 | Kolejność w dziedzinie. CHECK `chk_legal_acts_sort_order` |
+| `hidden` | boolean, domyślnie `false` (od V6) | Ukryty akt znika wszystkim użytkownikom (pula, kreator, liczniki, egzamin); pytania i historia zostają. Akt z pytaniami nie jest usuwany, tylko ukrywany (panel administratora) |
 
 ### `act_sections` — rozdziały aktów (od V4)
 
@@ -185,7 +188,7 @@ z pytań arkuszy).
 | `sort_order` | int ≥ 0, domyślnie 100 | CHECK `chk_courses_sort_order` |
 
 Przedmiot nie ma własnych pytań: to lista aktów (`course_acts`). **Administrator tworzy przedmioty i przypisuje do nich akty
-skryptem SQL** (przykłady w katalogu `baza/` i niżej w „Przydatnych zapytaniach”); aplikacja nie ma panelu do tego. Student
+w panelu** ([API](api/10-panel-administratora.md#przedmioty-studenta)) albo skryptem SQL (przykłady w katalogu `baza/`). Student
 wybiera przedmioty (`user_courses`), a jego pulą są wszystkie pytania aktów wybranych przedmiotów. Ten sam akt może należeć
 do kilku przedmiotów (np. Kodeks karny w „Prawie karnym” i w „Prawie karnym materialnym”): jego pytania wchodzą do puli raz.
 Przedmiot bez aktów albo bez pytań jest w aplikacji pomijany. **Płatne i darmowe przedmioty to przyszła funkcja** (nie ma
@@ -201,6 +204,7 @@ jej w schemacie ani w kodzie; patrz [07](07-znane-ograniczenia.md)).
 | `name` | varchar(255) | Nazwa pokazywana użytkownikowi: skrót ścieżki i rok („Notarialna 2024”) albo „Pytania autorskie” |
 | `track_id` | FK → `tracks`, opcjonalny | Ścieżka arkusza; **tylko** dla `EXAM_SHEET`. Indeks `idx_question_sources_track` |
 | `exam_year` | int, opcjonalny | Rok egzaminu (1990–2100); **tylko** dla `EXAM_SHEET` |
+| `hidden` | boolean, domyślnie `false` (od V6) | Ukryty arkusz znika wszystkim użytkownikom (pula, statystyki źródeł, Egzaminy MS); pytania i historia zostają. Arkusz z pytaniami nie jest usuwany, tylko ukrywany |
 
 CHECK `chk_question_sources_shape` łączy to w jedną regułę: arkusz ma ścieżkę i rok, pytania autorskie nie mają żadnego z
 nich. Indeks unikalny `uq_question_sources_sheet` pilnuje jednego arkusza na ścieżkę i rok. „Własne arkusze” użytkownika
@@ -495,8 +499,10 @@ użytkownika: [04](04-nauka-testy-fiszki-fsrs.md#fiszki-z-pytań-i-odblokowywani
 | **Akt prawny** | Jego wpisy w `track_acts`, `course_acts` i `user_pool_acts`. Baza odmówi, dopóki akt ma pytania |
 | **Przedmiot** | Jego wpisy w `course_acts` i `user_courses` |
 
-Dziedziny i źródła nie mają kaskady: baza odmówi usunięcia, dopóki coś do nich należy. Aplikacja nie ma zresztą
-endpointów do usuwania treści (tylko ukrywanie pytań).
+Dziedziny i źródła nie mają kaskady: baza odmówi usunięcia, dopóki coś do nich należy. Panel administratora usuwa tylko to,
+co jest puste (akt bez pytań, arkusz bez pytań, rozdział bez pytań, aplikację bez arkuszy, której nikt nie wybrał); resztę
+można tylko **ukryć** (akty i arkusze: kolumna `hidden`). Usunięcie rozdziału zdjęłoby z jego pytań przypisanie
+(`ON DELETE SET NULL`), więc panel go nie wykonuje, dopóki rozdział ma pytania.
 
 ## Indeksy
 
@@ -519,14 +525,15 @@ Poza kluczami głównymi i unikalnymi baza ma indeksy pod najczęstsze zapytania
 | V3 | Zmiany w prawie (`questions.law_changed_at`, `law_change_note`, rodzaj własnego testu `LAW_CHANGE`), przedmioty wybierane przez Studenta (`user_courses`), `custom_test_sessions.course_ids` |
 | V4 | Rozdziały aktów prawnych: tabela `act_sections` (rozdział należy do aktu, nazwa z numerem), `questions.section_id` (NULL = pytanie bez rozdziału), `custom_test_sessions.section_ids`. Migracja nie rusza istniejących danych |
 | V5 | Oznaczenia pytań (`question_marks`), rodzaje własnego testu `TIME_LIMIT` i `TRAPS`, odpowiedzi z egzaminów próbnych (`exam_attempt_answers`, `exam_attempts.excluded_count`, `has_answers`). Migracja nie rusza istniejących danych |
+| V6 | Ukrywanie aktów prawnych i arkuszy: kolumny `legal_acts.hidden` i `question_sources.hidden` (domyślnie `false`). Migracja nie rusza istniejących danych |
 
 Dawne migracje V1–V25 (model kategorii, przedmiotów, podręczników i kart) zostały zastąpione i **nie ma ścieżki
 przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje skryptami z katalogu `baza/`.
 
 ## Przydatne zapytania SQL (ręczna administracja)
 
-Aplikacja nie ma panelu administratora, więc część czynności robi się w bazie (np. przez `psql`). Poniższe zapytania
-pasują do schematu z migracji V1–V5. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
+Panel administratora (Etap 35) obsługuje aplikacje, przedmioty, akty z rozdziałami, arkusze i terminy; pytania, role i
+zgłoszenia nadal obsługuje się w bazie (np. przez `psql`). Poniższe zapytania pasują do schematu z migracji V1–V6. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
 pytania, szablon importu, kontrola) są w katalogu `baza/` razem z instrukcją.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się

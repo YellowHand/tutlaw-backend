@@ -25,7 +25,7 @@ flowchart LR
 | Spring Web MVC | w Spring Boot | Kontrolery REST |
 | Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
 | PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta, `V4` rozdziały aktów, `V5` oznaczenia pytań i odpowiedzi z egzaminów), uruchamiane przy starcie |
+| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta, `V4` rozdziały aktów, `V5` oznaczenia pytań i odpowiedzi z egzaminów, `V6` ukrywanie aktów i arkuszy), uruchamiane przy starcie |
 | Spring Security | w Spring Boot | Ochrona endpointów, role |
 | jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
 | Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |
@@ -65,6 +65,7 @@ komplet klas.
 | `statistics` | Statystyki: przegląd, opanowanie aktów, pytania najsłabsze, skuteczność, aktywność, rozbicie wg źródeł, „Podsumowanie nauki” |
 | `studytime` | Czas nauki: porcje sekund zgłaszane przez przeglądarkę i sumy dla każdego dnia |
 | `settings` | Ustawienia nauki (limity dzienne, retencja), wybór ścieżki, ustawienia interfejsu (ukrycie podpowiedzi skrótów i licznika czasu), motyw, terminy egzaminów ścieżek (ustawia admin) |
+| `admin` | **Panel administratora** (`/api/admin/**`, tylko rola `ADMIN`): aplikacje, przedmioty Studenta, akty prawne z rozdziałami i przypisaniami, arkusze egzaminacyjne, ukrywanie aktów i arkuszy; przegląd. Oznaczenia pytań są w pakiecie `mark`, terminy egzaminów w `settings` |
 | `common` | Elementy wspólne: stronicowanie, sortowanie po polsku, wyjątki, konfiguracja |
 | `common.config` | Konfiguracja Springa: bezpieczeństwo, CORS, hasła, zegar |
 | `common.exception` | Wyjątki i jedno miejsce zamieniające je na odpowiedzi HTTP |
@@ -198,8 +199,8 @@ Jeśli to samo pytanie dostanie odpowiedź w tym samym trybie w ciągu **1 sekun
 
 ## Testy
 
-W `src/test` jest **60 klas testowych** (ok. 735 testów) i 4 klasy pomocnicze (`testsupport`: zegar do sterowania
-czasem, „fałszywe” repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy jednostkowe
+W `src/test` jest **67 klas testowych** (ok. 800 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
+czasem, „fałszywe” repozytoria i repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy jednostkowe
 czystej logiki (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`, `SourceFilterTest`…) oraz serwisów na repozytoriach w
 pamięci (np. `AuthFlowTest` przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez
 Dockera, a `PoolServiceTest` sprawdza regułę puli pytań).
@@ -211,10 +212,11 @@ prawdziwą bazą PostgreSQL i uruchamia migracje, więc wymaga działającej baz
 Czego testy **nie** sprawdzają: zapytań JPQL i SQL wykonanych na prawdziwej bazie. W zamian pakiet `mapping` zawiera
 **testy statyczne**, które bez Springa i bez bazy odtwarzają to, co przy starcie sprawdza Hibernate:
 
-- `EntityMappingTest` czyta schemat z migracji `V1`–`V5` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
+- `EntityMappingTest` czyta schemat z migracji `V1`–`V6` i sprawdza, czy każda encja ma swoją tabelę, kolumny i
   zgodne typy, długości oraz ograniczenia `CHECK`;
 - `RepositoryQueryTest` sprawdza zapytania repozytoriów (sklejone słowa kluczowe, parametry bez `@Param`,
   nieistniejące pola encji, aliasy projekcji);
+- `HiddenVisibilityTest` pilnuje, żeby każde zapytanie składające pulę pomijało ukryte akty i arkusze;
 - `SourceGuardsTest` pilnuje reguł widocznych tylko w tekście źródeł (np. enum zapisany jako tekst nie może trafić do
   kolumny jednoznakowej).
 

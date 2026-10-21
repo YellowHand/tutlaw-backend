@@ -116,6 +116,14 @@ class EntityMappingTest {
                 .containsKeys("attempt_id", "question_id", "position", "selected_option");
     }
 
+    @Test
+    void theRealSchemaIncludesTheHiddenFlagsAddedForActsAndSheets() {
+        assertThat(schema.get("legal_acts").columns().get("hidden").notNull()).isTrue();
+        assertThat(schema.get("legal_acts").columns().get("hidden").hasDefault()).isTrue();
+        assertThat(schema.get("question_sources").columns().get("hidden").notNull()).isTrue();
+        assertThat(schema.get("question_sources").columns().get("hidden").hasDefault()).isTrue();
+    }
+
     // ---------------------------------------------------------------- tabele i kolumny
 
     @Test
