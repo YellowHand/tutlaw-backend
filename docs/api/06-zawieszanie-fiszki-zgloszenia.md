@@ -108,6 +108,5 @@ Możliwe wartości `status`:
   nagłówkiem `Retry-After`.
 - `400` przy braku powodu albo zbyt długim komentarzu (pole w żądaniu ma twardy limit 4000 znaków, reguła aplikacji
   1000 znaków).
-- **Rozpatrywanie zgłoszeń odbywa się poza aplikacją** (zapytaniem SQL, patrz
-  [02](../02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja)). Aplikacja nie pokazuje użytkownikowi
-  statusu jego zgłoszeń.
+- **Zgłoszenia rozpatruje administrator w panelu** ([10](10-panel-administratora.md#zgłoszenia-błędów), ekran
+  `/admin/zgloszenia`). Aplikacja nie pokazuje użytkownikowi statusu jego zgłoszeń.

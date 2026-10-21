@@ -549,7 +549,7 @@ administratora fałszywymi trafieniami:
 Obsługa: `POST /api/admin/question-marks/analyze` (uruchom automat), `GET /api/admin/question-marks` (kolejka propozycji),
 `POST /api/admin/question-marks/bulk` (np. zatwierdź wszystkie), `PUT /api/admin/question-marks/questions/{id}/{mark}` (jedna
 decyzja), `GET /api/admin/question-marks/summary` (liczby); opis w [api/04](api/04-pytania-admin.md#oznaczenia-pytań-apiadminquestion-marks).
-Oznaczenia można też wczytać skryptem SQL `baza/09-oznaczenia.sql` (ekran do ich przeglądania będzie w kolejnym etapie panelu).
+Oznaczenia można też wczytać skryptem SQL `baza/09-oznaczenia.sql` (ekran do ich przeglądania jest w panelu administratora: `/admin/oznaczenia`).
 
 Przy każdym pytaniu, które ma zapisaną zmianę, aplikacja pokazuje plakietkę **„Zmiana w prawie: data”** z opisem
 (`lawChange` w odpowiedziach API), także po upływie roku (to informacja o treści pytania, a nie o kategorii). Pytania

@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **101 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **111 endpointów REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -174,7 +174,7 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | GET | `/api/exam-terms` | zalogowany | Terminy egzaminów pięciu aplikacji |
 | PUT | `/api/exam-terms/{trackId}` | ADMIN | Ustawienie albo usunięcie terminu egzaminu aplikacji |
 
-### Panel administratora: aplikacje, przedmioty, akty, rozdziały, arkusze — [10-panel-administratora.md](10-panel-administratora.md)
+### Panel administratora: aplikacje, przedmioty, akty, rozdziały, arkusze, pytania, zgłoszenia, import — [10-panel-administratora.md](10-panel-administratora.md)
 
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
@@ -209,6 +209,16 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 | PUT | `/api/admin/sheets/{id}` | ADMIN | Zmiana roku i nazwy arkusza |
 | PUT | `/api/admin/sheets/{id}/hidden` | ADMIN | Ukrycie / przywrócenie arkusza wszystkim użytkownikom |
 | DELETE | `/api/admin/sheets/{id}` | ADMIN | Usunięcie arkusza bez pytań |
+| GET | `/api/admin/questions` | ADMIN | Pytania stronami: wyszukiwarka i filtry (także ukryte, bez rozdziału, zgłoszone, z oznaczeniem) |
+| GET | `/api/admin/questions/sources` | ADMIN | Źródła pytań (autorskie i arkusze, także ukryte) do list wyboru |
+| GET | `/api/admin/questions/{id}` | ADMIN | Jedno pytanie z oznaczeniami i liczbą otwartych zgłoszeń |
+| POST | `/api/admin/questions` | ADMIN | Nowe pytanie |
+| PUT | `/api/admin/questions/{id}` | ADMIN | Zmiana pytania (treść, akt, źródło, rozdział, zmiana w prawie) |
+| GET | `/api/admin/reports` | ADMIN | Zgłoszenia błędów w pytaniach stronami (stan, powód) |
+| GET | `/api/admin/reports/summary` | ADMIN | Ile zgłoszeń jest otwartych, poprawionych i odrzuconych |
+| PUT | `/api/admin/reports/{id}` | ADMIN | Rozpatrzenie jednego zgłoszenia (albo ponowne otwarcie) |
+| PUT | `/api/admin/reports/questions/{questionId}` | ADMIN | Rozpatrzenie wszystkich otwartych zgłoszeń jednego pytania |
+| POST | `/api/admin/import/questions` | ADMIN | Import pytań z CSV albo JSON: podgląd z raportem i zapis |
 
 ### Poza `/api`
 

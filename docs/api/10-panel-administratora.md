@@ -1,16 +1,17 @@
-# API: panel administratora (aplikacje, przedmioty, akty, rozdziały, arkusze)
+# API: panel administratora (aplikacje, przedmioty, akty, rozdziały, arkusze, pytania, zgłoszenia, import)
 
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
-Endpointy panelu administratora (od Etapu 35). Wszystkie wymagają roli **ADMIN**: zwykły użytkownik dostaje `403`, a cała
-ścieżka `/api/admin/**` jest dodatkowo zastrzeżona w konfiguracji zabezpieczeń. Zmiany są natychmiastowe i dotyczą wszystkich
-użytkowników, więc po zmianie lista aktów, przedmiotów albo arkuszy w aplikacji odświeży się przy następnym wczytaniu.
+Endpointy panelu administratora (od Etapu 35; pytania, zgłoszenia i import od Etapu 36). Wszystkie wymagają roli **ADMIN**:
+zwykły użytkownik dostaje `403`, a cała ścieżka `/api/admin/**` jest dodatkowo zastrzeżona w konfiguracji zabezpieczeń. Zmiany
+są natychmiastowe i dotyczą wszystkich użytkowników, więc po zmianie lista aktów, przedmiotów albo arkuszy w aplikacji odświeży
+się przy następnym wczytaniu.
 
-Czego tu **nie ma**: dodawania, edycji i wczytywania **pytań** (lista, wyszukiwarka, edycja, import z CSV i JSON, kolejka
-oznaczeń, obsługa zgłoszeń) to osobny etap panelu. Pytania nadal wczytuje się skryptami SQL (katalog `baza/`), a oznaczenia
-pytań obsługuje [04. Pytania (administrator)](04-pytania-admin.md#oznaczenia-pytań-apiadminquestion-marks). Terminy egzaminów
-ustawia się istniejącym [`PUT /api/exam-terms/{trackId}`](09-ustawienia.md#put-apiexam-termstrackid) (panel korzysta z niego,
-nie ma drugiego adresu).
+Gdzie jest reszta: **oznaczenia pytań** (kolejka propozycji, zatwierdzanie) opisuje
+[04. Pytania (administrator)](04-pytania-admin.md#oznaczenia-pytań-apiadminquestion-marks), **ukrywanie** pytania i jego fiszki
+też ([`PUT /api/questions/{id}/hidden`](04-pytania-admin.md)), a terminy egzaminów ustawia istniejący
+[`PUT /api/exam-terms/{trackId}`](09-ustawienia.md#put-apiexam-termstrackid) (panel korzysta z niego, nie ma drugiego adresu).
+Pytań **nie da się usunąć**, tylko ukryć (historia odpowiedzi użytkowników zostaje).
 
 ## Zasady wspólne
 
@@ -132,8 +133,8 @@ przedmiotów).
 
 ### `GET /api/admin/acts/options`
 
-Wszystkie akty (także ukryte) w lekkiej postaci do list wyboru: `[ { "id", "name", "shortName", "fieldId", "fieldName",
-"kind", "hidden" } ]`, w tej samej kolejności co lista.
+Wszystkie akty (także ukryte) w lekkiej postaci do list wyboru: `[ { "id", "slug", "name", "shortName", "fieldId",
+"fieldName", "kind", "hidden" } ]`, w tej samej kolejności co lista.
 
 ### `GET /api/admin/acts/{id}`
 
@@ -246,3 +247,141 @@ użytkowników).
 ### `DELETE /api/admin/sheets/{id}`
 
 Usuwa arkusz **bez pytań**. Arkusz, który ma pytania (także ukryte): `409`, wtedy trzeba go ukryć.
+
+## Pytania
+
+Pytanie ma akt prawny (wymagany), źródło (arkusz albo „Pytania autorskie”, wymagane) i opcjonalny rozdział, który musi należeć
+do wybranego aktu. Treść sprawdzają te same reguły przy ręcznym zapisie i przy imporcie: treść i trzy odpowiedzi są wymagane,
+odpowiedzi muszą się różnić (bez względu na wielkość liter i odstępy), poprawna to `A`, `B` albo `C`, podstawa prawna i opis
+zmiany w prawie mają najwyżej 500 znaków, a opis zmiany wymaga daty zmiany. To samo pytanie (z dokładnością do odstępów i
+wielkości liter) nie może się powtórzyć **w tym samym źródle** (`409`); w innym źródle może.
+
+Zmiana treści **nie przelicza oznaczeń**: automat dopisze nowe propozycje przy kolejnym uruchomieniu
+(`POST /api/admin/question-marks/analyze`), a decyzje już podjęte zostają. Zmiana akt/źródło/rozdział natychmiast zmienia pulę
+użytkowników. Data zmiany w prawie (`lawChangedAt`) działa jak w skrypcie SQL: pytanie wraca do nauki w swoim dniu.
+
+### `GET /api/admin/questions`
+
+Pytania **także ukryte**, od najnowszego numeru, stronami (`page` od 0, `size` do 200, domyślnie 50). Filtry (puste = bez ograniczenia):
+
+| Parametr | Znaczenie |
+|----------|-----------|
+| `query` | Szuka w treści, odpowiedziach i podstawie prawnej (bez względu na wielkość liter); sam numer (`123` albo `#123`) znajduje też pytanie o tym numerze |
+| `actId`, `sectionId`, `sourceId` | Akt, rozdział, źródło |
+| `withoutSection=true` | Tylko pytania bez rozdziału |
+| `hidden=true/false` | Tylko ukryte albo tylko widoczne |
+| `reported=true` | Tylko pytania z otwartym zgłoszeniem błędu |
+| `mark`, `markStatus` | Pytania z oznaczeniem (`TIME_LIMIT`, `TRAP_NEGATION`, …) w stanie `SUGGESTED`, `CONFIRMED` (domyślnie) albo `REJECTED` |
+
+Wyszukiwanie porównuje małe litery bazy danych, nie ignoruje polskich znaków (wpisanie „zadatek” nie znajdzie „zadątek”).
+
+```json
+{ "items": [ { "id": 812, "actId": 3, "actName": "Kodeks cywilny", "actShortName": "KC",
+    "sectionId": null, "sectionName": null, "sourceId": 7, "sourceName": "Notarialna 2024",
+    "body": "Kto jest właścicielem rzeczy znalezionej?", "optionA": "…", "optionB": "…", "optionC": "…",
+    "correctOption": "B", "explanation": null, "legalBasis": "art. 187 KC", "validAsOf": null,
+    "lawChangedAt": null, "lawChangeNote": null, "hidden": false, "flashcardHidden": false,
+    "createdAt": "2026-10-21T10:15:00", "openReports": 1,
+    "marks": [ { "mark": "TRAP_NEGATION", "status": "SUGGESTED" } ] } ],
+  "page": 0, "size": 20, "totalElements": 4210, "totalPages": 211 }
+```
+
+### `GET /api/admin/questions/sources`
+
+Źródła pytań do list wyboru: najpierw „Pytania autorskie”, potem arkusze od najnowszego roku, **także ukryte** (`hidden`).
+
+```json
+[ { "id": 1, "slug": "autorskie", "name": "Pytania autorskie", "kind": "AUTHORED", "hidden": false },
+  { "id": 9, "slug": "notarialna-2025", "name": "Notarialna 2025", "kind": "EXAM_SHEET", "hidden": false } ]
+```
+
+### `GET /api/admin/questions/{id}`
+
+Jedno pytanie w tej samej postaci. Nieznany numer: `404`.
+
+### `POST /api/admin/questions`, `PUT /api/admin/questions/{id}`
+
+```json
+{ "actId": 3, "sectionId": null, "sourceId": 7, "body": "…", "optionA": "…", "optionB": "…", "optionC": "…",
+  "correctOption": "B", "explanation": "…", "legalBasis": "art. 187 KC", "validAsOf": null,
+  "lawChangedAt": "2026-10-01", "lawChangeNote": "nowelizacja" }
+```
+
+`POST` zwraca `201` z zapisanym pytaniem, `PUT` zmienia pytanie w miejscu (ukrycie pytania i jego fiszki zostaje takie, jakie
+było). Błąd treści albo odwołania (nieznany akt, źródło, rozdział; rozdział z innego aktu): `400` z opisem po polsku.
+Powtórzenie w źródle: `409`. `PUT` dla nieznanego numeru: `404`.
+
+## Zgłoszenia błędów
+
+Zgłoszenia wysyłają użytkownicy ([zgłaszanie błędu w pytaniu](06-zawieszanie-fiszki-zgloszenia.md)). Administrator
+widzi treść zgłoszenia i pytania, **nie widzi, kto zgłosił**. Rozpatrzenie zapisuje chwilę (`resolvedAt`); ponowne otwarcie ją czyści.
+
+### `GET /api/admin/reports`
+
+Zgłoszenia w stanie `status` (`NEW` domyślnie, `RESOLVED`, `REJECTED`), opcjonalnie z jednym powodem `reason`
+(`WRONG_ANSWER`, `OUTDATED`, `UNCLEAR`, `OTHER`), od najnowszego, stronami jak lista pytań.
+
+```json
+{ "items": [ { "id": 41, "questionId": 812, "questionBody": "…", "optionA": "…", "optionB": "…", "optionC": "…",
+    "correctOption": "B", "questionHidden": false, "reason": "WRONG_ANSWER", "comment": "Powinno być A",
+    "status": "NEW", "createdAt": "2026-10-20T18:02:11", "resolvedAt": null, "openForQuestion": 2 } ],
+  "page": 0, "size": 20, "totalElements": 1, "totalPages": 1 }
+```
+
+`openForQuestion` to liczba otwartych zgłoszeń tego samego pytania (kilka osób zgłasza ten sam błąd).
+
+### `GET /api/admin/reports/summary`
+
+`{ "open": 3, "resolved": 41, "rejected": 7 }`.
+
+### `PUT /api/admin/reports/{id}`
+
+`{ "status": "RESOLVED" }` (poprawiono), `"REJECTED"` (odrzucono) albo `"NEW"` (otwórz ponownie). Zwraca zgłoszenie. Ponowne
+otwarcie, gdy ten sam użytkownik ma już otwarte zgłoszenie tego pytania (baza dopuszcza jedno): `409`. Nieznany numer: `404`.
+
+### `PUT /api/admin/reports/questions/{questionId}`
+
+Rozpatruje **wszystkie otwarte** zgłoszenia jednego pytania naraz (zwykle po jego poprawieniu): `{ "status": "RESOLVED" }` albo
+`"REJECTED"` (`NEW` to `400`). Zwraca `{ "updated": 2 }` (zero, gdy nic nie czekało). Nieznane pytanie: `404`.
+
+## Import pytań z CSV i JSON
+
+### `POST /api/admin/import/questions`
+
+```json
+{ "format": "CSV", "content": "akt;zrodlo;tresc;a;b;c;poprawna\nkc;Notarialna 2025;Kto…?;…", "dryRun": true,
+  "defaultAct": null, "defaultSource": null }
+```
+
+`content` to **tekst pliku** (do 4 MB, najwyżej 5000 pytań w jednym pliku). `dryRun` jest domyślnie prawdą: wtedy tylko
+sprawdza plik i zwraca raport, **niczego nie zapisując**. `dryRun: false` zapisuje wszystkie poprawne pytania **w jednej
+transakcji, ale tylko wtedy, gdy w pliku nie ma żadnego błędu** (wszystko albo nic). Powtórzenia (pytanie już jest w źródle
+albo wystąpiło wcześniej w pliku) nie są błędem: są pomijane z komunikatem, więc ten sam plik można wczytać ponownie.
+`defaultAct` i `defaultSource` (adres albo nazwa) uzupełniają wiersze bez tych pól; wartość z wiersza ma pierwszeństwo.
+
+**CSV.** Pierwszy wiersz to nagłówek. Separator (średnik, przecinek, tabulator) rozpoznawany sam; pola z separatorem, cudzysłowem
+albo nową linią ujmuje się w cudzysłów (`""` to cudzysłów). Nazwy kolumn bez względu na wielkość liter, polskie znaki i
+odstępy; są polskie i angielskie: `akt` (`act`), `zrodlo` (`arkusz`, `source`), `tresc` (`pytanie`, `body`), `a`, `b`, `c`
+(`odpowiedź A`, `optionA`), `poprawna` (`correct`), `wyjasnienie`, `podstawa` (`podstawa prawna`, `legalBasis`), `rozdzial`,
+`obowiazuje od`, `zmiana w prawie` (`lawChangedAt`), `opis zmiany`. Wymagane kolumny: treść, A, B, C, poprawna. Nieznane
+kolumny są pomijane (raport je wymienia). Numer wiersza w raporcie to numer wiersza w arkuszu (nagłówek to wiersz 1).
+
+**JSON.** Lista obiektów albo obiekt z listą `questions` (`pytania`) i opcjonalnymi `akt`, `zrodlo` dla całej listy. Pola jak w
+CSV; odpowiedzi jako `a`, `b`, `c` albo lista `options` z trzema elementami. Numer wiersza w raporcie to numer pozycji.
+
+**Rozpoznawanie.** *Akt*: adres (`slug`) albo nazwa/skrót (niejednoznaczna nazwa to błąd). *Źródło*: adres, nazwa, `autorskie`
+albo zapis „Aplikacja rok” (np. `Notarialna 2025`, `notarialna-2025`); gdy aplikacja jest, a arkusza z tego roku jeszcze nie ma,
+**zostaje założony przy zapisie** (jak `pg_temp.arkusz` w skryptach SQL; podgląd tylko go zapowiada). *Rozdział*: nazwa rozdziału
+tego aktu; nieznana nazwa to błąd. *Poprawna*: `A`, `B`, `C` (małe litery i końcowa kropka albo nawias dozwolone). *Daty*:
+`RRRR-MM-DD` albo `D.M.RRRR`.
+
+```json
+{ "dryRun": true, "saved": false, "total": 120, "ok": 117, "duplicates": 2, "errors": 1, "created": 0,
+  "newSheets": ["Notarialna 2025"], "ignoredColumns": ["kolor"],
+  "rows": [ { "row": 14, "status": "ERROR", "message": "Nie ma aktu prawnego „kc2”. …", "preview": "Kto jest właścicielem…" },
+            { "row": 15, "status": "DUPLICATE", "message": "Takie pytanie jest już w tym źródle (numer 77). Pominięto.", "preview": "…" } ],
+  "rowsTruncated": false }
+```
+
+`rows` ma najwyżej 500 pozycji (błędy mają pierwszeństwo, `rowsTruncated` mówi o skróceniu); liczniki dotyczą całego pliku.
+Błąd budowy pliku (zepsuty JSON, brak wymaganych kolumn, niezamknięty cudzysłów, za dużo wierszy): `400` z opisem miejsca.

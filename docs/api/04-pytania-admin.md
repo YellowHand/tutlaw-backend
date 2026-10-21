@@ -3,12 +3,12 @@
 [← Przegląd API](README.md) · [Spis treści](../README.md)
 
 Aplikacje, przedmioty Studenta, akty prawne z rozdziałami i arkusze egzaminacyjne mają od Etapu 35 własne endpointy
-administratora: [10. Panel administratora](10-panel-administratora.md). **Pytań** (dodawanie, edycja, import) nadal nie ma w
-API: **treść wczytuje się skryptami SQL** (katalog `baza/`, szablon importu `04-import-szablon.sql`; opis w
-[05. Konfiguracja i uruchomienie](../05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)). Administrator
-ma w API dla pytań **ukrywanie** (poniżej), [oznaczenia](#oznaczenia-pytań-apiadminquestion-marks) i
-[ustawianie terminów egzaminów](09-ustawienia.md#put-apiexam-termstrackid). Rozpatrywanie zgłoszeń błędów odbywa się
-zapytaniami SQL.
+administratora: [10. Panel administratora](10-panel-administratora.md). Od Etapu 36 są tam też **pytania** (lista z
+wyszukiwarką, dodawanie, edycja), **zgłoszenia błędów** i **import z CSV i JSON**. Treść można nadal wczytywać skryptami SQL
+(katalog `baza/`, szablon `04-import-szablon.sql`; opis w
+[05. Konfiguracja i uruchomienie](../05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)), ale nie trzeba.
+Ten plik opisuje **ukrywanie** pytań (poniżej), [oznaczenia](#oznaczenia-pytań-apiadminquestion-marks) i odsyła do
+[ustawiania terminów egzaminów](09-ustawienia.md#put-apiexam-termstrackid).
 
 Oba endpointy ukrywania wymagają roli **ADMIN** (zwykły użytkownik dostaje `403`). Wymagają tokenu jak cała aplikacja.
 
@@ -53,10 +53,8 @@ Odpowiedź i błędy jak wyżej (kształt `{ "id", "hidden", "flashcardHidden" }
 | `hidden = true` | znika | znika | nie liczy się | zostaje |
 | `flashcardHidden = true` | zostaje | znika | tylko fiszki | zostaje |
 
-Poprawianie treści pytania, dodawanie i usuwanie pytań, aktów i arkuszy robi się w bazie (SQL), zgodnie z
-[instrukcją katalogu `baza/`](../05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql). Zgłoszenia błędów
-trafiają do tabeli `question_reports`; zapytania do ich przeglądania są w
-[02. Bazie danych](../02-baza-danych.md#przydatne-zapytania-sql-ręczna-administracja).
+Poprawianie i dodawanie pytań oraz obsługa zgłoszeń błędów mają od Etapu 36 własne endpointy
+([10. Panel administratora](10-panel-administratora.md#pytania)). Pytania nadal się nie usuwa, tylko ukrywa.
 
 ## Oznaczenia pytań (`/api/admin/question-marks`)
 
@@ -86,7 +84,7 @@ Każde oznaczenie ma **pochodzenie** (`origin`: `AUTO` dla propozycji automatu, 
 
 Pytanie ma najwyżej jedno oznaczenie danego rodzaju, więc ponowne uruchomienie automatu **niczego nie nadpisuje**: dodaje
 propozycje tylko dla par pytanie–oznaczenie, których jeszcze nie ma w bazie (także nie tam, gdzie administrator zdecydował).
-Do propozycji nie ma powrotu. Oznaczenia można też wczytać skryptem SQL (`baza/09-oznaczenia.sql`).
+Do propozycji nie ma powrotu. Oznaczenia można też wczytać skryptem SQL (`baza/09-oznaczenia.sql`). Ekran do ich przeglądania jest w panelu (`/admin/oznaczenia`).
 
 ### `GET /api/admin/question-marks/summary`
 

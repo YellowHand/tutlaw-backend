@@ -1,6 +1,6 @@
 package pl.tutlaw.backend.report;
 
-/** Stan zgłoszenia. Rozpatrywanie odbywa się poza aplikacją (zapytaniem SQL), więc zmienia się je ręcznie w bazie. */
+/** Stan zgłoszenia. Rozpatruje je administrator w panelu ({@code /api/admin/reports}). */
 public enum QuestionReportStatus {
     NEW,
     RESOLVED,

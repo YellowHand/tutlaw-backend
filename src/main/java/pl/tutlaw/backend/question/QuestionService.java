@@ -7,8 +7,8 @@ import pl.tutlaw.backend.common.exception.ResourceNotFoundException;
 import pl.tutlaw.backend.question.dto.QuestionVisibilityResponse;
 
 /**
- * Administracyjne ukrywanie pytań. Treść pytań wczytuje się skryptami SQL (katalog baza/), więc serwis nie tworzy
- * ani nie edytuje pytań. Ukryte pytanie nie pojawia się nikomu (testy, fiszki, liczniki, egzamin), a historia
+ * Administracyjne ukrywanie pytań. Dodawanie i edycję pytań obsługuje {@code AdminQuestionService} (pakiet admin), a pytań
+ * się nie usuwa, tylko ukrywa. Ukryte pytanie nie pojawia się nikomu (testy, fiszki, liczniki, egzamin), a historia
  * odpowiedzi zostaje; ukryta fiszka zostawia pytanie w testach.
  */
 @Service

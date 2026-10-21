@@ -26,6 +26,10 @@ public interface QuestionMarkRepository extends JpaRepository<QuestionMark, Long
             """)
     List<Long> findConfirmedQuestionIds(@Param("marks") Collection<QuestionMarkType> marks);
 
+    /** Wszystkie oznaczenia podanych pytań, niezależnie od stanu (widok pytań w panelu administratora). */
+    @Query("SELECT m FROM QuestionMark m WHERE m.questionId IN :questionIds ORDER BY m.questionId, m.mark")
+    List<QuestionMark> findAllByQuestionIds(@Param("questionIds") Collection<Long> questionIds);
+
     Optional<QuestionMark> findByQuestionIdAndMark(Long questionId, QuestionMarkType mark);
 
     /** Wszystkie istniejące pary (pytanie, oznaczenie), niezależnie od stanu: automat ich nie powtarza. */

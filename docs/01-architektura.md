@@ -65,7 +65,7 @@ komplet klas.
 | `statistics` | Statystyki: przegląd, opanowanie aktów, pytania najsłabsze, skuteczność, aktywność, rozbicie wg źródeł, „Podsumowanie nauki” |
 | `studytime` | Czas nauki: porcje sekund zgłaszane przez przeglądarkę i sumy dla każdego dnia |
 | `settings` | Ustawienia nauki (limity dzienne, retencja), wybór ścieżki, ustawienia interfejsu (ukrycie podpowiedzi skrótów i licznika czasu), motyw, terminy egzaminów ścieżek (ustawia admin) |
-| `admin` | **Panel administratora** (`/api/admin/**`, tylko rola `ADMIN`): aplikacje, przedmioty Studenta, akty prawne z rozdziałami i przypisaniami, arkusze egzaminacyjne, ukrywanie aktów i arkuszy; przegląd. Oznaczenia pytań są w pakiecie `mark`, terminy egzaminów w `settings` |
+| `admin` | **Panel administratora** (`/api/admin/**`, tylko rola `ADMIN`): aplikacje, przedmioty Studenta, akty prawne z rozdziałami i przypisaniami, arkusze egzaminacyjne, ukrywanie aktów i arkuszy, pytania (lista, edycja), zgłoszenia błędów, import pytań z CSV i JSON; przegląd. Oznaczenia pytań są w pakiecie `mark`, terminy egzaminów w `settings` |
 | `common` | Elementy wspólne: stronicowanie, sortowanie po polsku, wyjątki, konfiguracja |
 | `common.config` | Konfiguracja Springa: bezpieczeństwo, CORS, hasła, zegar |
 | `common.exception` | Wyjątki i jedno miejsce zamieniające je na odpowiedzi HTTP |
@@ -199,7 +199,7 @@ Jeśli to samo pytanie dostanie odpowiedź w tym samym trybie w ciągu **1 sekun
 
 ## Testy
 
-W `src/test` jest **67 klas testowych** (ok. 800 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
+W `src/test` jest **72 klas testowych** (ok. 850 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
 czasem, „fałszywe” repozytoria i repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy jednostkowe
 czystej logiki (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`, `SourceFilterTest`…) oraz serwisów na repozytoriach w
 pamięci (np. `AuthFlowTest` przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez

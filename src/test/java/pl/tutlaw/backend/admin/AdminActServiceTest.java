@@ -219,6 +219,7 @@ class AdminActServiceTest {
 
         assertThat(service.options()).hasSize(4);
         assertThat(service.options().get(0).hidden()).isTrue();
+        assertThat(service.options().get(0).slug()).isEqualTo(acts.get(0).getSlug());
     }
 
     @Test

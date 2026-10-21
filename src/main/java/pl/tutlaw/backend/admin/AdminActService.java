@@ -83,7 +83,7 @@ public class AdminActService {
     @Transactional(readOnly = true)
     public List<AdminActOptionResponse> options() {
         return sortedActs().stream()
-                .map(a -> new AdminActOptionResponse(a.getId(), a.getName(), a.getShortName(),
+                .map(a -> new AdminActOptionResponse(a.getId(), a.getSlug(), a.getName(), a.getShortName(),
                         a.getLegalField().getId(), a.getLegalField().getName(), a.getKind(), a.isHidden()))
                 .toList();
     }

@@ -120,8 +120,9 @@ zmienili.
 ## Wczytywanie treści skryptami SQL
 
 Akty prawne, rozdziały, listy aktów aplikacji, przedmioty Studenta i arkusze można od Etapu 35 prowadzić w **panelu
-administratora** ([API](api/10-panel-administratora.md); ekran pod `/admin` we frontendzie). Nie ma jeszcze edycji ani importu
-**pytań** z pliku CSV lub JSON: pytania wczytuje się **skryptami SQL**; skrypty wczytują też akty, listy i arkusze hurtem. Skrypty są w katalogu `baza/` (poza repozytorium kodu, razem z plikiem
+administratora** ([API](api/10-panel-administratora.md); ekran pod `/admin` we frontendzie), a od Etapu 36 także **pytania**:
+dodawanie, edycję, **import z plików CSV i JSON** (z podglądem przed zapisem), kolejkę oznaczeń i zgłoszenia błędów. Skrypty SQL
+działają dalej i są przydatne do wczytania całego katalogu na świeżej bazie albo do wsadu bez przeglądarki. Skrypty są w katalogu `baza/` (poza repozytorium kodu, razem z plikiem
 `INSTRUKCJA-BAZA.txt`; każdy skrypt jest też jako `.txt` do wklejenia w okno pgAdmin lub DBeaver).
 
 | Plik | Do czego |

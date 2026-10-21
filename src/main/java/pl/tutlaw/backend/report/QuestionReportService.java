@@ -19,7 +19,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
-/** Zgłaszanie błędów w pytaniach przez uczących się. Rozpatrywanie zgłoszeń odbywa się poza aplikacją (SQL). */
+/** Zgłaszanie błędów w pytaniach przez uczących się. Rozpatruje je administrator w panelu ({@code AdminReportService}). */
 @Service
 @RequiredArgsConstructor
 @Slf4j

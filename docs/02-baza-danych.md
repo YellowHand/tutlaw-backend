@@ -532,8 +532,8 @@ przejścia** z dawnej bazy: nową bazę tworzy się od zera, a treść wczytuje 
 
 ## Przydatne zapytania SQL (ręczna administracja)
 
-Panel administratora (Etap 35) obsługuje aplikacje, przedmioty, akty z rozdziałami, arkusze i terminy; pytania, role i
-zgłoszenia nadal obsługuje się w bazie (np. przez `psql`). Poniższe zapytania pasują do schematu z migracji V1–V6. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
+Panel administratora (Etapy 35 i 36) obsługuje aplikacje, przedmioty, akty z rozdziałami, arkusze, terminy, pytania, oznaczenia
+i zgłoszenia błędów; role nadaje się w bazie (np. przez `psql`). Poniższe zapytania pasują do schematu z migracji V1–V6. Pełne skrypty wczytywania treści (czyszczenie, katalog aktów i ścieżek, przykładowe
 pytania, szablon importu, kontrola) są w katalogu `baza/` razem z instrukcją.
 
 **Nadanie roli administratora.** Rola jest zapisana także w tokenie JWT, więc po zmianie użytkownik musi się

@@ -57,11 +57,11 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 
 ### Treści i administracja
 
-- **Panel administratora jest niepełny.** Od Etapu 35 API (i ekran `/admin`) obsługuje aplikacje, przedmioty Studenta,
-  akty prawne z rozdziałami i przypisaniami, arkusze, ukrywanie aktów i arkuszy oraz terminy egzaminów. Nadal **nie ma**
-  dodawania, edycji i importu **pytań**, listy i wyszukiwarki pytań, ekranu do przeglądania oznaczeń (API oznaczeń
-  `/api/admin/question-marks` jest, bez ekranu: Swagger albo `curl`) ani obsługi zgłoszeń błędów (SQL). Role nadaje się w
-  bazie (SQL). API pozwala też ukrywać pojedyncze pytania i fiszki.
+- **Panel administratora nie zarządza użytkownikami ani dziedzinami.** API (i ekran `/admin`) obsługuje aplikacje, przedmioty
+  Studenta, akty prawne z rozdziałami i przypisaniami, arkusze, ukrywanie aktów i arkuszy, terminy egzaminów, pytania (lista,
+  dodawanie, edycja, ukrywanie, import z CSV i JSON), kolejkę oznaczeń i zgłoszenia błędów. Role nadaje się w bazie (SQL).
+  **Pytań nie da się usunąć**, tylko ukryć (historia odpowiedzi zostaje). Wyszukiwarka pytań nie ignoruje polskich znaków
+  (wielkość liter tak), a przy zmianie treści pytania automat oznaczeń trzeba uruchomić ponownie, żeby ocenił nową treść.
 - **Akt i arkusz z pytaniami nie da się usunąć, tylko ukryć** (to ustalone celowo). Rozdział z pytaniami też nie da się
   usunąć. Dziedziny prawa nie mają zarządzania w panelu (jest ich 11, zakłada je migracja `V2`); nowy akt trafia do jednej
   z nich. Panel liczy listy w pamięci (setki aktów to nie problem), więc przy tysiącach aktów wymagałby filtrowania w bazie.
@@ -76,9 +76,11 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 - **Raport zapisanego egzaminu pokazuje dzisiejszą treść pytań.** Zapisana jest tylko odpowiedź użytkownika; po poprawce
   pytania ocena przy nim może się różnić od tej z egzaminu (nagłówek z wynikiem zostaje z chwili egzaminu). Podejścia sprzed
   poprawki 2 mają tylko wynik, bez raportu (`detailsAvailable = false`).
-- **Treść wczytuje się skryptami SQL** (katalog `baza/`, opis w
-  [05](05-konfiguracja-i-uruchomienie.md#wczytywanie-treści-skryptami-sql)). Nie ma importu z pliku CSV ani JSON ani
-  importu zbiorczego przez API; poprawki pytań robi się w bazie.
+- **Import pytań** ([API](api/10-panel-administratora.md#import-pytań-z-csv-i-json)) przyjmuje plik do 4 MB i 5000 pytań naraz,
+  zapisuje wszystko albo nic (jeden błąd w pliku blokuje cały zapis, raport wskazuje wszystkie błędy). Import jest tylko
+  dopisywaniem: nie poprawia pytań już zapisanych (do tego służy edycja) i pomija powtórzenia w tym samym źródle. CSV
+  z polskiego Excela (strona kodowa Windows-1250) ekran rozpoznaje i odczytuje; inne kodowania mogą pokazać krzaczki w podglądzie,
+  zanim cokolwiek zostanie zapisane. Skrypty SQL z katalogu `baza/` nadal działają.
 - **Pytania z `03-pytania-przykladowe.sql` są przykładowe.** Służą do sprawdzenia aplikacji, nie odpowiadają
   prawdziwym egzaminom i przed publikacją wymagają weryfikacji merytorycznej (stan prawny, sformułowania).
 - **Listy aktów ścieżek (`track_acts`) to propozycja startowa.** Trzeba je sprawdzić z aktualnym zakresem każdego
