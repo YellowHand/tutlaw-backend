@@ -4,7 +4,7 @@
 #  - Flyway nie może czyścić bazy.
 # Wygody programisty (lokalna baza, Mailpit, Swagger, sekret testowy) są w application-dev.yml i włączają się jawnie:
 #   SPRING_PROFILES_ACTIVE=dev
-# Opis wszystkich zmiennych: .env.example oraz docs/05-konfiguracja-i-uruchomienie.md.
+# Opis wszystkich zmiennych: .env.stary.example oraz docs/05-konfiguracja-i-uruchomienie.md.
 spring:
   application:
     name: gradus-iuris-backend

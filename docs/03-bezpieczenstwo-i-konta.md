@@ -2,7 +2,8 @@
 
 [← Spis treści](README.md)
 
-Ten plik opisuje, jak działają konta: rejestracja, aktywacja, logowanie, tokeny (dostępu i odświeżające), reset i zmiana hasła, role,
+Ten plik opisuje, jak działają konta: rejestracja, aktywacja, logowanie, tokeny (dostępu i odświeżające), reset i zmiana
+hasła, role,
 limity prób oraz usuwanie konta i eksport danych. Konkretne endpointy z przykładami są w
 [API: konta i logowanie](api/01-auth.md) i [API: konto zalogowanego](api/02-konto.md).
 
@@ -57,8 +58,8 @@ Reguły:
   systemie.
 - **Link aktywacyjny** jest ważny 24 godziny. Ponowne kliknięcie użytego linku na już aktywnym koncie kończy się
   sukcesem (operacja idempotentna). Link użyty, ale konto nieaktywne, albo wygasły daje błąd 409.
-- **Ponowne wysłanie linku** (`/resend-verification`) działa tylko dla nieaktywnych kont i nie częściej niż co
-  **2 minuty** na konto.
+- **Ponowne wysłanie linku** (`/resend-verification`) działa tylko dla nieaktywnych kont i nie częściej niż co **2
+  minuty** na konto.
 - Przy równoległej rejestracji tego samego adresu (dwa żądania naraz) przepuszcza jedno unikalność w bazie; drugie
   dostaje taką samą odpowiedź 200 jak każde istniejące konto.
 
@@ -92,12 +93,12 @@ Ważne szczegóły:
 
 Token tworzy `JwtService` (biblioteka jjwt, podpis HMAC). Zawiera:
 
-| Claim | Znaczenie |
-|-------|-----------|
-| `sub` | Prywatny e-mail użytkownika |
-| `role` | `STUDENT` albo `ADMIN` |
-| `iat` | Kiedy wystawiono (sekundy od 1970) |
-| `exp` | Kiedy wygasa (domyślnie po **30 minutach**: `APP_JWT_EXPIRATION_MS=1800000`) |
+| Claim  | Znaczenie                                                                    |
+|--------|------------------------------------------------------------------------------|
+| `sub`  | Prywatny e-mail użytkownika                                                  |
+| `role` | `STUDENT` albo `ADMIN`                                                       |
+| `iat`  | Kiedy wystawiono (sekundy od 1970)                                           |
+| `exp`  | Kiedy wygasa (domyślnie po **30 minutach**: `APP_JWT_EXPIRATION_MS=1800000`) |
 
 Frontend dołącza token do każdego żądania w nagłówku `Authorization: Bearer <token>`. Backend **nie trzyma sesji**
 (tryb bezstanowy): wszystko, co trzeba, jest w tokenie i w jednym lekkim zapytaniu do bazy.
@@ -147,7 +148,8 @@ Zasady:
   logowanie na jednym urządzeniu, `family_id`).
 - **Tylko skrót w bazie.** Token to 256-bitowa wartość losowa; w tabeli leży jej SHA-256, tak jak przy linkach resetu
   hasła. Wyciek bazy nie daje działających sesji.
-- **Wykrywanie kradzieży.** Użycie tokenu już zużytego **dawniej niż 10 sekund temu** (`RefreshRules.REUSE_GRACE`) oznacza,
+- **Wykrywanie kradzieży.** Użycie tokenu już zużytego **dawniej niż 10 sekund temu** (`RefreshRules.REUSE_GRACE`)
+  oznacza,
   że ktoś ma kopię. Cała rodzina zostaje unieważniona, a użytkownik loguje się ponownie. Do 10 sekund wystawiany jest
   kolejny token tej samej rodziny, bo to zwykle dwie karty przeglądarki odświeżające naraz albo odpowiedź, która zgubiła
   się w drodze.
@@ -158,8 +160,10 @@ Zasady:
 - **Limit.** `refresh` i `logout` mają wspólny limit 300 żądań / 5 min z jednego adresu IP (hojny, bo wiele osób siedzi
   za jednym adresem uczelni).
 
-Frontend trzyma oba tokeny w `localStorage`. Jedno wspólne odświeżenie obsługuje wszystkie równoległe żądania w karcie, a
-między kartami pilnuje tego blokada Web Locks. Zapis w `localStorage` jest wygodny, ale dostępny dla skryptów strony, więc
+Frontend trzyma oba tokeny w `localStorage`. Jedno wspólne odświeżenie obsługuje wszystkie równoległe żądania w karcie,
+a
+między kartami pilnuje tego blokada Web Locks. Zapis w `localStorage` jest wygodny, ale dostępny dla skryptów strony,
+więc
 przy ataku XSS token da się wykraść. Docelowo token odświeżający powinien być w ciasteczku `HttpOnly; Secure; SameSite`,
 niedostępnym dla skryptów; wymaga to zmian w CORS i wdrożeniu (adres frontendu i backendu w jednej domenie), więc
 czeka na etap wdrożenia ([Znane ograniczenia](07-znane-ograniczenia.md)).
@@ -200,19 +204,21 @@ sequenceDiagram
 `PUT /api/users/me/password` wymaga **obecnego hasła** (zabezpieczenie przed zmianą z zostawionej sesji). Nowe hasło
 musi być inne niż obecne. Po zmianie:
 
-- wszystkie dotychczasowe sesje przestają działać (`tokens_valid_from` i unieważnienie tokenów odświeżających), ale odpowiedź zawiera świeżą parę tokenów,
+- wszystkie dotychczasowe sesje przestają działać (`tokens_valid_from` i unieważnienie tokenów odświeżających), ale
+  odpowiedź zawiera świeżą parę tokenów,
 - otwarte linki do resetu hasła są unieważniane,
-- na adres uczelniany idzie powiadomienie „Hasło do Twojego konta w Gradus iuris zostało zmienione” z linkiem do ustawienia
+- na adres uczelniany idzie powiadomienie „Hasło do Twojego konta w Gradus iuris zostało zmienione” z linkiem do
+  ustawienia
   hasła od nowa, gdyby to nie był właściciel.
 
 Zgadywanie obecnego hasła podlega **temu samemu limitowi co logowanie**.
 
 ## Role i uprawnienia
 
-| Rola | Co może |
-|------|---------|
-| `STUDENT` (domyślna) | Uczyć się, rozwiązywać testy i egzaminy, zmieniać ustawienia, zgłaszać błędy, zarządzać własnym kontem |
-| `ADMIN` | Wszystko jak `STUDENT` oraz operacje administratora: ukrycie pytania (`PUT /api/questions/{id}/hidden`), ukrycie samej fiszki (`PUT /api/questions/{id}/flashcard-hidden`), ustawienie terminu egzaminu ścieżki (`PUT /api/exam-terms/{trackId}`) i zarządzanie oznaczeniami pytań (`/api/admin/question-marks/**`). Cała ścieżka `/api/admin/**` jest w `SecurityConfig` zarezerwowana dla roli `ADMIN` (osobna reguła przed „każde inne żądanie wymaga logowania”), a kontroler ma jeszcze `@PreAuthorize`. Treści (akty prawne, pytania) administrator wczytuje skryptami SQL, nie przez API |
+| Rola                 | Co może                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+|----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `STUDENT` (domyślna) | Uczyć się, rozwiązywać testy i egzaminy, zmieniać ustawienia, zgłaszać błędy, zarządzać własnym kontem                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ADMIN`              | Wszystko jak `STUDENT` oraz operacje administratora: ukrycie pytania (`PUT /api/questions/{id}/hidden`), ukrycie samej fiszki (`PUT /api/questions/{id}/flashcard-hidden`), ustawienie terminu egzaminu ścieżki (`PUT /api/exam-terms/{trackId}`) i zarządzanie oznaczeniami pytań (`/api/admin/question-marks/**`). Cała ścieżka `/api/admin/**` jest w `SecurityConfig` zarezerwowana dla roli `ADMIN` (osobna reguła przed „każde inne żądanie wymaga logowania”), a kontroler ma jeszcze `@PreAuthorize`. Treści (akty prawne, pytania) administrator wczytuje skryptami SQL, nie przez API |
 
 Uprawnienia wymusza adnotacja `@PreAuthorize("hasRole('ADMIN')")` na metodach kontrolerów. Zwykły użytkownik
 dostaje wtedy **403**.
@@ -227,29 +233,29 @@ zakończeniu).
 
 ### Co jest publiczne, a co wymaga logowania
 
-| Adres | Dostęp |
-|-------|--------|
-| `/api/auth/**` (rejestracja, aktywacja, logowanie, reset) | publiczny |
-| `/actuator/**`, `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`, `/error` | publiczny |
-| żądania `OPTIONS` (przeglądarkowe sprawdzanie CORS) | publiczny |
-| **wszystko inne** (`anyRequest().authenticated()`) | tylko zalogowani |
+| Adres                                                                             | Dostęp           |
+|-----------------------------------------------------------------------------------|------------------|
+| `/api/auth/**` (rejestracja, aktywacja, logowanie, reset)                         | publiczny        |
+| `/actuator/**`, `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`, `/error` | publiczny        |
+| żądania `OPTIONS` (przeglądarkowe sprawdzanie CORS)                               | publiczny        |
+| **wszystko inne** (`anyRequest().authenticated()`)                                | tylko zalogowani |
 
 CSRF jest wyłączony (API jest bezstanowe i używa tokenu w nagłówku, nie ciasteczek).
 
 ## Limity prób
 
-Limity liczy `AuthRateLimiter` w **pamięci serwera** (przesuwne okno czasowe). Po przekroczeniu serwer odpowiada
-**429** z polskim komunikatem („Zbyt wiele prób. Spróbuj ponownie za 7 min”) i nagłówkiem `Retry-After`.
+Limity liczy `AuthRateLimiter` w **pamięci serwera** (przesuwne okno czasowe). Po przekroczeniu serwer odpowiada **429**
+z polskim komunikatem („Zbyt wiele prób. Spróbuj ponownie za 7 min”) i nagłówkiem `Retry-After`.
 
-| Akcja | Limit | Okno | Klucz |
-|-------|-------|------|-------|
-| Logowanie (wszystkie próby) | 30 | 5 min | adres IP |
-| Nieudane logowania na to samo konto | 8 | 15 min | IP + adres e-mail |
-| Rejestracja | 10 | 1 godz. | adres IP |
-| „Wyślij link ponownie” i „zapomniałem hasła” | 10 | 1 godz. | adres IP (nadmiar = 429) |
-| to samo | 3 | 1 godz. | konto (nadmiar = **cicho** pomijane, odpowiedź 200 bez wysyłki) |
-| Ustawianie nowego hasła z tokenu | 20 | 1 godz. | adres IP |
-| Odświeżenie sesji i wylogowanie (`/api/auth/refresh`, `/api/auth/logout`) | 300 | 5 min | adres IP |
+| Akcja                                                                     | Limit | Okno    | Klucz                                                           |
+|---------------------------------------------------------------------------|-------|---------|-----------------------------------------------------------------|
+| Logowanie (wszystkie próby)                                               | 30    | 5 min   | adres IP                                                        |
+| Nieudane logowania na to samo konto                                       | 8     | 15 min  | IP + adres e-mail                                               |
+| Rejestracja                                                               | 10    | 1 godz. | adres IP                                                        |
+| „Wyślij link ponownie” i „zapomniałem hasła”                              | 10    | 1 godz. | adres IP (nadmiar = 429)                                        |
+| to samo                                                                   | 3     | 1 godz. | konto (nadmiar = **cicho** pomijane, odpowiedź 200 bez wysyłki) |
+| Ustawianie nowego hasła z tokenu                                          | 20    | 1 godz. | adres IP                                                        |
+| Odświeżenie sesji i wylogowanie (`/api/auth/refresh`, `/api/auth/logout`) | 300   | 5 min   | adres IP                                                        |
 
 Dodatkowo nie wysyła się kolejnego maila (aktywacja, reset) częściej niż co **2 minuty** dla konta.
 
@@ -271,14 +277,16 @@ ustawienia nauki (wybrana ścieżka, zawężenie puli do aktów, limity). Dokła
 [API: konto zalogowanego](api/02-konto.md).
 
 **`DELETE /api/users/me`** (z hasłem w treści żądania) usuwa konto **razem z całą historią nauki**. Kasowanie
-powiązanych danych robi sama baza (`ON DELETE CASCADE`, patrz [02](02-baza-danych.md#usuwanie-i-kaskady)). Złe hasło daje 400 i konto zostaje nietknięte.
+powiązanych danych robi sama baza (`ON DELETE CASCADE`, patrz [02](02-baza-danych.md#usuwanie-i-kaskady)). Złe hasło
+daje 400 i konto zostaje nietknięte.
 Znikają też zapisane własne testy, czas nauki i tokeny odświeżające. Po usunięciu zwracane jest `204 No Content`.
 
 ## Co jest zabezpieczone, a co jeszcze nie
 
-Zabezpieczone: hasła (BCrypt), tokeny resetu i odświeżające (skróty), krótko żyjące podpisane tokeny JWT, rotacja tokenów odświeżających z wykrywaniem kradzieży, unieważnianie sesji, jednakowe
+Zabezpieczone: hasła (BCrypt), tokeny resetu i odświeżające (skróty), krótko żyjące podpisane tokeny JWT, rotacja
+tokenów odświeżających z wykrywaniem kradzieży, unieważnianie sesji, jednakowe
 odpowiedzi chroniące przed sprawdzaniem cudzych kont, limity prób, ochrona endpointów rolami, walidacja wejścia.
 
 Zostawione celowo na koniec (przed wdrożeniem na prawdziwy serwer): domyślny sekret JWT w `application.yml`, plik
-`.env` w repozytorium, konfiguracja CORS, link aktywacyjny wpisany na stałe, `show-sql`, szczegóły zdrowia w
+`../.env.stary` w repozytorium, konfiguracja CORS, link aktywacyjny wpisany na stałe, `show-sql`, szczegóły zdrowia w
 Actuatorze i otwarty Swagger. Pełna lista z wyjaśnieniami: [Znane ograniczenia](07-znane-ograniczenia.md).

@@ -12,12 +12,14 @@ import java.util.List;
 /**
  * Bezpiecznik przy starcie: poza profilem {@code dev} aplikacja nie wstanie z ustawieniami, które wyglądają na lokalne
  * albo niebezpieczne (sekret z szablonu, krótki sekret, adres frontendu bez HTTPS). Chroni przed pomyłką typu „skopiowałem
- * lokalny plik .env na serwer”. W profilu {@code dev} nic nie sprawdza.
+ * lokalny plik .env.stary na serwer”. W profilu {@code dev} nic nie sprawdza.
  */
 @Component
 public class ProductionSafetyCheck {
 
-    /** Fragmenty, po których poznajemy sekret z szablonów i dokumentacji (nie może trafić na produkcję). */
+    /**
+     * Fragmenty, po których poznajemy sekret z szablonów i dokumentacji (nie może trafić na produkcję).
+     */
     private static final List<String> PLACEHOLDER_MARKERS = List.of("lokalny-dev", "zmien-", "changeme", "example", "wpisz");
 
     static final int MIN_SECRET_LENGTH = 32;
@@ -50,7 +52,9 @@ public class ProductionSafetyCheck {
         }
     }
 
-    /** Lista problemów (pusta, gdy wszystko w porządku). Nie zawiera samych wartości, żeby sekret nie trafił do logu. */
+    /**
+     * Lista problemów (pusta, gdy wszystko w porządku). Nie zawiera samych wartości, żeby sekret nie trafił do logu.
+     */
     static List<String> problems(String jwtSecret, String frontendUrl, String dbPassword) {
         List<String> problems = new ArrayList<>();
         if (jwtSecret == null || jwtSecret.length() < MIN_SECRET_LENGTH) {

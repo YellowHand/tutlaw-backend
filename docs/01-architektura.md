@@ -18,23 +18,23 @@ flowchart LR
 
 ## Technologie
 
-| Co | Wersja / szczegół | Po co |
-|----|-------------------|-------|
-| Java | 17 | Język i środowisko uruchomieniowe |
-| Spring Boot | 4.1.1 | Szkielet aplikacji (serwer, wstrzykiwanie zależności, konfiguracja) |
-| Spring Web MVC | w Spring Boot | Kontrolery REST |
-| Spring Data JPA + Hibernate | w Spring Boot | Mapowanie tabel na klasy Javy, zapytania |
-| PostgreSQL | 16 (z `docker-compose.yml`) | Baza danych |
-| Flyway | w Spring Boot | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta, `V4` rozdziały aktów, `V5` oznaczenia pytań i odpowiedzi z egzaminów, `V6` ukrywanie aktów i arkuszy), uruchamiane przy starcie |
-| Spring Security | w Spring Boot | Ochrona endpointów, role |
-| jjwt | 0.12.6 | Tworzenie i sprawdzanie tokenów JWT |
-| Bean Validation | w Spring Boot | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.) |
-| springdoc-openapi | 3.0.3 | Dokumentacja Swagger UI generowana z kodu |
-| Actuator | w Spring Boot | Endpointy zdrowia aplikacji (`/actuator/health`) |
-| Spring Mail | w Spring Boot | Wysyłanie maili (aktywacja konta, reset hasła) |
-| Lombok | w Spring Boot | Mniej powtarzalnego kodu (gettery, settery, konstruktory) |
-| spring-dotenv | 5.1.0 | Czyta plik `.env` z głównego katalogu projektu |
-| DevTools | w Spring Boot | Automatyczny restart podczas pracy lokalnej |
+| Co                          | Wersja / szczegół           | Po co                                                                                                                                                                                                                          |
+|-----------------------------|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Java                        | 17                          | Język i środowisko uruchomieniowe                                                                                                                                                                                              |
+| Spring Boot                 | 4.1.1                       | Szkielet aplikacji (serwer, wstrzykiwanie zależności, konfiguracja)                                                                                                                                                            |
+| Spring Web MVC              | w Spring Boot               | Kontrolery REST                                                                                                                                                                                                                |
+| Spring Data JPA + Hibernate | w Spring Boot               | Mapowanie tabel na klasy Javy, zapytania                                                                                                                                                                                       |
+| PostgreSQL                  | 16 (z `docker-compose.yml`) | Baza danych                                                                                                                                                                                                                    |
+| Flyway                      | w Spring Boot               | Migracje bazy (`V1` schemat, `V2` dane słownikowe, `V3` zmiany w prawie i przedmioty Studenta, `V4` rozdziały aktów, `V5` oznaczenia pytań i odpowiedzi z egzaminów, `V6` ukrywanie aktów i arkuszy), uruchamiane przy starcie |
+| Spring Security             | w Spring Boot               | Ochrona endpointów, role                                                                                                                                                                                                       |
+| jjwt                        | 0.12.6                      | Tworzenie i sprawdzanie tokenów JWT                                                                                                                                                                                            |
+| Bean Validation             | w Spring Boot               | Sprawdzanie pól żądań (`@NotBlank`, `@Min` itd.)                                                                                                                                                                               |
+| springdoc-openapi           | 3.0.3                       | Dokumentacja Swagger UI generowana z kodu                                                                                                                                                                                      |
+| Actuator                    | w Spring Boot               | Endpointy zdrowia aplikacji (`/actuator/health`)                                                                                                                                                                               |
+| Spring Mail                 | w Spring Boot               | Wysyłanie maili (aktywacja konta, reset hasła)                                                                                                                                                                                 |
+| Lombok                      | w Spring Boot               | Mniej powtarzalnego kodu (gettery, settery, konstruktory)                                                                                                                                                                      |
+| spring-dotenv               | 5.1.0                       | Czyta plik `../.env.stary` z głównego katalogu projektu                                                                                                                                                                        |
+| DevTools                    | w Spring Boot               | Automatyczny restart podczas pracy lokalnej                                                                                                                                                                                    |
 
 Hibernate nie tworzy tabel: `spring.jpa.hibernate.ddl-auto` jest ustawione na `validate`, więc przy starcie tylko
 **sprawdza**, czy klasy zgadzają się z tabelami. Tabele tworzą wyłącznie migracje Flyway.
@@ -44,31 +44,31 @@ Hibernate nie tworzy tabel: `spring.jpa.hibernate.ddl-auto` jest ustawione na `v
 Cały kod jest w `src/main/java/pl/gradusiuris/backend/`. Każda funkcja ma własny pakiet („pakiet funkcji”), a w nim
 komplet klas.
 
-| Pakiet | Za co odpowiada |
-|--------|-----------------|
-| `auth` | Rejestracja, aktywacja, logowanie, reset hasła, JWT (token dostępu) i tokeny odświeżające (rotacja, wykrywanie kradzieży), maile, limity prób |
-| `user` | Encja użytkownika, rola, konto zalogowanego (eksport danych, zmiana hasła, usunięcie konta), **zerowanie postępów w nauce** |
-| `security` | Filtr JWT (sprawdza token przy każdym żądaniu) i reguła ważności sesji |
-| `legal` | Dziedziny prawa (`LegalField`, np. „Prawo karne i proces karny”) i akty prawne albo zagadnienia (`LegalAct`, np. „Kodeks karny”) |
-| `track` | Ścieżki: pięć aplikacji egzaminacyjnych (rodzaj `EXAM`) i ścieżka „Student” (rodzaj `STUDENT`); lista aktów ścieżki |
-| `course` | Przedmioty ścieżki Student: porządkują akty ze wspólnej bazy, nie przechowują własnych pytań; student wybiera, z których się uczy |
-| `source` | Źródła pytań: arkusz egzaminu aplikacji w danym roku (`EXAM_SHEET`) albo pytania autorskie (`AUTHORED`) |
-| `question` | Pytania ABC z dokładnie jedną poprawną odpowiedzią, podstawą prawną i wyjaśnieniem; ukrywanie pytania i fiszki przez administratora; zakres nauki (dziedzina, akt, źródło); **zmiany w prawie** (data i opis przy pytaniu, zwrot pytań do nauki po zmianie) |
-| `pool` | **Pula pytań użytkownika** wyliczana regułą (akty ścieżki albo własne arkusze; u Studenta akty wybranych przedmiotów), trwałe zawężenie do wybranych aktów (zakres nauki), wybór przedmiotów Studenta, `SourceMode` (źródło pytań wybierane przy teście) |
-| `catalog` | Drzewo ekranu Testów: dziedzina → akt → źródło, z licznikami pytań |
-| `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS) osobno dla trybów Testy i Fiszki, zawieszanie, błędy, własny test i jego zapis jako sesji („Moje testy”) |
-| `review.fsrs` | Sam algorytm FSRS-6 (wzory matematyczne) |
-| `flashcard` | Fiszka jako tryb nauki pytania: odblokowywanie (pewny błąd albo „Dodaj do fiszek”), status fiszki |
-| `mark` | **Oznaczenia pytań** (terminy, pułapki): automat `QuestionMarkDetector` proponuje, administrator zatwierdza (`/api/admin/question-marks`); zatwierdzone oznaczenia układają testy „Pytania z terminów” i „Pułapki” |
-| `exam` | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie z wybranego źródła albo cały Egzamin MS z wybranego roku, ocena, historia podejść (stronicowana) z zapisanymi odpowiedziami i raport zapisanego podejścia |
-| `report` | Zgłoszenia błędów w pytaniach |
-| `statistics` | Statystyki: przegląd, opanowanie aktów, pytania najsłabsze, skuteczność, aktywność, rozbicie wg źródeł, „Podsumowanie nauki” |
-| `studytime` | Czas nauki: porcje sekund zgłaszane przez przeglądarkę i sumy dla każdego dnia |
-| `settings` | Ustawienia nauki (limity dzienne, retencja), wybór ścieżki, ustawienia interfejsu (ukrycie podpowiedzi skrótów i licznika czasu), motyw, terminy egzaminów ścieżek (ustawia admin) |
-| `admin` | **Panel administratora** (`/api/admin/**`, tylko rola `ADMIN`): aplikacje, przedmioty Studenta, akty prawne z rozdziałami i przypisaniami, arkusze egzaminacyjne, ukrywanie aktów i arkuszy, pytania (lista, edycja), zgłoszenia błędów, import pytań z CSV i JSON; przegląd. Oznaczenia pytań są w pakiecie `mark`, terminy egzaminów w `settings` |
-| `common` | Elementy wspólne: stronicowanie, sortowanie po polsku, wyjątki, konfiguracja |
-| `common.config` | Konfiguracja Springa: bezpieczeństwo, CORS, hasła, zegar |
-| `common.exception` | Wyjątki i jedno miejsce zamieniające je na odpowiedzi HTTP |
+| Pakiet             | Za co odpowiada                                                                                                                                                                                                                                                                                                                                     |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `auth`             | Rejestracja, aktywacja, logowanie, reset hasła, JWT (token dostępu) i tokeny odświeżające (rotacja, wykrywanie kradzieży), maile, limity prób                                                                                                                                                                                                       |
+| `user`             | Encja użytkownika, rola, konto zalogowanego (eksport danych, zmiana hasła, usunięcie konta), **zerowanie postępów w nauce**                                                                                                                                                                                                                         |
+| `security`         | Filtr JWT (sprawdza token przy każdym żądaniu) i reguła ważności sesji                                                                                                                                                                                                                                                                              |
+| `legal`            | Dziedziny prawa (`LegalField`, np. „Prawo karne i proces karny”) i akty prawne albo zagadnienia (`LegalAct`, np. „Kodeks karny”)                                                                                                                                                                                                                    |
+| `track`            | Ścieżki: pięć aplikacji egzaminacyjnych (rodzaj `EXAM`) i ścieżka „Student” (rodzaj `STUDENT`); lista aktów ścieżki                                                                                                                                                                                                                                 |
+| `course`           | Przedmioty ścieżki Student: porządkują akty ze wspólnej bazy, nie przechowują własnych pytań; student wybiera, z których się uczy                                                                                                                                                                                                                   |
+| `source`           | Źródła pytań: arkusz egzaminu aplikacji w danym roku (`EXAM_SHEET`) albo pytania autorskie (`AUTHORED`)                                                                                                                                                                                                                                             |
+| `question`         | Pytania ABC z dokładnie jedną poprawną odpowiedzią, podstawą prawną i wyjaśnieniem; ukrywanie pytania i fiszki przez administratora; zakres nauki (dziedzina, akt, źródło); **zmiany w prawie** (data i opis przy pytaniu, zwrot pytań do nauki po zmianie)                                                                                         |
+| `pool`             | **Pula pytań użytkownika** wyliczana regułą (akty ścieżki albo własne arkusze; u Studenta akty wybranych przedmiotów), trwałe zawężenie do wybranych aktów (zakres nauki), wybór przedmiotów Studenta, `SourceMode` (źródło pytań wybierane przy teście)                                                                                            |
+| `catalog`          | Drzewo ekranu Testów: dziedzina → akt → źródło, z licznikami pytań                                                                                                                                                                                                                                                                                  |
+| `review`           | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS) osobno dla trybów Testy i Fiszki, zawieszanie, błędy, własny test i jego zapis jako sesji („Moje testy”)                                                                                                                                                                         |
+| `review.fsrs`      | Sam algorytm FSRS-6 (wzory matematyczne)                                                                                                                                                                                                                                                                                                            |
+| `flashcard`        | Fiszka jako tryb nauki pytania: odblokowywanie (pewny błąd albo „Dodaj do fiszek”), status fiszki                                                                                                                                                                                                                                                   |
+| `mark`             | **Oznaczenia pytań** (terminy, pułapki): automat `QuestionMarkDetector` proponuje, administrator zatwierdza (`/api/admin/question-marks`); zatwierdzone oznaczenia układają testy „Pytania z terminów” i „Pułapki”                                                                                                                                  |
+| `exam`             | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie z wybranego źródła albo cały Egzamin MS z wybranego roku, ocena, historia podejść (stronicowana) z zapisanymi odpowiedziami i raport zapisanego podejścia                                                                                                                 |
+| `report`           | Zgłoszenia błędów w pytaniach                                                                                                                                                                                                                                                                                                                       |
+| `statistics`       | Statystyki: przegląd, opanowanie aktów, pytania najsłabsze, skuteczność, aktywność, rozbicie wg źródeł, „Podsumowanie nauki”                                                                                                                                                                                                                        |
+| `studytime`        | Czas nauki: porcje sekund zgłaszane przez przeglądarkę i sumy dla każdego dnia                                                                                                                                                                                                                                                                      |
+| `settings`         | Ustawienia nauki (limity dzienne, retencja), wybór ścieżki, ustawienia interfejsu (ukrycie podpowiedzi skrótów i licznika czasu), motyw, terminy egzaminów ścieżek (ustawia admin)                                                                                                                                                                  |
+| `admin`            | **Panel administratora** (`/api/admin/**`, tylko rola `ADMIN`): aplikacje, przedmioty Studenta, akty prawne z rozdziałami i przypisaniami, arkusze egzaminacyjne, ukrywanie aktów i arkuszy, pytania (lista, edycja), zgłoszenia błędów, import pytań z CSV i JSON; przegląd. Oznaczenia pytań są w pakiecie `mark`, terminy egzaminów w `settings` |
+| `common`           | Elementy wspólne: stronicowanie, sortowanie po polsku, wyjątki, konfiguracja                                                                                                                                                                                                                                                                        |
+| `common.config`    | Konfiguracja Springa: bezpieczeństwo, CORS, hasła, zegar                                                                                                                                                                                                                                                                                            |
+| `common.exception` | Wyjątki i jedno miejsce zamieniające je na odpowiedzi HTTP                                                                                                                                                                                                                                                                                          |
 
 ## Warstwy w pakiecie funkcji
 
@@ -172,7 +172,8 @@ gdyby lista z stronicowaniem była potrzebna w przyszłości.
 
 ### Sortowanie po polsku
 
-`PolishSort` układa nazwy zgodnie z polskim alfabetem (ą po a, ł po l itd.), np. akty prawne w dziedzinie i źródła w katalogu Testów.
+`PolishSort` układa nazwy zgodnie z polskim alfabetem (ą po a, ł po l itd.), np. akty prawne w dziedzinie i źródła w
+katalogu Testów.
 
 ### Poczta wysyłana po zatwierdzeniu transakcji
 
@@ -195,12 +196,14 @@ właśnie zmienione w innym oknie. Spróbuj jeszcze raz.” zamiast po cichu nad
 ### Ochrona przed podwójnym kliknięciem
 
 Jeśli to samo pytanie dostanie odpowiedź w tym samym trybie w ciągu **1 sekundy** od poprzedniej, druga jest ignorowana
-(nie liczy się jako kolejna powtórka). Szczegóły w [04](04-nauka-testy-fiszki-fsrs.md#ochrona-przed-podwójnym-wysłaniem).
+(nie liczy się jako kolejna powtórka). Szczegóły
+w [04](04-nauka-testy-fiszki-fsrs.md#ochrona-przed-podwójnym-wysłaniem).
 
 ## Testy
 
 W `src/test` jest **76 klas testowych** (ok. 867 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
-czasem, „fałszywe” repozytoria i repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy jednostkowe
+czasem, „fałszywe” repozytoria i repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy
+jednostkowe
 czystej logiki (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`, `SourceFilterTest`…) oraz serwisów na repozytoriach w
 pamięci (np. `AuthFlowTest` przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez
 Dockera, a `PoolServiceTest` sprawdza regułę puli pytań).

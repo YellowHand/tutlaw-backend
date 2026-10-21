@@ -9,7 +9,7 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>pl.gradusiuris</groupId>
-    <artifactId>backend</artifactId>
+    <artifactId>gradusiuris-backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>gradusiuris-backend</name>
     <description>Gradus iuris: backend (API do nauki do egzaminów prawniczych)</description>

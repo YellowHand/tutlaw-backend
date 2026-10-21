@@ -2,7 +2,7 @@
 #   docker compose up -d      (start)
 #   docker compose down       (stop, dane bazy zostają w wolumenie)
 #   docker compose down -v    (stop i SKASOWANIE lokalnej bazy)
-# Hasło bazy bierze się z pliku .env (patrz .env.example). Produkcja NIE używa tego pliku (patrz deploy/).
+# Hasło bazy bierze się z pliku .env.stary (patrz .env.stary.example). Produkcja NIE używa tego pliku (patrz deploy/).
 services:
   postgres:
     image: postgres:16
@@ -18,7 +18,7 @@ services:
     volumes:
       - gradusiuris_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
