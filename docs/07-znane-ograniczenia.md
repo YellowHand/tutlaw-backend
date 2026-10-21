@@ -88,9 +88,12 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
 - **Test nigdy nie daje oceny „Łatwe”** (decyzja projektowa: przy trzech opcjach trafienie nie odróżnia się od łatwości).
 - **Egzamin próbny nie zapisuje pojedynczych odpowiedzi**, tylko podsumowanie; szczegółowy raport użytkownik dostaje raz,
   tuż po zakończeniu.
-- **Egzamin nie odtwarza stałych proporcji dziedzin.** Ma zawsze 150 pytań z całej puli ścieżki (bez zawężenia do
+- **Egzamin nie odtwarza stałych proporcji dziedzin.** Ma do 150 pytań z wybranego źródła puli ścieżki (bez zawężenia do
   aktów) i zaliczenie od 100 punktów, ale pytania są losowane bez podziału na dziedziny (proporcje zależą od liczby
   pytań w bazie). Gdy w puli jest mniej niż 150 pytań, egzamin jest krótszy, a próg maleje proporcjonalnie.
+- **Egzamin MS idzie w kolejności wczytania arkusza** (numer pytania w bazie), a nie w kolejności z oryginalnego arkusza
+  Ministerstwa, jeśli import ją zmienił. Arkusz dłuższy niż 150 pytań jest obcięty do 150 (tyle przyjmuje zapis wyniku).
+  Pytania zawieszone w testach wypadają z egzaminu, więc taki egzamin bywa krótszy od oryginału.
 - **Serwer nie pamięta, jakie pytania wydał w `start`.** Zaliczenie dotyczy zestawu przesłanego w `submit`, więc ktoś
   mógłby wysłać krótszy zestaw i „zdać” go. To ćwiczenie tylko dla jego właściciela (historia jest prywatna), więc nie
   blokujemy tego.
@@ -100,7 +103,7 @@ Czego aplikacja dziś nie robi albo robi w uproszczony sposób.
   w tym trybie, więc Testy i Fiszki zawiesza się osobno).
 - **Tryby Testy i Fiszki mają niezależne stany FSRS.** Odpowiedź w teście nie przesuwa terminu fiszki tego samego
   pytania i odwrotnie. To decyzja projektowa, ale statystyki bez parametru `mode` liczą takie pytanie dwa razy.
-- **Źródło pytań wybiera się tylko w kreatorze testu**; fiszki, egzamin próbny, szybkie zestawy i „Losuj z całej puli” biorą wszystkie źródła. Zawężenie puli do aktów nie dotyczy egzaminu próbnego.
+- **Źródło pytań wybiera się w kreatorze testu i na egzaminie próbnym**; fiszki, szybkie zestawy i „Losuj z całej puli” biorą wszystkie źródła. Zawężenie puli do aktów nie dotyczy egzaminu próbnego.
 - **Zmiana ścieżki czyści zawężenie puli aktami** (akty jednej ścieżki nie muszą należeć do drugiej),
   ale **nie rusza postępów** ani wybranych przedmiotów Studenta. Postępy zeruje się osobno (WYZERUJ).
 - **Zmiana w prawie nie cofa postępu pytania**, tylko przestawia termin na „teraz”: pytanie wraca raz i po odpowiedzi

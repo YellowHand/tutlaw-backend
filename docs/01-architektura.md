@@ -59,7 +59,7 @@ komplet klas.
 | `review` | Kolejki nauki, przyjmowanie odpowiedzi, planowanie powtórek (FSRS) osobno dla trybów Testy i Fiszki, zawieszanie, błędy, własny test i jego zapis jako sesji („Moje testy”) |
 | `review.fsrs` | Sam algorytm FSRS-6 (wzory matematyczne) |
 | `flashcard` | Fiszka jako tryb nauki pytania: odblokowywanie (pewny błąd albo „Dodaj do fiszek”), status fiszki |
-| `exam` | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie, ocena, historia podejść |
+| `exam` | Egzamin próbny w stałym formacie (150 pytań, próg 100 punktów): losowanie z wybranego źródła albo cały Egzamin MS z wybranego roku, ocena, historia podejść |
 | `report` | Zgłoszenia błędów w pytaniach |
 | `statistics` | Statystyki: przegląd, opanowanie aktów, pytania najsłabsze, skuteczność, aktywność, rozbicie wg źródeł, „Podsumowanie nauki” |
 | `studytime` | Czas nauki: porcje sekund zgłaszane przez przeglądarkę i sumy dla każdego dnia |

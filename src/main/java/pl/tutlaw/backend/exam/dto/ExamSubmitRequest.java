@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.question.CorrectOption;
 
 import java.util.List;
@@ -16,6 +17,9 @@ import java.util.List;
  *
  * @param timeLimitMinutes null = egzamin bez limitu czasu
  * @param timedOut         czy egzamin zakończył się automatycznie z powodu końca czasu
+ * @param source           źródło, z którego losowano pytania (tylko do podpisu w historii; brak = wszystkie)
+ * @param sheetId          numer arkusza, gdy egzamin był egzaminem MS z wybranego roku (tylko do podpisu w historii,
+ *                         np. „Egzamin MS: Notarialna 2024"); ma pierwszeństwo przed {@code source}
  */
 public record ExamSubmitRequest(
         @Min(value = 1, message = "limit czasu musi wynosić od 1 do 600 minut")
@@ -28,7 +32,9 @@ public record ExamSubmitRequest(
         Boolean timedOut,
         @NotEmpty(message = "brak odpowiedzi do sprawdzenia")
         @Size(max = 150, message = "zbyt wiele pytań (egzamin ma najwyżej 150)")
-        List<@Valid Answer> answers
+        List<@Valid Answer> answers,
+        SourceMode source,
+        Long sheetId
 ) {
 
     /** @param selectedOption null = pytanie bez odpowiedzi */

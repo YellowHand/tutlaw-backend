@@ -2,7 +2,7 @@
 
 [← Spis treści](../README.md)
 
-Backend udostępnia **62 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
+Backend udostępnia **64 endpointy REST** zwracających JSON. Ten plik zawiera wspólne zasady i listę wszystkich
 endpointów. Szczegóły (parametry, przykłady, błędy) są w plikach grup.
 
 > Interaktywna wersja generowana z kodu: po uruchomieniu backendu Swagger UI jest pod
@@ -134,7 +134,9 @@ Kolumna **Dostęp**: *publiczny* — bez logowania; *zalogowany* — wymaga toke
 
 | Metoda | Adres | Dostęp | Opis |
 |--------|-------|--------|------|
-| POST | `/api/exams/start` | zalogowany | Losowanie 150 pytań egzaminu (bez ciała żądania, stały format) |
+| POST | `/api/exams/start` | zalogowany | Pytania egzaminu (stały format 150 pytań, bez ciała): `?source=` losuje z wybranego źródła, `?sheetId=` daje cały egzamin MS z wybranego roku |
+| GET | `/api/exams/availability` | zalogowany | Ile pytań można wylosować na egzamin z każdego źródła |
+| GET | `/api/exams/sheets` | zalogowany | Egzaminy MS z poprzednich lat według aplikacji i roku |
 | POST | `/api/exams/submit` | zalogowany | Ocena egzaminu i zapis podsumowania |
 | GET | `/api/exams/history` | zalogowany | Ostatnie podejścia |
 

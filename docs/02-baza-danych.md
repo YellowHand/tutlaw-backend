@@ -401,7 +401,7 @@ Powtórki, „Popraw błędy” i egzamin próbny tu nie trafiają. Sesje znikaj
 ### `exam_attempts` — podejścia do egzaminu próbnego
 
 Zapisuje **tylko podsumowanie** podejścia: `id`, `user_id` (kto zdawał; `ON DELETE CASCADE`), `finished_at`, `scope_label` (nazwa
-zakresu w chwili egzaminu; dziś zawsze „Cała pula”), `question_count`, `answered_count`, `correct_count`,
+zakresu w chwili egzaminu: „Cała pula”, „Ministerstwo Sprawiedliwości”, „Pytania autorskie” albo „Egzamin MS: Notarialna 2024”), `question_count`, `answered_count`, `correct_count`,
 `pass_threshold_percent`, `pass_points`, `passed`, `time_limit_minutes`, `duration_seconds`, `timed_out`.
 Pojedynczych odpowiedzi baza nie przechowuje; szczegółowy raport użytkownik dostaje w odpowiedzi tuż po zakończeniu.
 

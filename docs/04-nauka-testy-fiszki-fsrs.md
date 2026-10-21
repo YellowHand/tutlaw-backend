@@ -434,18 +434,28 @@ Aplikacja mierzy czas na dwa sposoby, które się nie mieszają:
 Egzamin próbny (`/api/exams/*`) jest **odizolowany od nauki**: nie zmienia terminów powtórek (FSRS), nie dopisuje
 niczego do dziennika odpowiedzi, nie rusza dziennych limitów ani licznika błędów.
 
-**Format jest stały** (`ExamFormat`): zawsze **150 pytań** z całej puli użytkownika, zaliczenie od
-**100 punktów** (2/3 punktów). Użytkownik nie wybiera zakresu, liczby pytań ani progu, a próg ustala wyłącznie serwer.
+**Format jest stały** (`ExamFormat`): **150 pytań**, zaliczenie od **100 punktów** (2/3 punktów). Użytkownik nie wybiera
+zakresu, liczby pytań ani progu, a próg ustala wyłącznie serwer. Wybiera tylko **źródło pytań** (cztery możliwości, niżej).
 Egzamin z jednego działu nie ma sensu (prawdziwy egzamin jest mieszany), więc ćwiczenie z wybranego działu to
 [test z kreatora](#test-z-kreatora-dawniej-własny-test), który niczego nie zalicza.
 
-1. **Start** (`POST /api/exams/start`, bez ciała): serwer losuje 150 pytań z Twojej puli (**bez zawężenia do wybranych
-   aktów**: prawdziwy egzamin obejmuje wszystko), niezawieszonych w testach, ze wszystkich źródeł. Zwraca je **bez poprawnych odpowiedzi**, razem z progiem w punktach
-   (`passPoints`). Niczego nie zapisuje. Jeśli w materiale jest mniej niż 150 pytań, egzamin ma wszystkie, a próg maleje
-   proporcjonalnie (100 z 150, w górę do całego punktu; 12 pytań to próg 8).
-2. **Rozwiązywanie** odbywa się po stronie frontendu (czas, opcjonalny limit minut, wybór odpowiedzi).
-3. **Zakończenie** (`POST /api/exams/submit`): frontend wysyła tylko wybrane odpowiedzi, limit czasu i czas trwania.
-   **Odpowiedzi ocenia serwer i on liczy próg.** Zapisuje podsumowanie podejścia i zwraca pełny raport.
+1. **Wybór źródła.** `GET /api/exams/availability` mówi, ile pytań jest w każdym źródle, a `GET /api/exams/sheets` podaje
+   egzaminy MS z poprzednich lat (według aplikacji i roku).
+2. **Start** (`POST /api/exams/start`, bez ciała): w zależności od wyboru:
+   - `source=ALL` (domyślnie), `MINISTRY` albo `AUTHORED`: serwer **losuje** 150 pytań z Twojej puli (**bez zawężenia do
+     wybranych aktów**: prawdziwy egzamin obejmuje wszystko), niezawieszonych w testach, z wybranego źródła,
+   - `sheetId=<numer>` (**Egzamin MS**): egzamin to **cały arkusz z wybranego roku**, dowolnej aplikacji (niezależnie od
+     Twojej ścieżki i puli). Pytania idą w kolejności wczytania arkusza, bez losowania i bez pytań zawieszonych w testach;
+     dłuższy arkusz jest obcięty do 150.
+
+   Odpowiedź ma pytania **bez poprawnych odpowiedzi**, podpis (`scopeLabel`) i próg w punktach (`passPoints`). Niczego nie
+   zapisuje. Jeśli pytań jest mniej niż 150, egzamin ma wszystkie, a próg maleje proporcjonalnie (100 z 150, w górę do
+   całego punktu; 12 pytań to próg 8).
+3. **Rozwiązywanie** odbywa się po stronie frontendu (czas, opcjonalny limit minut, wybór odpowiedzi).
+4. **Zakończenie** (`POST /api/exams/submit`): frontend wysyła tylko wybrane odpowiedzi, limit czasu, czas trwania oraz
+   źródło (`source` albo `sheetId`, wyłącznie do podpisu w historii). **Odpowiedzi ocenia serwer i on liczy próg.**
+   Zapisuje podsumowanie podejścia i zwraca pełny raport. Podpis w historii to np. „Cała pula”, „Ministerstwo
+   Sprawiedliwości”, „Pytania autorskie” albo „Egzamin MS: Notarialna 2024”.
 
 **Punktacja** (`ExamScoring`): 1 punkt za poprawną odpowiedź, brak punktów ujemnych, brak odpowiedzi = 0. Wynik w
 procentach jest zaokrąglany do 0,1 tylko do wyświetlania. **Zaliczenie** to co najmniej `passPoints` poprawnych
@@ -454,8 +464,8 @@ W raporcie pytania, które w międzyczasie zniknęły (usunięte z bazy), nie s�
 `excludedCount`; próg liczy się od liczby ocenionych pytań.
 
 **Stałe proporcje działów.** Prawdziwy egzamin ma ustalone proporcje pytań z poszczególnych działów. Aplikacja ich
-jeszcze nie odtwarza: 150 pytań jest losowane z całej puli (więc proporcje wynikają z tego, ile pytań ma każdy dział w
-bazie). Gdy proporcje zostaną ustalone, trzeba tylko zmienić losowanie w `ExamService.start`.
+jeszcze nie odtwarza: 150 pytań jest losowane z wybranego źródła (więc proporcje wynikają z tego, ile pytań ma każdy dział w
+bazie). Wyjątkiem jest Egzamin MS, który jest prawdziwym arkuszem z danego roku, więc ma układ pytań z oryginału. Gdy proporcje zostaną ustalone, trzeba tylko zmienić losowanie w `ExamService.start`.
 
 Historia obejmuje ostatnie 50 podejść. Tabela `exam_attempts` trzyma tylko podsumowania.
 
@@ -473,7 +483,8 @@ to trzecia. Dzięki temu reguła puli (`PoolService.forUser(userId, SourceFilter
 bez zmian; testy zapisane wcześniej mają tryb wyprowadzony z dawnego filtra (`SourceMode.fromFilter`).
 
 - Wybór źródła obowiązuje tylko w kreatorze (Nauka i Powtórki). „Losuj z całej puli”, szybkie zestawy, pasek zaległych,
-  „Powtórz moje błędy”, plan do egzaminu, statystyki testów, egzamin próbny i fiszki biorą **wszystkie** źródła.
+  „Powtórz moje błędy”, plan do egzaminu, statystyki testów i fiszki biorą **wszystkie** źródła. Egzamin próbny ma własny wybór
+  źródła (wszystkie, Ministerstwo, autorskie albo cały egzamin MS z wybranego roku), opisany w [Egzamin próbny](#egzamin-próbny).
 - Statystyki według źródeł (`GET /api/statistics/sources`) pokazują zawsze całą pulę ścieżki, każde źródło osobno.
 - Kolumny `user_settings.include_own_sheets`, `include_other_sheets` i `include_authored` zostały w bazie, ale **nie są już
   używane** (encja ich nie mapuje); to samo dotyczy `user_settings.shuffle_options` (kolejność odpowiedzi miesza frontend

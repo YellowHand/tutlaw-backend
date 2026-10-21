@@ -29,6 +29,18 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
             @Param("sourceIds") Collection<Long> sourceIds
     );
 
+    /**
+     * Widoczne pytania z podanych źródeł (arkuszy), od najstarszego numeru, czyli w kolejności wczytania arkusza. Bez
+     * ograniczenia do aktów i bez filtra puli: to cały arkusz, tak jak był na egzaminie (egzamin z wybranego roku).
+     */
+    @Query("""
+            SELECT q.id AS id, q.legalAct.id AS legalActId, q.legalAct.legalField.id AS legalFieldId,
+                   q.source.id AS sourceId, q.flashcardHidden AS flashcardHidden, q.lawChangedAt AS lawChangedAt
+            FROM Question q
+            WHERE q.hidden = false AND q.source.id IN :sourceIds
+            ORDER BY q.id""")
+    List<QuestionRef> findRefsInSources(@Param("sourceIds") Collection<Long> sourceIds);
+
     /** Numery aktów, do których należą pytania z podanych źródeł (akty własnych arkuszy ścieżki). */
     @Query("SELECT DISTINCT q.legalAct.id FROM Question q WHERE q.source.id IN :sourceIds")
     List<Long> findActIdsInSources(@Param("sourceIds") Collection<Long> sourceIds);

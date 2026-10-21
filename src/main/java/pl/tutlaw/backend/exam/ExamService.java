@@ -7,19 +7,30 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.tutlaw.backend.pool.Pool;
 import pl.tutlaw.backend.pool.PoolService;
+import pl.tutlaw.backend.pool.SourceMode;
 import pl.tutlaw.backend.question.Question;
 import pl.tutlaw.backend.question.dto.LawChangeInfo;
 import pl.tutlaw.backend.question.QuestionRef;
 import pl.tutlaw.backend.question.QuestionRepository;
 import pl.tutlaw.backend.question.QuestionScopes;
 import pl.tutlaw.backend.exam.dto.ExamAttemptResponse;
+import pl.tutlaw.backend.exam.dto.ExamAvailabilityResponse;
 import pl.tutlaw.backend.exam.dto.ExamResultResponse;
+import pl.tutlaw.backend.exam.dto.ExamSheetsResponse;
 import pl.tutlaw.backend.exam.dto.ExamStartResponse;
 import pl.tutlaw.backend.exam.dto.ExamSubmitRequest;
 import pl.tutlaw.backend.review.ReviewMode;
 import pl.tutlaw.backend.review.ReviewQueueMapper;
 import pl.tutlaw.backend.review.UserQuestionStateRepository;
 import pl.tutlaw.backend.review.dto.TestQueueItemResponse;
+import pl.tutlaw.backend.settings.UserSettings;
+import pl.tutlaw.backend.settings.UserSettingsRepository;
+import pl.tutlaw.backend.source.QuestionSource;
+import pl.tutlaw.backend.source.QuestionSourceRepository;
+import pl.tutlaw.backend.source.SourceKind;
+import pl.tutlaw.backend.track.Track;
+import pl.tutlaw.backend.track.TrackKind;
+import pl.tutlaw.backend.track.TrackRepository;
 import pl.tutlaw.backend.user.CurrentUserResolver;
 import pl.tutlaw.backend.user.User;
 
@@ -39,7 +50,10 @@ import java.util.Set;
 /**
  * Egzamin próbny w stałym formacie ({@link ExamFormat}): losowe {@value ExamFormat#QUESTION_COUNT} pytań z całej
  * puli ścieżki użytkownika, zaliczenie od {@value ExamFormat#PASS_POINTS} punktów. Zakresu, liczby pytań ani progu
- * nie wybiera użytkownik (zawężenie puli do wybranych aktów też go nie dotyczy, tak jak prawdziwego egzaminu).
+ * nie wybiera użytkownik (zawężenie puli do wybranych aktów też go nie dotyczy, tak jak prawdziwego egzaminu); wybiera
+ * tylko źródło pytań ({@link SourceMode}: wszystkie, Ministerstwo Sprawiedliwości albo autorskie) albo konkretny
+ * <b>egzamin MS</b>: arkusz jednej aplikacji z jednego roku, w całości i w oryginalnej kolejności ({@link #sheets},
+ * {@link #start(SourceMode, Long, Authentication)}).
  * Ocena i próg są po stronie serwera, a podsumowanie podejścia jest zapisywane.
  * Egzamin jest odizolowany od nauki: nie zmienia terminów powtórek (FSRS), dziennika odpowiedzi, dziennych limitów
  * ani licznika błędów. Po egzaminie użytkownik może przerobić swoje błędy zwykłą sesją testową.
@@ -51,8 +65,12 @@ public class ExamService {
 
     /** Ile ostatnich podejść zwraca historia. */
     static final int HISTORY_LIMIT = 50;
-    /** Nazwa zakresu w raporcie i historii: egzamin zawsze obejmuje cały materiał. */
+    /** Nazwa zakresu w raporcie i historii: egzamin zawsze obejmuje cały materiał wybranego źródła. */
     static final String SCOPE_LABEL = "Cała pula";
+    /** Początek podpisu egzaminu MS z wybranego roku („Egzamin MS: Notarialna 2024"). */
+    static final String SHEET_LABEL_PREFIX = "Egzamin MS: ";
+    /** Podpis egzaminu MS, gdy arkusza o podanym numerze już nie ma (wynik i tak zapisujemy). */
+    static final String SHEET_LABEL_FALLBACK = "Egzamin MS";
 
     private final QuestionRepository questionRepository;
     private final UserQuestionStateRepository stateRepository;
@@ -60,29 +78,36 @@ public class ExamService {
     private final CurrentUserResolver currentUserResolver;
     private final Clock clock;
     private final PoolService poolService;
+    private final QuestionSourceRepository sourceRepository;
+    private final TrackRepository trackRepository;
+    private final UserSettingsRepository settingsRepository;
 
     private final Random random = new Random();
 
     /**
-     * Losuje {@value ExamFormat#QUESTION_COUNT} pytań z całej puli ścieżki (bez zawężenia do aktów, ze wszystkich
-     * źródeł) i niezawieszonych w testach. Gdy jest ich mniej niż 150, egzamin ma tyle, ile jest, a próg zaliczenia
+     * Losuje {@value ExamFormat#QUESTION_COUNT} pytań z całej puli ścieżki (bez zawężenia do aktów) z wybranego źródła
+     * i niezawieszonych w testach. Gdy jest ich mniej niż 150, egzamin ma tyle, ile jest, a próg zaliczenia
      * maleje proporcjonalnie (zob. {@link ExamFormat#passPointsFor}). Ocena egzaminu (submit) niczego nie filtruje:
      * ocenia to, co zostało pokazane.
+     *
+     * @param source  z jakiego źródła losować; brak (null) to wszystkie źródła
+     * @param sheetId numer arkusza egzaminu MS: gdy jest podany, egzamin to cały ten arkusz (bez losowania, w kolejności
+     *                arkusza), a {@code source} jest pomijane
      */
     @Transactional(readOnly = true)
-    public ExamStartResponse start(Authentication authentication) {
+    public ExamStartResponse start(SourceMode source, Long sheetId, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
-        Pool pool = poolService.forUser(user.getId()).unnarrowed();
+        if (sheetId != null) {
+            return startSheet(user, sheetId);
+        }
+        SourceMode mode = SourceMode.orAll(source);
 
-        Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedQuestionIds(user.getId(), ReviewMode.TEST));
         // Losujemy na samych numerach; pełne pytania ładujemy dopiero dla wylosowanych (jedno zapytanie).
-        List<Long> drawable = new ArrayList<>(questionRepository.findRefsInPool(pool.actIds(), pool.allSourceIds())
-                .stream()
-                .filter(ref -> !suspended.contains(ref.getId()))
-                .map(QuestionRef::getId)
-                .toList());
+        List<Long> drawable = drawableIds(user, mode);
         if (drawable.isEmpty()) {
-            throw new IllegalArgumentException("Nie ma teraz pytań, które możesz rozwiązać na egzaminie.");
+            throw new IllegalArgumentException(mode == SourceMode.ALL
+                    ? "Nie ma teraz pytań, które możesz rozwiązać na egzaminie."
+                    : "Nie ma teraz pytań z tego źródła, które możesz rozwiązać na egzaminie. Wybierz inne źródło.");
         }
 
         Collections.shuffle(drawable, random);
@@ -90,7 +115,119 @@ public class ExamService {
         List<TestQueueItemResponse> questions = QuestionScopes.loadInOrder(questionRepository, drawn).stream()
                 .map(ReviewQueueMapper::toTest)
                 .toList();
-        return new ExamStartResponse(SCOPE_LABEL, ExamFormat.QUESTION_COUNT, ExamFormat.passPointsFor(questions.size()), questions);
+        return new ExamStartResponse(scopeLabel(mode), ExamFormat.QUESTION_COUNT, ExamFormat.passPointsFor(questions.size()), questions);
+    }
+
+    /**
+     * Egzamin MS z wybranego roku: wszystkie widoczne pytania arkusza, w kolejności wczytania arkusza (bez losowania),
+     * ale bez pytań zawieszonych przez użytkownika w testach. Arkusz może być dowolnej aplikacji: nie ma tu ani puli
+     * ścieżki, ani zawężenia do aktów. Pełny arkusz to {@value ExamFormat#QUESTION_COUNT} pytań; dłuższy zostałby
+     * obcięty do tylu, bo tyle ma egzamin i tyle przyjmuje zapis wyniku.
+     */
+    private ExamStartResponse startSheet(User user, Long sheetId) {
+        QuestionSource sheet = sourceRepository.findById(sheetId)
+                .filter(QuestionSource::isExamSheet)
+                .orElseThrow(() -> new IllegalArgumentException("Nie ma takiego egzaminu MS. Wybierz inny."));
+        Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedQuestionIds(user.getId(), ReviewMode.TEST));
+        List<Long> drawn = questionRepository.findRefsInSources(List.of(sheet.getId())).stream()
+                .map(QuestionRef::getId)
+                .filter(id -> !suspended.contains(id))
+                .limit(ExamFormat.QUESTION_COUNT)
+                .toList();
+        if (drawn.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Z tego egzaminu MS nie ma teraz pytań, które możesz rozwiązać. Wybierz inny egzamin.");
+        }
+        List<TestQueueItemResponse> questions = QuestionScopes.loadInOrder(questionRepository, drawn).stream()
+                .map(ReviewQueueMapper::toTest)
+                .toList();
+        return new ExamStartResponse(sheetLabel(sheet), ExamFormat.QUESTION_COUNT, ExamFormat.passPointsFor(questions.size()), questions);
+    }
+
+    /**
+     * Egzaminy MS do wyboru: arkusze wszystkich aplikacji według lat, z liczbą pytań, jaka będzie na egzaminie (bez pytań
+     * zawieszonych w testach). Pomija arkusze bez pytań i aplikacje bez arkuszy. Aplikacja użytkownika jest pierwsza.
+     */
+    @Transactional(readOnly = true)
+    public ExamSheetsResponse sheets(Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        List<QuestionSourceRepository.SourceRow> sheets = sourceRepository.findAllRows().stream()
+                .filter(s -> s.getKind() == SourceKind.EXAM_SHEET && s.getTrackId() != null && s.getExamYear() != null)
+                .toList();
+        if (sheets.isEmpty()) {
+            return new ExamSheetsResponse(List.of());
+        }
+
+        Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedQuestionIds(user.getId(), ReviewMode.TEST));
+        Map<Long, Integer> countBySheet = new HashMap<>();
+        for (QuestionRef ref : questionRepository.findRefsInSources(sheets.stream().map(QuestionSourceRepository.SourceRow::getId).toList())) {
+            if (!suspended.contains(ref.getId())) {
+                countBySheet.merge(ref.getSourceId(), 1, Integer::sum);
+            }
+        }
+
+        Map<Long, List<ExamSheetsResponse.Sheet>> sheetsByTrack = new HashMap<>();
+        for (QuestionSourceRepository.SourceRow sheet : sheets) {
+            int count = countBySheet.getOrDefault(sheet.getId(), 0);
+            if (count > 0) {
+                sheetsByTrack.computeIfAbsent(sheet.getTrackId(), k -> new ArrayList<>()).add(
+                        new ExamSheetsResponse.Sheet(sheet.getId(), sheet.getExamYear(), Math.min(count, ExamFormat.QUESTION_COUNT)));
+            }
+        }
+
+        Long ownTrackId = settingsRepository.findById(user.getId()).map(UserSettings::getTrackId).orElse(null);
+        List<ExamSheetsResponse.Application> applications = new ArrayList<>();
+        for (Track track : trackRepository.findAllByOrderBySortOrderAscIdAsc()) {
+            List<ExamSheetsResponse.Sheet> ofTrack = sheetsByTrack.get(track.getId());
+            if (track.getKind() != TrackKind.EXAM || ofTrack == null) {
+                continue;
+            }
+            ofTrack.sort(Comparator.comparingInt(ExamSheetsResponse.Sheet::year).reversed().thenComparing(ExamSheetsResponse.Sheet::id));
+            boolean own = track.getId().equals(ownTrackId);
+            ExamSheetsResponse.Application application = new ExamSheetsResponse.Application(
+                    track.getId(), track.getSlug(), track.getName(), track.getShortName(), own, List.copyOf(ofTrack));
+            if (own) {
+                applications.add(0, application);
+            } else {
+                applications.add(application);
+            }
+        }
+        return new ExamSheetsResponse(applications);
+    }
+
+    /** Ile pytań da się wylosować z każdego źródła; te same reguły co w {@link #start}. */
+    @Transactional(readOnly = true)
+    public ExamAvailabilityResponse availability(Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        return new ExamAvailabilityResponse(
+                drawableIds(user, SourceMode.ALL).size(),
+                drawableIds(user, SourceMode.MINISTRY).size(),
+                drawableIds(user, SourceMode.AUTHORED).size());
+    }
+
+    /** Numery pytań do wylosowania: cała pula ścieżki (bez zawężenia do aktów) z wybranego źródła, bez zawieszonych w testach. */
+    private List<Long> drawableIds(User user, SourceMode mode) {
+        Pool pool = poolService.forUser(user.getId(), mode.filter()).unnarrowed();
+        Set<Long> suspended = new HashSet<>(stateRepository.findSuspendedQuestionIds(user.getId(), ReviewMode.TEST));
+        return new ArrayList<>(questionRepository.findRefsInPool(pool.actIds(), pool.sourceIds())
+                .stream()
+                .filter(ref -> !suspended.contains(ref.getId()))
+                .map(QuestionRef::getId)
+                .toList());
+    }
+
+    /** Podpis egzaminu MS z wybranego roku w raporcie i historii: „Egzamin MS: Notarialna 2024". */
+    static String sheetLabel(QuestionSource sheet) {
+        return SHEET_LABEL_PREFIX + sheet.getName();
+    }
+
+    /** Podpis egzaminu w raporcie i historii. */
+    static String scopeLabel(SourceMode mode) {
+        return switch (SourceMode.orAll(mode)) {
+            case ALL -> SCOPE_LABEL;
+            case MINISTRY -> "Ministerstwo Sprawiedliwości";
+            case AUTHORED -> "Pytania autorskie";
+        };
     }
 
     /** Ocenia egzamin, zapisuje podsumowanie podejścia i zwraca raport ze wszystkimi pytaniami w kolejności egzaminu. */
@@ -153,7 +290,12 @@ public class ExamService {
         ExamAttempt attempt = new ExamAttempt();
         attempt.setUser(user);
         attempt.setFinishedAt(LocalDateTime.now(clock));
-        attempt.setScopeLabel(SCOPE_LABEL);
+        attempt.setScopeLabel(request.sheetId() == null
+                ? scopeLabel(request.source())
+                : sourceRepository.findById(request.sheetId())
+                        .filter(QuestionSource::isExamSheet)
+                        .map(ExamService::sheetLabel)
+                        .orElse(SHEET_LABEL_FALLBACK));
         attempt.setQuestionCount(total);
         attempt.setAnsweredCount(answered);
         attempt.setCorrectCount(correct);

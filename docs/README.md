@@ -24,7 +24,7 @@ umiesz, a co tylko zgadłeś, i sama układa powtórki algorytmem **FSRS-6**.
 | [02. Baza danych](02-baza-danych.md) | Wszystkie tabele, relacje, ograniczenia, model puli pytań, migracje V1 (schemat), V2 (dane słownikowe), V3 (zmiany w prawie, przedmioty Studenta) i V4 (rozdziały aktów) | Gdy chcesz zrozumieć dane albo napisać zapytanie SQL |
 | [03. Bezpieczeństwo i konta](03-bezpieczenstwo-i-konta.md) | Rejestracja, aktywacja, logowanie, tokeny (dostępu i odświeżające), reset hasła, role, limity prób, usuwanie konta | Gdy chcesz wiedzieć, kto co może i jak chronione są konta |
 | [04. Nauka: testy, fiszki, FSRS](04-nauka-testy-fiszki-fsrs.md) | Serce aplikacji: jak działa algorytm powtórek, kolejki, limity dzienne, tryb egzaminacyjny | Gdy chcesz zrozumieć pulę pytań i dlaczego pytanie wraca akurat dziś |
-| [API: przegląd](api/README.md) | Wspólne zasady API i lista wszystkich 62 endpointów | Gdy łączysz frontend z backendem |
+| [API: przegląd](api/README.md) | Wspólne zasady API i lista wszystkich 64 endpointów | Gdy łączysz frontend z backendem |
 | [API: konta i logowanie](api/01-auth.md) | `/api/auth/*` | |
 | [API: konto zalogowanego](api/02-konto.md) | `/api/me`, `/api/users/me/*` | |
 | [API: ścieżki, przedmioty, pula, katalog Testów](api/03-tresci.md) | `/api/tracks`, `/api/courses`, `/api/me/pool*`, `/api/tests/catalog` | |

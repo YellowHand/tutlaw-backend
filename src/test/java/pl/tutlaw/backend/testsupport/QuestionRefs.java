@@ -132,6 +132,19 @@ public final class QuestionRefs {
     }
 
     /**
+     * Zachowuje się jak zapytanie o pytania z podanych źródeł (arkuszy): nieukryte, od najmniejszego numeru, bez
+     * ograniczenia do aktów (egzamin MS z wybranego roku).
+     */
+    public static List<QuestionRef> inSources(Collection<Question> all, Collection<Long> sourceIds) {
+        return all.stream()
+                .filter(q -> !q.isHidden())
+                .filter(q -> sourceIds.contains(q.getSource().getId()))
+                .sorted(java.util.Comparator.comparing(Question::getId))
+                .map(QuestionRefs::refOf)
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    /**
      * Zachowuje się jak zapytanie o pytania po numerach: zwraca istniejące pytania z {@code ids}, ale w ODWROTNEJ
      * kolejności niż poproszono (baza nie gwarantuje kolejności), żeby testy pilnowały, że serwis układa ją sam.
      */
