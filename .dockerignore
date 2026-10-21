@@ -1,0 +1,10 @@
+.git
+.idea
+.mvn
+target
+src
+docs
+deploy
+.env
+.env.*
+*.md

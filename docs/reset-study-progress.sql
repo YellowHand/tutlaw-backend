@@ -7,7 +7,7 @@
 -- UWAGA: operacja jest NIEODWRACALNA. Nie uruchamia się sama, żadna migracja jej nie wywołuje.
 --        Zrób kopię (pg_dump), jeśli są tam dane, których szkoda.
 --
--- Uruchomienie:  psql -d tutlaw -f docs/reset-study-progress.sql
+-- Uruchomienie:  psql -d gradusiuris -f docs/reset-study-progress.sql
 
 BEGIN;
 

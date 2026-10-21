@@ -1,38 +1,59 @@
+# Konfiguracja bazowa = konfiguracja PRODUKCYJNA. Jest celowo „ostra”:
+#  - sekrety i adresy nie mają wartości domyślnych (brak zmiennej środowiskowej = aplikacja nie wystartuje, z jasnym komunikatem),
+#  - brak Swaggera, show-sql i szczegółów Actuatora,
+#  - Flyway nie może czyścić bazy.
+# Wygody programisty (lokalna baza, Mailpit, Swagger, sekret testowy) są w application-dev.yml i włączają się jawnie:
+#   SPRING_PROFILES_ACTIVE=dev
+# Opis wszystkich zmiennych: .env.example oraz docs/05-konfiguracja-i-uruchomienie.md.
 spring:
   application:
     name: gradus-iuris-backend
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/tutlaw}
-    username: ${SPRING_DATASOURCE_USERNAME:tutlaw_user}
-    password: ${SPRING_DATASOURCE_PASSWORD:tutlaw_password}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Nikt (ani skrypt, ani pomyłka) nie wyczyści bazy przez Flyway.
+    clean-disabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   mail:
-    host: ${MAIL_HOST:localhost}
-    port: ${MAIL_PORT:1025}
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: ${MAIL_SMTP_AUTH:false}
+          auth: ${MAIL_SMTP_AUTH:true}
           starttls:
-            enable: ${MAIL_STARTTLS:false}
+            enable: ${MAIL_STARTTLS:true}
+          # Wolny serwer poczty nie może wieszać wątków w nieskończoność.
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 app:
   jwt:
-    secret: ${APP_JWT_SECRET:lokalny-dev-sekret-min-32-znaki-zmien-koniecznie-na-produkcji}
+    secret: ${APP_JWT_SECRET}
     # Token dostępu żyje krótko (30 min); użytkownika w aplikacji utrzymuje token odświeżający.
     access-token-expiration-ms: ${APP_JWT_EXPIRATION_MS:1800000}
     refresh-token-expiration-days: ${APP_JWT_REFRESH_DAYS:30}
+  # Adres strony (frontendu). Z niego powstają linki w mailach i lista dozwolonych adresów CORS.
+  # Produkcja: https://gradusiuris.pl (można podać kilka adresów po przecinku w CORS, ale linki w mailach zawsze budujemy z frontend-url).
   cors:
-    allowed-origin: ${FRONTEND_URL:http://localhost:5173}
-  # Adres frontendu w linkach z maili o zmianie hasła (ten sam FRONTEND_URL co CORS).
-  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+    allowed-origin: ${CORS_ALLOWED_ORIGINS:${FRONTEND_URL}}
+  frontend-url: ${FRONTEND_URL}
+  mail:
+    # Nadawca maili. Na produkcji musi być w domenie zweryfikowanej u dostawcy poczty (Amazon SES), np. no-reply@gradusiuris.pl.
+    from: ${MAIL_FROM}
   fsrs:
     request-retention: 0.9
     new-flashcards-per-day: 20
@@ -46,18 +67,33 @@ app:
     # Do ilu dni po wejściu w życie zmiana w prawie uchodzi za „świeżą" (kategoria „Zmiany w prawie" we własnym teście).
     recent-change-days: 365
 
+# Dokumentacja API (Swagger) tylko w profilu dev.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 management:
+  health:
+    # Bez tego /actuator/health przy każdym wywołaniu łączyłby się z serwerem poczty (SES). Chwilowy kłopot z pocztą nie może
+    # oznaczać „aplikacja nie działa” (blokowałby start Caddy i wywoływał cofnięcie wdrożenia).
+    mail:
+      enabled: false
   endpoint:
     health:
-      show-details: always
+      show-details: never
   endpoints:
     web:
+      exposure:
+        include: health
       cors:
-        allowed-origins: ${FRONTEND_URL:http://localhost:5173}
+        allowed-origins: ${FRONTEND_URL}
         allowed-methods: GET
 
 server:
   port: ${PORT:8080}
-  # Za serwerem pośredniczącym (nginx, hosting) ustaw FORWARD_HEADERS_STRATEGY=native, inaczej limiter prób logowania
-  # widzi adres serwera pośredniczącego zamiast klienta (wszyscy mają wtedy jeden wspólny limit). Lokalnie: none.
-  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}
+  shutdown: graceful
+  # Za serwerem pośredniczącym (Caddy, nginx, balanser) adres klienta jest w nagłówkach X-Forwarded-*. Bez „native” limiter prób
+  # logowania widzi adres serwera pośredniczącego i wszyscy mają wspólny limit. Na produkcji zawsze za proxy, więc domyślnie native.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:native}

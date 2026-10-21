@@ -1,0 +1,13 @@
+# Caddy: przyjmuje HTTPS na api.gradusiuris.pl, sam pobiera i odnawia certyfikat (Let's Encrypt) i przekazuje ruch do backendu.
+# Warunki: rekord DNS A api.gradusiuris.pl wskazuje na Elastic IP serwera (w Cloudflare jako „DNS only”, szara chmurka),
+# a grupa zabezpieczeń serwera przepuszcza porty 80 i 443 z internetu.
+api.gradusiuris.pl {
+	encode zstd gzip
+	reverse_proxy backend:8080
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+}

@@ -34,3 +34,11 @@ build/
 
 ### Env
 .env
+
+### Sekrety i pliki lokalne (Etap 37) ###
+.env
+.env.*
+!.env.example
+deploy/.env.prod
+*.pem
+app.jar

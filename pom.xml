@@ -8,11 +8,11 @@
         <version>4.1.1</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>pl.tutlaw</groupId>
+    <groupId>pl.gradusiuris</groupId>
     <artifactId>backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name/>
-    <description/>
+    <name>gradusiuris-backend</name>
+    <description>Gradus iuris: backend (API do nauki do egzaminów prawniczych)</description>
     <url/>
     <licenses>
         <license/>

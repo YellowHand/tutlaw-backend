@@ -1,0 +1,49 @@
+# Profil lokalny (dev). Włączasz go jawnie: SPRING_PROFILES_ACTIVE=dev
+#   - w IntelliJ: Run > Edit Configurations > Active profiles: dev
+#   - z terminala: ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+# Działa z docker-compose.yml z tego repozytorium (PostgreSQL + Mailpit). Wartości poniżej da się nadpisać zmiennymi środowiskowymi.
+# NIGDY nie używaj tego profilu na serwerze: sekrety są jawne, a Swagger otwarty.
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/gradusiuris}
+    username: ${SPRING_DATASOURCE_USERNAME:gradusiuris_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:gradusiuris_password}
+  jpa:
+    show-sql: true
+  mail:
+    # Mailpit (docker-compose): maile zobaczysz w przeglądarce na http://localhost:8025
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_STARTTLS:false}
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET:lokalny-dev-sekret-min-32-znaki-tylko-do-nauki-lokalnej}
+  cors:
+    allowed-origin: ${CORS_ALLOWED_ORIGINS:${FRONTEND_URL:http://localhost:5173}}
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  mail:
+    from: ${MAIL_FROM:Gradus iuris (dev) <no-reply@gradusiuris.local>}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      cors:
+        allowed-origins: ${FRONTEND_URL:http://localhost:5173}
+
+server:
+  # Lokalnie bez serwera pośredniczącego.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}

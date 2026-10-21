@@ -5,7 +5,7 @@
 Ta strona mówi wprost, czego w backendzie jeszcze nie ma, co zostało odłożone na koniec i co jest niedoskonałe.
 Podzielona jest na cztery części:
 
-1. [Zostawione na koniec, przed wdrożeniem na prawdziwy serwer](#1-zostawione-na-koniec-przed-wdrożeniem-na-prawdziwy-serwer)
+1. [Przed wdrożeniem na prawdziwy serwer](#1-przed-wdrożeniem-na-prawdziwy-serwer-stan-po-etapie-37)
 2. [Niedoskonałości w kodzie, które znalazłem przy pisaniu dokumentacji](#2-niedoskonałości-w-kodzie)
 3. [Ograniczenia funkcjonalne i skalowania](#3-ograniczenia-funkcjonalne-i-skalowania)
 4. [Czego nie sprawdzono przy pisaniu tej dokumentacji](#4-czego-nie-sprawdzono)
@@ -14,21 +14,25 @@ Ta strona opisuje stan faktyczny; niczego z poniższego nie naprawiono przy okaz
 
 ---
 
-## 1. Zostawione na koniec, przed wdrożeniem na prawdziwy serwer
+## 1. Przed wdrożeniem na prawdziwy serwer (stan po Etapie 37)
 
-To są rzeczy, które celowo odkładamy na sam koniec prac. Lokalnie nie przeszkadzają, ale **nie wolno wystawiać
-aplikacji pod publiczny adres, dopóki się ich nie załatwi**.
+Osiem rzeczy, które do Etapu 36 były odłożone „na koniec”, załatwił Etap 37. Zostaje to, co wymaga Twojej decyzji albo
+działania poza kodem.
 
-| # | Co | Stan dziś | Co trzeba zrobić |
-|---|----|-----------|------------------|
-| 1 | **Plik `.env` w repozytorium** | `.env` jest śledzony przez git (obok `.env.example`), mimo że wpis `.env` jest już w `.gitignore`: ignorowanie nie działa na pliki dodane do repozytorium wcześniej | Usunąć z repozytorium (`git rm --cached .env`), zmienić wszystkie hasła i sekrety, które kiedykolwiek w nim były (bo zostały w historii git) |
-| 2 | **Domyślny sekret JWT** | `application.yml` ma wartość domyślną `APP_JWT_SECRET` („lokalny-dev-sekret-…”). Kto ją zna, może wystawiać prawdziwe tokeny | Ustawić długi, losowy sekret w środowisku produkcyjnym i usunąć wartość domyślną |
-| 3 | **CORS** | `CorsConfig` ma na stałe wpisany adres `http://localhost:5173`. Ustawienie `app.cors.allowed-origin` (z `FRONTEND_URL`) istnieje w `application.yml`, ale **kod go nie czyta**. Z `FRONTEND_URL` korzysta tylko CORS endpointów Actuatora | Czytać dozwolony adres z konfiguracji i ustawić go na adres produkcyjnego frontendu; sprawdzić na uruchomionym serwerze, czy nagłówki CORS są odsyłane |
-| 4 | **Link aktywacyjny w mailu** | `EmailService.sendVerificationEmail` ma wpisany na stałe `http://localhost:5173/verify?token=...`. Ten sam link trafia do logu (poziom INFO). Link resetu hasła i powiadomienie o zmianie hasła używają już `FRONTEND_URL` | Użyć `FRONTEND_URL` także w mailu aktywacyjnym i usunąć link z logu |
-| 5 | **`show-sql`** | `spring.jpa.show-sql: true`: każde zapytanie SQL ląduje w logu (m.in. wolniejsze logi, więcej danych w logach) | Wyłączyć na produkcji |
-| 6 | **Actuator** | `management.endpoint.health.show-details: always` i `/actuator/**` bez logowania. Spring Boot domyślnie wystawia tylko `/actuator/health`, ale ze szczegółami (stan bazy itp.) widocznymi dla każdego | Zmienić na `when-authorized` albo `never`, ograniczyć dostęp |
-| 7 | **Swagger UI i `/v3/api-docs`** | Otwarte bez logowania | Wyłączyć na produkcji (`springdoc.api-docs.enabled=false`, `springdoc.swagger-ui.enabled=false`) albo zabezpieczyć |
-| 8 | **Nazwy techniczne z dawnej nazwy projektu** | Nazwa aplikacji dla użytkownika to „Gradus iuris” (maile, teksty, dokumentacja). Pod spodem zostały nazwy techniczne: pakiet Javy `pl.tutlaw.backend` (i `groupId` w `pom.xml`), baza, użytkownik i hasło bazy `tutlaw…`, kontener `tutlaw-postgres`, wolumen `tutlaw_postgres_data`, komentarz w pierwszej linii migracji `V1__init_schema.sql` | Zmienić razem z wyborem domeny i przygotowaniem wdrożenia: pakiet po ustaleniu domeny (reguła „domena odwrócona”), bazę przez kopię i przywrócenie (`pg_dump`). **Komentarza w `V1` nie ruszać**: zmiana pliku migracji zmienia jego sumę kontrolną i Flyway odmówi startu na istniejącej bazie |
+| # | Co | Stan dziś |
+|---|----|-----------|
+| 1 | **Plik `.env` w repozytorium** | Usunięty z indeksu git (`git rm --cached .env`), a `.gitignore` ignoruje `.env`, `.env.*` (poza `.env.example`), `deploy/.env.prod` i `*.pem`. **Zostaje w historii git**, więc każdy sekret, który kiedykolwiek w nim był, trzeba uznać za ujawniony i zmienić (dotyczy głównie dawnych haseł lokalnej bazy i sekretu JWT; na produkcji i tak powstają nowe) |
+| 2 | **Sekret JWT** | Plik `application.yml` (produkcja) nie ma wartości domyślnej. Brak `APP_JWT_SECRET` albo sekret krótszy niż 32 znaki lub wyglądający na szablon: aplikacja nie startuje (`ProductionSafetyCheck`). Wartość deweloperska jest tylko w `application-dev.yml` |
+| 3 | **CORS** | `CorsConfig` czyta dozwolone adresy z `app.cors.allowed-origin` (`CORS_ALLOWED_ORIGINS`, domyślnie `FRONTEND_URL`, lista po przecinku). Test jednostkowy sprawdza parsowanie; **działanie na uruchomionym serwerze trzeba sprawdzić** (instrukcje wdrożenia mają do tego polecenie `curl`) |
+| 4 | **Link aktywacyjny w mailu** | Powstaje z `FRONTEND_URL`. Linku nie ma już w logu (jest tylko informacja, że mail trafił do kolejki) |
+| 5 | **`show-sql`** | Wyłączone poza profilem `dev` |
+| 6 | **Actuator** | Bez logowania dostępne jest wyłącznie `/actuator/health`, a szczegóły (`show-details`) są poza profilem `dev` wyłączone |
+| 7 | **Swagger UI i `/v3/api-docs`** | Wyłączone poza profilem `dev` |
+| 8 | **Ślad dawnej nazwy w migracji `V1`** | Nazwy techniczne to `gradusiuris` (pakiet Javy `pl.gradusiuris.backend`, `groupId`, baza, użytkownik, kontener `gradusiuris-postgres`, wolumen `gradusiuris_postgres_data`). Jedyny ślad starej nazwy to komentarz w pierwszej linii `V1__init_schema.sql`. **Nie ruszać:** zmiana pliku migracji zmienia jego sumę kontrolną i Flyway odmówi startu na bazie, która już tę migrację wykonała. Zasada ogólna: wykonanej migracji się nie edytuje, tylko dokłada nową |
+
+Czego Etap 37 **nie** sprawdził (nie dało się w środowisku, w którym powstał): budowy obrazu Dockera, uruchomienia pełnego
+Springa z profilem produkcyjnym na prawdziwej bazie RDS, wysyłki maila przez SES ani żadnego kroku w AWS. Pierwsze
+wdrożenie to więc zarazem pierwszy prawdziwy test tych plików; instrukcje wdrożenia każą po każdym kroku sprawdzić efekt.
 
 Po stronie frontendu odłożone jest też m.in. trzymanie tokenów w `localStorage` (to świadoma decyzja na ten etap:
 tokeny w `localStorage` są narażone na kradzież przy ewentualnym ataku XSS; docelowo token odświeżający powinien trafić do
@@ -178,9 +182,10 @@ Uczciwie o weryfikacji tej dokumentacji:
   `ON_ERROR_STOP`). Opisy działania endpointów pochodzą z kodu i testów jednostkowych, a nie z obserwacji
   działającego serwera.
 - **Przykłady JSON są ilustracyjne**: kształt pól pochodzi z klas DTO, ale wartości są wymyślone.
-- **Nie sprawdzałem**, czy konfiguracja CORS z `CorsConfig` jest faktycznie podpinana przez Spring Security (w
-  `SecurityConfig` nie ma jawnego wywołania `.cors(...)`). Do potwierdzenia przy konfigurowaniu CORS na serwerze
-  produkcyjnym.
+- **CORS na działającym serwerze nie był sprawdzony.** Od Etapu 37 `SecurityConfig` jawnie włącza filtr CORS
+  (`.cors(...)`), a `CorsConfig` czyta adresy z konfiguracji; test statyczny pilnuje obecności wywołania, ale dopiero
+  prawdziwe żądanie z przeglądarki (lub `curl` z nagłówkiem `Origin`) potwierdza nagłówki. Polecenie jest w instrukcjach
+  wdrożenia.
 - Zgodność opisu endpointów i tabel z kodem sprawdza skrypt `docs/tools/check_docs.py` (patrz poniżej), ale
   sprawdza on tylko to, co da się porównać mechanicznie: listę endpointów, nazwy tabel i kolumn z migracji oraz
   odnośniki między plikami. Opisów słownych nie weryfikuje.

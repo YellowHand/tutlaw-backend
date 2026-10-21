@@ -274,7 +274,7 @@ def pl_number(value: str) -> str:
 
 
 def check_numbers() -> None:
-    weights_src = read(SRC / "pl" / "tutlaw" / "backend" / "review" / "fsrs" / "FsrsWeights.java")
+    weights_src = read(SRC / "pl" / "gradusiuris" / "backend" / "review" / "fsrs" / "FsrsWeights.java")
     body = re.search(r"new double\[\]\{(.*?)\}", weights_src, re.S).group(1)
     weights = re.findall(r"-?\d+\.\d+|-?\d+", body)
     if len(weights) != 21:
@@ -329,7 +329,7 @@ def check_numbers() -> None:
             fail(f"docs/{doc_file} nie opisuje klucza {key}")
 
     # limity prób
-    limiter = read(SRC / "pl" / "tutlaw" / "backend" / "auth" / "AuthRateLimiter.java")
+    limiter = read(SRC / "pl" / "gradusiuris" / "backend" / "auth" / "AuthRateLimiter.java")
     security_doc = read(DOCS / "03-bezpieczenstwo-i-konta.md")
     for const in ("LOGIN_PER_IP", "LOGIN_FAILURES", "REGISTER_PER_IP", "EMAIL_ACTION_PER_IP",
                   "EMAIL_ACTION_PER_ACCOUNT", "RESET_ATTEMPTS_PER_IP"):

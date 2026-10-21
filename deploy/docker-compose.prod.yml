@@ -1,0 +1,52 @@
+# Środowisko PRODUKCYJNE na serwerze (EC2): backend + Caddy (HTTPS z automatycznym certyfikatem Let's Encrypt).
+# Baza jest poza tym plikiem (Amazon RDS). Plik leży na serwerze w /opt/gradusiuris/ i jest wysyłany przez deploy-backend.sh.
+#
+# Sekrety są w pliku /opt/gradusiuris/.env.prod (tworzysz go ręcznie raz, wzór: .env.prod.example). Nigdy nie trafia do gita.
+services:
+  backend:
+    build:
+      # Katalog bieżącego wydania (dowiązanie „current”): zawiera Dockerfile i app.jar.
+      context: ./current
+    image: gradusiuris-backend
+    container_name: gradusiuris-backend
+    restart: unless-stopped
+    env_file: .env.prod
+    expose:
+      - "8080"          # tylko dla Caddy w sieci Dockera; z zewnątrz backend nie jest widoczny
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s   # start Springa z Flyway (migracje) trwa dłużej niż zwykłe żądanie
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2
+    container_name: gradusiuris-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # tu leżą certyfikaty: nie kasuj, bo Let's Encrypt ma limity wystawiania
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

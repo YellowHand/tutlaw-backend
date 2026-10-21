@@ -41,7 +41,7 @@ Hibernate nie tworzy tabel: `spring.jpa.hibernate.ddl-auto` jest ustawione na `v
 
 ## Mapa pakietów
 
-Cały kod jest w `src/main/java/pl/tutlaw/backend/`. Każda funkcja ma własny pakiet („pakiet funkcji”), a w nim
+Cały kod jest w `src/main/java/pl/gradusiuris/backend/`. Każda funkcja ma własny pakiet („pakiet funkcji”), a w nim
 komplet klas.
 
 | Pakiet | Za co odpowiada |
@@ -199,7 +199,7 @@ Jeśli to samo pytanie dostanie odpowiedź w tym samym trybie w ciągu **1 sekun
 
 ## Testy
 
-W `src/test` jest **72 klas testowych** (ok. 850 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
+W `src/test` jest **76 klas testowych** (ok. 867 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
 czasem, „fałszywe” repozytoria i repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy jednostkowe
 czystej logiki (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`, `SourceFilterTest`…) oraz serwisów na repozytoriach w
 pamięci (np. `AuthFlowTest` przechodzi cały przebieg rejestracji, aktywacji, logowania i resetu hasła bez Springa i bez

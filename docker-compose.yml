@@ -1,16 +1,35 @@
+# Środowisko LOKALNE (dev): PostgreSQL 16 + Mailpit (fałszywy serwer poczty z podglądem w przeglądarce).
+#   docker compose up -d      (start)
+#   docker compose down       (stop, dane bazy zostają w wolumenie)
+#   docker compose down -v    (stop i SKASOWANIE lokalnej bazy)
+# Hasło bazy bierze się z pliku .env (patrz .env.example). Produkcja NIE używa tego pliku (patrz deploy/).
 services:
   postgres:
     image: postgres:16
-    container_name: tutlaw-postgres
+    container_name: gradusiuris-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      # Tylko dla tego komputera (nie dla sieci).
+      - "127.0.0.1:5432:5432"
     volumes:
-      - tutlaw_postgres_data:/var/lib/postgresql/data
+      - gradusiuris_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: gradusiuris-mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP, do którego pisze backend
+      - "127.0.0.1:8025:8025"   # podgląd maili: http://localhost:8025
 
 volumes:
-  tutlaw_postgres_data:
+  gradusiuris_postgres_data:
