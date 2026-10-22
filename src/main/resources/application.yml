@@ -54,6 +54,12 @@ app:
   mail:
     # Nadawca maili. Na produkcji musi być w domenie zweryfikowanej u dostawcy poczty (Amazon SES), np. no-reply@gradusiuris.pl.
     from: ${MAIL_FROM}
+  # Cloudflare Turnstile („checkbox” przy rejestracji i logowaniu). Sekret z panelu Cloudflare; puste = sprawdzenie wyłączone.
+  # Włączone sprawdzenie wymaga, żeby frontend (VITE_TURNSTILE_SITE_KEY) przysyłał token, więc najpierw wdróż frontend.
+  turnstile:
+    secret: ${TURNSTILE_SECRET:}
+    verify-url: https://challenges.cloudflare.com/turnstile/v0/siteverify
+    timeout-ms: 5000
   fsrs:
     request-retention: 0.9
     new-flashcards-per-day: 20

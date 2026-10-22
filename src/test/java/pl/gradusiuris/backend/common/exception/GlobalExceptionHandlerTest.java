@@ -104,6 +104,17 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void aFailedBotCheckKeepsItsOwnStatus() {
+        ResponseEntity<ErrorResponse> wrongToken = handler.handleBotCheck(new BotCheckException(400, "zły token"), request());
+        ResponseEntity<ErrorResponse> cloudflareDown = handler.handleBotCheck(new BotCheckException(503, "Cloudflare nie odpowiada"), request());
+
+        assertThat(wrongToken.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(wrongToken.getBody().message()).isEqualTo("zły token");
+        assertThat(cloudflareDown.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(GlobalExceptionHandler.isExpected(new BotCheckException(400, "x"))).isTrue();
+    }
+
+    @Test
     void ordinaryClientErrorsAreExpected_soTheyAreNotReportedToSentry() {
         assertThat(GlobalExceptionHandler.isExpected(new IllegalArgumentException("zły parametr"))).isTrue();
         assertThat(GlobalExceptionHandler.isExpected(new IllegalStateException("konflikt"))).isTrue();

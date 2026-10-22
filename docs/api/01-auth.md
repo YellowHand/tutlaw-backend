@@ -5,6 +5,21 @@
 Wszystkie endpointy tej grupy są **publiczne** (bez tokenu dostępu). Jak to działa w środku: rejestracja, aktywacja, logowanie,
 tokeny i limity prób opisane są w [03. Bezpieczeństwo i konta](../03-bezpieczenstwo-i-konta.md).
 
+## Sprawdzenie „czy to człowiek” (Cloudflare Turnstile)
+
+Cztery endpointy, które boty lubią (`register`, `login`, `forgot-password`, `resend-verification`), wymagają nagłówka
+`X-Turnstile-Token` z tokenem z widgetu Cloudflare Turnstile na stronie. Serwer sprawdza token w Cloudflare (token jest
+jednorazowy: po każdej próbie trzeba pobrać nowy). Pozostałe endpointy (`refresh`, `logout`, `verify`, `reset-password`)
+mają własne tokeny i niczego nie wymagają.
+
+| Sytuacja | Odpowiedź |
+|----------|-----------|
+| `TURNSTILE_SECRET` puste (np. lokalnie) | sprawdzenie wyłączone, nagłówek niepotrzebny |
+| brak nagłówka, token odrzucony przez Cloudflare albo dłuższy niż 2048 znaków | `400` — „Potwierdź, że nie jesteś robotem.” albo „Weryfikacja nie powiodła się…” |
+| Cloudflare nie odpowiada | `503` — „Nie udało się teraz sprawdzić zabezpieczenia.” (blokujemy, nie przepuszczamy) |
+
+Sprawdzenie działa przed limitem prób i przed samą logiką konta, więc odrzucone żądanie nie dotyka bazy ani nie wysyła maili.
+
 ## `POST /api/auth/register` — rejestracja
 
 Zakłada konto (nieaktywne) i wysyła link aktywacyjny na adres uczelniany.

@@ -97,6 +97,12 @@ public class GlobalExceptionHandler {
                 .body(body);
     }
 
+    /** Nieudane „czy to człowiek” (Turnstile): 400 dla złego tokenu, 503 gdy Cloudflare nie odpowiada. */
+    @ExceptionHandler(BotCheckException.class)
+    public ResponseEntity<ErrorResponse> handleBotCheck(BotCheckException ex, HttpServletRequest request) {
+        return build(HttpStatus.valueOf(ex.getStatus()), ex.getMessage(), request);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
@@ -148,6 +154,7 @@ public class GlobalExceptionHandler {
                 || throwable instanceof UnauthorizedException
                 || throwable instanceof TooManyRequestsException
                 || throwable instanceof ResourceNotFoundException
+                || throwable instanceof BotCheckException
                 || (throwable instanceof Exception exception && isHandledElsewhere(exception));
     }
 
