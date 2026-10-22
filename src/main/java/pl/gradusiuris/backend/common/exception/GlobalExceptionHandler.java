@@ -132,6 +132,25 @@ public class GlobalExceptionHandler {
                 || ex.getClass().isAnnotationPresent(ResponseStatus.class);
     }
 
+    /**
+     * Czy to błąd „zwykły”, czyli taki, na który ten handler odpowiada kodem 4xx (zły login, walidacja, brak zasobu,
+     * konflikt, limit prób) albo który ma własną obsługę poza nim? Takie błędy NIE trafiają do Sentry ({@code SentryConfig}):
+     * dzieją się codziennie i nie wymagają poprawki w kodzie. Do Sentry idzie reszta, czyli to, co kończy się w
+     * {@link #handleUnexpected} jako 500. Sprawdzamy tylko sam wyjątek (nie jego przyczyny), tak jak robi to Spring.
+     */
+    public static boolean isExpected(Throwable throwable) {
+        return throwable instanceof IllegalArgumentException
+                || throwable instanceof MethodArgumentNotValidException
+                || throwable instanceof HttpMessageNotReadableException
+                || throwable instanceof IllegalStateException
+                || throwable instanceof ConflictException
+                || throwable instanceof OptimisticLockingFailureException
+                || throwable instanceof UnauthorizedException
+                || throwable instanceof TooManyRequestsException
+                || throwable instanceof ResourceNotFoundException
+                || (throwable instanceof Exception exception && isHandledElsewhere(exception));
+    }
+
     private static String describe(FieldError error) {
         String reason = error.getDefaultMessage() == null ? "nieprawidłowa wartość" : error.getDefaultMessage();
         return FieldLabels.label(error.getField()) + ": " + reason;

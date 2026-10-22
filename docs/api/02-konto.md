@@ -12,10 +12,11 @@ Najprostszy sposób, by sprawdzić, czy token nadal działa.
 **Odpowiedź `200`**
 
 ```json
-{ "email": "jan.kowalski@gmail.com" }
+{ "email": "jan.kowalski@gmail.com", "id": 5 }
 ```
 
-Zwraca prywatny adres e-mail z tokenu. Przy nieważnym tokenie: `401`.
+Zwraca prywatny adres e-mail z tokenu i numer konta (`id`, ten sam, który widać w dziennikach serwera jako „user 5”;
+frontend przekazuje go do Sentry zamiast adresu e-mail). Przy nieważnym tokenie: `401`.
 
 ## `GET /api/users/me/export` — kopia wszystkich danych
 

@@ -67,6 +67,18 @@ app:
     # Do ilu dni po wejściu w życie zmiana w prawie uchodzi za „świeżą" (kategoria „Zmiany w prawie" we własnym teście).
     recent-change-days: 365
 
+# Raportowanie błędów (Sentry). Bez SENTRY_DSN jest całkowicie wyłączone (nic nie jest wysyłane). Włącza się, gdy na serwerze
+# ustawisz SENTRY_DSN w .env.prod. Do Sentry trafiają tylko NIEOCZEKIWANE błędy (te, które kończą się odpowiedzią 500, oraz wpisy
+# ERROR w logu); błędy „biznesowe” (400, 401, 404, 409, 429) są odfiltrowane w SentryConfig. Dane osobowe są wyłączone.
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:production}
+  send-default-pii: false
+  in-app-includes: pl.gradusiuris
+  logging:
+    # Zwykłe wpisy INFO (np. „Password changed for user 5”) nie dołączają się do zgłoszeń jako okruszki.
+    minimum-breadcrumb-level: warn
+
 # Dokumentacja API (Swagger) tylko w profilu dev.
 springdoc:
   api-docs:

@@ -99,14 +99,16 @@ każda ma wartość domyślną z `application-dev.yml`. Wzory plików: `.env.exa
 
 ### Dodatkowe (opcjonalne)
 
-| Zmienna                    | Do czego                                                                                                                                    | Domyślnie                  |
-|----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|
-| `APP_JWT_EXPIRATION_MS`    | Ważność tokenu dostępu JWT w milisekundach                                                                                                  | `1800000` (30 minut)       |
-| `APP_JWT_REFRESH_DAYS`     | Ważność tokenu odświeżającego w dniach                                                                                                      | `30`                       |
-| `DB_POOL_SIZE`             | Maksymalna liczba połączeń z bazą                                                                                                           | `10`                       |
-| `PORT`                     | Port backendu                                                                                                                               | `8080`                     |
-| `APP_TIMEZONE`             | Strefa czasowa „doby” aplikacji                                                                                                             | `Europe/Warsaw`            |
-| `FORWARD_HEADERS_STRATEGY` | `native` za serwerem pośredniczącym (Caddy, nginx, balanser): limiter prób logowania widzi wtedy prawdziwy adres klienta, a nie adres proxy | `native` (w `dev`: `none`) |
+| Zmienna                    | Do czego                                                                                                                                                     | Domyślnie                  |
+|----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|
+| `APP_JWT_EXPIRATION_MS`    | Ważność tokenu dostępu JWT w milisekundach                                                                                                                   | `1800000` (30 minut)       |
+| `APP_JWT_REFRESH_DAYS`     | Ważność tokenu odświeżającego w dniach                                                                                                                       | `30`                       |
+| `DB_POOL_SIZE`             | Maksymalna liczba połączeń z bazą                                                                                                                            | `10`                       |
+| `PORT`                     | Port backendu                                                                                                                                                | `8080`                     |
+| `APP_TIMEZONE`             | Strefa czasowa „doby” aplikacji                                                                                                                              | `Europe/Warsaw`            |
+| `FORWARD_HEADERS_STRATEGY` | `native` za serwerem pośredniczącym (Caddy, nginx, balanser): limiter prób logowania widzi wtedy prawdziwy adres klienta, a nie adres proxy                  | `native` (w `dev`: `none`) |
+| `SENTRY_DSN`               | Adres projektu w Sentry (raportowanie nieoczekiwanych błędów). Puste = wyłączone, nic nie jest wysyłane. Tylko błędy 500 i wpisy ERROR, bez danych osobowych | puste                      |
+| `SENTRY_ENVIRONMENT`       | Nazwa środowiska w Sentry                                                                                                                                    | `production`               |
 
 ## Ustawienia aplikacji w plikach `application*.yml`
 

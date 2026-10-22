@@ -36,10 +36,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(BEARER_PREFIX.length());
             if (jwtService.isTokenValid(token)) {
                 String email = jwtService.extractEmail(token);
-                if (isSessionStillValid(email, token)) {
+                Optional<Long> userId = validSessionUserId(email, token);
+                if (userId.isPresent()) {
                     String role = jwtService.extractRole(token);
                     var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
                     var auth = new UsernamePasswordAuthenticationToken(email, null, authorities);
+                    // Numer konta w szczegółach uwierzytelnienia (bez dodatkowego zapytania): czyta go GET /api/me i raportowanie
+                    // błędów (Sentry), żeby wiedzieć, którego użytkownika dotyczy błąd, bez adresu e-mail.
+                    auth.setDetails(userId.get());
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
             }
@@ -51,11 +55,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /**
      * Jedno lekkie zapytanie o konto (po indeksowanym adresie): konto usunięte albo token wystawiony przed zmianą
      * hasła to brak uwierzytelnienia, czyli 401, a nie sesja, która działa do wygaśnięcia tokenu.
+     * Zwraca numer konta, gdy sesja jest ważna, a pusty wynik, gdy nie.
      */
-    private boolean isSessionStillValid(String email, String token) {
-        Optional<UserRepository.SessionInfo> session = userRepository.findSessionInfoByPrivateEmail(email);
-        return session.isPresent()
-                && SessionRules.isSessionValid(
-                        jwtService.extractIssuedAtEpochSeconds(token), session.get().getTokensValidFrom());
+    private Optional<Long> validSessionUserId(String email, String token) {
+        return userRepository.findSessionInfoByPrivateEmail(email)
+                .filter(session -> SessionRules.isSessionValid(
+                        jwtService.extractIssuedAtEpochSeconds(token), session.getTokensValidFrom()))
+                .map(UserRepository.SessionInfo::getId);
     }
 }

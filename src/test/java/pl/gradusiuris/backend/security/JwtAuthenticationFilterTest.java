@@ -99,6 +99,7 @@ class JwtAuthenticationFilterTest {
 
         assertThat(run.authentication).isNotNull();
         assertThat(run.authentication.getName()).isEqualTo("jan@gmail.com");
+        assertThat(run.authentication.getDetails()).isEqualTo(1L); // numer konta, dla /api/me i Sentry
         assertThat(run.chainCalls).isEqualTo(1);
         assertThat(run.lookups).containsExactly("jan@gmail.com"); // jedno zapytanie na żądanie
     }

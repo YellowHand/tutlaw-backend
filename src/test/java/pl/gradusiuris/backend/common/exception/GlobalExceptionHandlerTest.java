@@ -102,4 +102,26 @@ class GlobalExceptionHandlerTest {
 
         assertThatThrownBy(() -> handler.handleUnexpected(annotated, request())).isSameAs(annotated);
     }
+
+    @Test
+    void ordinaryClientErrorsAreExpected_soTheyAreNotReportedToSentry() {
+        assertThat(GlobalExceptionHandler.isExpected(new IllegalArgumentException("zły parametr"))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new IllegalStateException("konflikt"))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new ConflictException("duplikat"))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new UnauthorizedException("zły login"))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new ResourceNotFoundException("brak"))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new OptimisticLockingFailureException("stale"))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new AccessDeniedException("403"))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new ResponseStatusException(HttpStatus.NOT_FOUND))).isTrue();
+        assertThat(GlobalExceptionHandler.isExpected(new AnnotatedNotFound())).isTrue();
+    }
+
+    @Test
+    void genuinelyUnexpectedErrorsAreReportedToSentry() {
+        assertThat(GlobalExceptionHandler.isExpected(new NullPointerException())).isFalse();
+        assertThat(GlobalExceptionHandler.isExpected(new IOException("dysk"))).isFalse();
+        assertThat(GlobalExceptionHandler.isExpected(new RuntimeException("awaria"))).isFalse();
+        // Przyczyna nie ma znaczenia: ten handler odpowiada 500 na wyjątek zewnętrzny, więc zgłaszamy go jak 500.
+        assertThat(GlobalExceptionHandler.isExpected(new RuntimeException("awaria", new IllegalArgumentException()))).isFalse();
+    }
 }
