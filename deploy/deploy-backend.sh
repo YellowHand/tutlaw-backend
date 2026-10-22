@@ -25,7 +25,7 @@ echo "== 1/5 Budowanie"
 MVN_ARGS=(-q clean package "-Dtest=!BackendApplicationTests" -Dsurefire.failIfNoSpecifiedTests=false)
 [ "${SKIP_TESTS:-0}" = "1" ] && MVN_ARGS+=(-DskipTests)
 ./mvnw "${MVN_ARGS[@]}"
-JAR=$(ls target/backend-*.jar | grep -v '\.original$' | head -n 1)
+JAR=$(ls target/*.jar | grep -v '\.original$' | head -n 1)
 [ -f "$JAR" ] || { echo "Nie znaleziono pliku JAR w target/" >&2; exit 1; }
 
 RELEASE=$(date +%Y%m%d-%H%M%S)
