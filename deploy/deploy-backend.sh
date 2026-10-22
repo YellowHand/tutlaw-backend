@@ -2,20 +2,21 @@
 # Wdrożenie backendu na serwer produkcyjny jednym poleceniem (uruchamiasz na swoim komputerze, w katalogu backendu).
 # Windows: uruchamiaj w Git Bash albo WSL.
 #
-#   SSH_TARGET=ubuntu@api.gradusiuris.pl SSH_KEY=~/.ssh/gradusiuris.pem ./deploy/deploy-backend.sh
+#   SSH_TARGET=ubuntu@ADRES_IP_SERWERA SSH_KEY=~/.ssh/gradusiuris.pem ./deploy/deploy-backend.sh
 #
 # Zmienne:
-#   SSH_TARGET  (wymagane)  użytkownik@serwer, np. ubuntu@api.gradusiuris.pl
+#   SSH_TARGET  (wymagane)  użytkownik@serwer, np. ubuntu@ADRES_IP_SERWERA (adres IP z konsoli AWS, nie nazwa domeny:
+#               za Cloudflare nazwa api.gradusiuris.pl nie przepuszcza SSH, połączenie kończy się timeoutem)
 #   SSH_KEY     (opcjonalne) plik klucza prywatnego (.pem); bez niego używany jest domyślny klucz SSH
 #   SKIP_TESTS  (opcjonalne) 1 = zbuduj bez uruchamiania testów (domyślnie testy jednostkowe się uruchamiają; pomijany jest
 #               tylko BackendApplicationTests, który wymaga lokalnej bazy)
 #
 # Co robi: buduje JAR, wysyła go jako nowe „wydanie” w /opt/gradusiuris/releases/<data>, buduje obraz, uruchamia, czeka aż
 # aplikacja będzie zdrowa. Jeśli nie będzie, wraca do poprzedniego wydania. Zostawia 5 ostatnich wydań (do szybkiego cofnięcia).
-# Migracje bazy (Flyway) wykonują się same przy starcie aplikacji. Sekretów NIE wysyła: leżą tylko na serwerze (.env.stary.prod).
+# Migracje bazy (Flyway) wykonują się same przy starcie aplikacji. Sekretów NIE wysyła: leżą tylko na serwerze (.env.prod).
 set -euo pipefail
 
-: "${SSH_TARGET:?Ustaw SSH_TARGET, np. SSH_TARGET=ubuntu@api.gradusiuris.pl}"
+: "${SSH_TARGET:?Ustaw SSH_TARGET na adres IP serwera, np. SSH_TARGET=ubuntu@ADRES_IP_SERWERA}"
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
 [ -n "${SSH_KEY:-}" ] && SSH_OPTS+=(-i "$SSH_KEY")
 

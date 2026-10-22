@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Bezpiecznik przy starcie: poza profilem {@code dev} aplikacja nie wstanie z ustawieniami, które wyglądają na lokalne
  * albo niebezpieczne (sekret z szablonu, krótki sekret, adres frontendu bez HTTPS). Chroni przed pomyłką typu „skopiowałem
- * lokalny plik .env.stary na serwer”. W profilu {@code dev} nic nie sprawdza.
+ * lokalny plik .env na serwer”. W profilu {@code dev} nic nie sprawdza.
  */
 @Component
 public class ProductionSafetyCheck {
@@ -28,17 +28,20 @@ public class ProductionSafetyCheck {
     private final String jwtSecret;
     private final String frontendUrl;
     private final String dbPassword;
+    private final boolean refreshCookieSecure;
 
     public ProductionSafetyCheck(
             Environment environment,
             @Value("${app.jwt.secret}") String jwtSecret,
             @Value("${app.frontend-url}") String frontendUrl,
-            @Value("${spring.datasource.password:}") String dbPassword
+            @Value("${spring.datasource.password:}") String dbPassword,
+            @Value("${app.auth.refresh-cookie-secure:true}") boolean refreshCookieSecure
     ) {
         this.environment = environment;
         this.jwtSecret = jwtSecret;
         this.frontendUrl = frontendUrl;
         this.dbPassword = dbPassword;
+        this.refreshCookieSecure = refreshCookieSecure;
     }
 
     @PostConstruct
@@ -46,7 +49,7 @@ public class ProductionSafetyCheck {
         if (environment.acceptsProfiles(Profiles.of("dev"))) {
             return;
         }
-        List<String> problems = problems(jwtSecret, frontendUrl, dbPassword);
+        List<String> problems = problems(jwtSecret, frontendUrl, dbPassword, refreshCookieSecure);
         if (!problems.isEmpty()) {
             throw new IllegalStateException("Niebezpieczna konfiguracja poza profilem dev: " + String.join("; ", problems));
         }
@@ -56,7 +59,14 @@ public class ProductionSafetyCheck {
      * Lista problemów (pusta, gdy wszystko w porządku). Nie zawiera samych wartości, żeby sekret nie trafił do logu.
      */
     static List<String> problems(String jwtSecret, String frontendUrl, String dbPassword) {
+        return problems(jwtSecret, frontendUrl, dbPassword, true);
+    }
+
+    static List<String> problems(String jwtSecret, String frontendUrl, String dbPassword, boolean refreshCookieSecure) {
         List<String> problems = new ArrayList<>();
+        if (!refreshCookieSecure) {
+            problems.add("REFRESH_COOKIE_SECURE=false: ciasteczko sesji bez flagi Secure wolno mieć tylko lokalnie (profil dev)");
+        }
         if (jwtSecret == null || jwtSecret.length() < MIN_SECRET_LENGTH) {
             problems.add("APP_JWT_SECRET ma mniej niż " + MIN_SECRET_LENGTH + " znaków");
         } else if (looksLikePlaceholder(jwtSecret)) {

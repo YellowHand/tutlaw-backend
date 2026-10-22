@@ -21,6 +21,9 @@ spring:
           starttls:
             enable: ${MAIL_STARTTLS:false}
 app:
+  auth:
+    # Lokalnie działamy po zwykłym HTTP, więc ciasteczko nie może mieć flagi Secure (część przeglądarek by je odrzuciła).
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
   jwt:
     secret: ${APP_JWT_SECRET:lokalny-dev-sekret-min-32-znaki-tylko-do-nauki-lokalnej}
   cors:

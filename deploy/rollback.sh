@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Cofnięcie backendu do poprzedniego wydania (albo wskazanego). Uruchamiasz na swoim komputerze.
-#   SSH_TARGET=ubuntu@api.gradusiuris.pl SSH_KEY=~/.ssh/gradusiuris.pem ./deploy/rollback.sh            (poprzednie wydanie)
+#   SSH_TARGET=ubuntu@ADRES_IP_SERWERA SSH_KEY=~/.ssh/gradusiuris.pem ./deploy/rollback.sh            (poprzednie wydanie)
 #   SSH_TARGET=... ./deploy/rollback.sh 20261021-153000                                                 (konkretne wydanie)
 # Lista wydań: ssh ... "ls -1t /opt/gradusiuris/releases"
 # Uwaga: cofnięcie kodu NIE cofa migracji bazy. Dlatego migracje muszą być wstecznie zgodne (tylko dokładanie kolumn i tabel).
 set -euo pipefail
-: "${SSH_TARGET:?Ustaw SSH_TARGET, np. SSH_TARGET=ubuntu@api.gradusiuris.pl}"
+: "${SSH_TARGET:?Ustaw SSH_TARGET na adres IP serwera, np. SSH_TARGET=ubuntu@ADRES_IP_SERWERA}"
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
 [ -n "${SSH_KEY:-}" ] && SSH_OPTS+=(-i "$SSH_KEY")
 

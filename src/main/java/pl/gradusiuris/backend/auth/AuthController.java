@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pl.gradusiuris.backend.auth.dto.*;
@@ -19,6 +20,8 @@ public class AuthController {
     private final AuthService authService;
     private final RefreshTokenService refreshTokenService;
     private final AuthRateLimiter rateLimiter;
+    private final RefreshCookie refreshCookie;
+    private final TrustedOrigins trustedOrigins;
 
     /** Odpowiedź jest zawsze taka sama (200), czy konto już istniało, czy nie. */
     @PostMapping("/register")
@@ -41,7 +44,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
+    public ResponseEntity<AccessTokenResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
         String ip = http.getRemoteAddr();
         rateLimiter.checkLogin(ip, request.privateEmail());
         AuthResponse response;
@@ -53,26 +56,36 @@ public class AuthController {
             throw e;
         }
         rateLimiter.recordLoginSuccess(ip, request.privateEmail());
-        return ResponseEntity.ok(response);
+        return refreshCookie.sessionResponse(response);
     }
 
     /**
-     * Wymienia token odświeżający na nową parę tokenów. Nieznany, wygasły, unieważniony albo zużyty token to 401, a
-     * klient wraca wtedy do logowania. Endpoint jest publiczny, bo token dostępu zwykle już wygasł.
+     * Wymienia token odświeżający (z ciasteczka HttpOnly) na nowy token dostępu i nowe ciasteczko. Brak ciasteczka,
+     * nieznany, wygasły, unieważniony albo zużyty token to 401, a klient wraca wtedy do logowania. Endpoint jest publiczny,
+     * bo token dostępu zwykle już wygasł. Odpowiada tylko na żądania z naszego frontendu (zob. {@link TrustedOrigins}).
      */
     @PostMapping("/refresh")
-    public AuthResponse refresh(@Valid @RequestBody RefreshRequest request, HttpServletRequest http) {
+    public ResponseEntity<AccessTokenResponse> refresh(
+            @CookieValue(name = RefreshCookie.NAME, required = false) String refreshToken,
+            HttpServletRequest http) {
+        trustedOrigins.requireTrusted(http.getHeader(HttpHeaders.ORIGIN));
         rateLimiter.checkRefresh(http.getRemoteAddr());
-        return refreshTokenService.refresh(request.refreshToken())
+        AuthResponse pair = refreshTokenService.refresh(refreshToken)
                 .orElseThrow(() -> new UnauthorizedException("Sesja wygasła. Zaloguj się ponownie."));
+        return refreshCookie.sessionResponse(pair);
     }
 
-    /** Wylogowanie: unieważnia sesję tokenu odświeżającego. Zawsze 204, także dla nieznanego tokenu. */
+    /** Wylogowanie: unieważnia sesję tokenu z ciasteczka i usuwa ciasteczko. Zawsze 204, także bez ciasteczka. */
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request, HttpServletRequest http) {
+    public ResponseEntity<Void> logout(
+            @CookieValue(name = RefreshCookie.NAME, required = false) String refreshToken,
+            HttpServletRequest http) {
+        trustedOrigins.requireTrusted(http.getHeader(HttpHeaders.ORIGIN));
         rateLimiter.checkRefresh(http.getRemoteAddr());
-        refreshTokenService.revokeSession(request.refreshToken());
-        return ResponseEntity.noContent().build();
+        refreshTokenService.revokeSession(refreshToken);
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.clear())
+                .build();
     }
 
     /** Odpowiedź jest zawsze taka sama (200), czy konto istnieje, czy nie. */

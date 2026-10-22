@@ -41,4 +41,11 @@ class ProductionSafetyCheckTest {
         String secret = "lokalny-dev-sekret-tylko-do-testu-0123456789";
         assertThat(String.join(" ", ProductionSafetyCheck.problems(secret, "https://gradusiuris.pl", "pass-9f8a7b6c"))).doesNotContain(secret);
     }
+
+    @Test
+    void rejectsAnInsecureSessionCookieOutsideDev() {
+        assertThat(ProductionSafetyCheck.problems(GOOD_SECRET, "https://gradusiuris.pl", "pass-9f8a7b6c", false))
+                .hasSize(1).anySatisfy(p -> assertThat(p).contains("REFRESH_COOKIE_SECURE"));
+        assertThat(ProductionSafetyCheck.problems(GOOD_SECRET, "https://gradusiuris.pl", "pass-9f8a7b6c", true)).isEmpty();
+    }
 }

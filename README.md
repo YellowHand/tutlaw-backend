@@ -24,7 +24,7 @@ Pełna dokumentacja po polsku jest w katalogu [`docs/`](docs/README.md):
 ## Szybki start
 
 ```bash
-# 1. uzupełnij plik .env.stary (wzór: .env.stary.example)
+# 1. uzupełnij plik .env (wzór: .env.example)
 # 2. baza danych
 docker compose up -d
 # 3. backend (migracje wykonają się same)

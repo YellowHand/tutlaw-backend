@@ -33,13 +33,13 @@ build/
 .vscode/
 
 ### Env
-.env.stary
 .env
+
 ### Sekrety i pliki lokalne (Etap 37) ###
-.env.stary
+.env
 .env.*
 !.env.example
+!.env.prod.example
 deploy/.env.prod
 *.pem
 app.jar
-!.env.prod.example

@@ -36,7 +36,7 @@ public class CorsConfig {
     }
 
     /** Adresy po przecinku, bez spacji i bez ukośnika na końcu (przeglądarka wysyła Origin bez niego). Puste wpisy znikają. */
-    static List<String> parseOrigins(String value) {
+    public static List<String> parseOrigins(String value) {
         if (value == null) {
             return List.of();
         }

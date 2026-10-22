@@ -72,15 +72,17 @@ albo „Link aktywacyjny został już wykorzystany”.
 **Odpowiedź `200`**
 
 ```json
-{
-  "accessToken": "eyJhbGciOi...(długi podpisany token)",
-  "refreshToken": "3f9c1a7e-5b0d-4c6e-9a41-0d2c7e8b6f15"
-}
+{ "accessToken": "eyJhbGciOi...(długi podpisany token)" }
 ```
 
 Token dostępu należy wysyłać w nagłówku `Authorization: Bearer <accessToken>`. Jest ważny **30 minut**
-(`APP_JWT_EXPIRATION_MS`). Token odświeżający jest ważny **30 dni** (`APP_JWT_REFRESH_DAYS`) i służy tylko do
-`POST /api/auth/refresh`: dzięki niemu użytkownik zostaje zalogowany bez ponownego wpisywania hasła.
+(`APP_JWT_EXPIRATION_MS`), a frontend trzyma go tylko w pamięci aplikacji.
+
+**Token odświeżający nie jest w treści odpowiedzi.** Serwer ustawia go w ciasteczku (nagłówek `Set-Cookie`):
+`gradus_refresh=...; Path=/api/auth; Max-Age=2592000; Secure; HttpOnly; SameSite=Strict`. Jest ważny **30 dni**
+(`APP_JWT_REFRESH_DAYS`) i służy tylko do `POST /api/auth/refresh`, dzięki czemu użytkownik zostaje zalogowany bez
+ponownego wpisywania hasła. Skrypty na stronie nie mogą go odczytać (`HttpOnly`). Żądania z przeglądarki do tego API muszą
+być wysyłane z dołączaniem ciasteczek (`credentials: "include"` / `withCredentials: true`).
 
 **Błędy**
 
@@ -92,24 +94,26 @@ Token dostępu należy wysyłać w nagłówku `Authorization: Bearer <accessToke
 
 ## `POST /api/auth/refresh` — odświeżenie sesji
 
-Wymienia token odświeżający na **nową parę** tokenów. Endpoint jest publiczny, bo token dostępu zwykle już wygasł.
-Frontend wywołuje go sam, gdy dostanie `401` na zwykłe żądanie, i ponawia to żądanie z nowym tokenem.
+Wymienia token odświeżający **z ciasteczka** na nowy token dostępu i nowe ciasteczko (rotacja). Endpoint jest publiczny, bo
+token dostępu zwykle już wygasł. Frontend wywołuje go przy starcie aplikacji (żeby zdobyć token dostępu po odświeżeniu strony)
+oraz gdy dostanie `401` na zwykłe żądanie, i ponawia to żądanie z nowym tokenem.
 
-**Ciało żądania**
+**Ciało żądania:** brak. Token jest w ciasteczku `gradus_refresh`, które przeglądarka dołącza sama.
+
+**Odpowiedź `200`**
 
 ```json
-{ "refreshToken": "3f9c1a7e-5b0d-4c6e-9a41-0d2c7e8b6f15" }
+{ "accessToken": "eyJhbGciOi...(nowy token)" }
 ```
 
-**Odpowiedź `200`:** `{ "accessToken": "...", "refreshToken": "..." }`. Stary token odświeżający **przestaje działać**
-(rotacja): od teraz ważny jest zwrócony w odpowiedzi.
+oraz nagłówek `Set-Cookie` z nowym tokenem odświeżającym. Stary token **przestaje działać** (rotacja).
 
 **Błędy**
 
 | Kod | Komunikat | Kiedy |
 |-----|-----------|-------|
-| 400 | Walidacja | Brak pola `refreshToken` albo jest za długie |
-| 401 | Sesja wygasła. Zaloguj się ponownie. | Token nieznany, wygasły (po 30 dniach), unieważniony (wylogowanie, zmiana lub reset hasła), konto nieaktywne albo token **już zużyty** |
+| 401 | Sesja wygasła. Zaloguj się ponownie. | Brak ciasteczka, token nieznany, wygasły (po 30 dniach), unieważniony (wylogowanie, zmiana lub reset hasła), konto nieaktywne albo token **już zużyty** |
+| 403 | Niedozwolone źródło żądania | Nagłówek `Origin` wskazuje stronę inną niż nasz frontend (ochrona przed fałszowaniem żądań z cudzych stron). Brak nagłówka `Origin` jest przepuszczany |
 | 429 | Zbyt wiele prób. Spróbuj ponownie za ... | Więcej niż 300 żądań / 5 min z jednego IP (wspólny limit z `logout`) |
 
 Ponowne użycie zużytego tokenu: w ciągu **10 sekund** od wymiany serwer wystawia kolejny token tej samej sesji (dwie
@@ -118,14 +122,15 @@ tokenu, **unieważnia całą sesję** i zwraca `401`; użytkownik musi się zalo
 
 ## `POST /api/auth/logout` — wylogowanie
 
-Unieważnia sesję (całą rodzinę tokenów odświeżających) wskazanego tokenu. Wylogowuje tylko to urządzenie.
+Unieważnia sesję (całą rodzinę tokenów odświeżających) tokenu z ciasteczka i usuwa ciasteczko (`Set-Cookie` z `Max-Age=0`).
+Wylogowuje tylko to urządzenie.
 
-**Ciało żądania:** `{ "refreshToken": "..." }`
+**Ciało żądania:** brak (token jest w ciasteczku).
 
-**Odpowiedź:** zawsze `204 No Content`, także dla nieznanego lub wygasłego tokenu (nie da się w ten sposób sprawdzać, które
-tokeny istnieją). Token dostępu działa jeszcze do końca swoich 30 minut, bo jest bezstanowy; frontend usuwa go od razu.
+**Odpowiedź:** zawsze `204 No Content`, także bez ciasteczka lub dla nieznanego tokenu (nie da się w ten sposób sprawdzać,
+które tokeny istnieją). Token dostępu działa jeszcze do końca swoich 30 minut, bo jest bezstanowy; frontend usuwa go od razu.
 
-**Błędy:** `400` (brak pola), `429` (wspólny limit z `refresh`).
+**Błędy:** `403` (obce źródło żądania, jak przy `refresh`), `429` (wspólny limit z `refresh`).
 
 ## `POST /api/auth/resend-verification` — ponowne wysłanie linku aktywacyjnego
 

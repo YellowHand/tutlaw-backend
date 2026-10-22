@@ -82,11 +82,13 @@ nigdy nie zmieniał ustawień; `null` w polu liczbowym oznacza wartość domyśl
 **Odpowiedź `200`**
 
 ```json
-{ "accessToken": "eyJhbGciOi...(nowy token)", "refreshToken": "8d1f0c52-7e0b-4c0a-b6a1-3f2b9d4e7a10" }
+{ "accessToken": "eyJhbGciOi...(nowy token)" }
 ```
 
+oraz nagłówek `Set-Cookie` z nowym tokenem odświeżającym (ciasteczko `gradus_refresh`, `HttpOnly`).
+
 Wszystkie dotychczasowe sesje (także ta) przestają działać: tokeny dostępu przez znacznik czasu na koncie, a tokeny
-odświeżające przez unieważnienie. Frontend **musi zapisać nową parę tokenów**. Otwarte linki do resetu hasła są
+odświeżające przez unieważnienie. Frontend **musi zapisać nowy token dostępu** (nowe ciasteczko przeglądarka zapisze sama). Otwarte linki do resetu hasła są
 unieważniane, a na adres uczelniany idzie powiadomienie o zmianie.
 
 **Błędy:** `400` — „Obecne hasło jest nieprawidłowe”, „Nowe hasło musi być inne niż obecne”, problem z hasłem;
@@ -100,6 +102,6 @@ unieważniane, a na adres uczelniany idzie powiadomienie o zmianie.
 { "password": "mojeHaslo123" }
 ```
 
-**Odpowiedź:** `204 No Content`. Konto i **cała** historia nauki (także zapisane własne testy, czas nauki i tokeny odświeżające) są usuwane bezpowrotnie (kaskada w bazie).
+**Odpowiedź:** `204 No Content` (z nagłówkiem `Set-Cookie`, który usuwa ciasteczko sesji). Konto i **cała** historia nauki (także zapisane własne testy, czas nauki i tokeny odświeżające) są usuwane bezpowrotnie (kaskada w bazie).
 
 **Błędy:** `400` — „Nieprawidłowe hasło” (konto zostaje nietknięte); `429` — limit jak przy logowaniu.

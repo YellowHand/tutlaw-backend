@@ -33,7 +33,7 @@ flowchart LR
 | Actuator                    | w Spring Boot               | Endpointy zdrowia aplikacji (`/actuator/health`)                                                                                                                                                                               |
 | Spring Mail                 | w Spring Boot               | Wysyłanie maili (aktywacja konta, reset hasła)                                                                                                                                                                                 |
 | Lombok                      | w Spring Boot               | Mniej powtarzalnego kodu (gettery, settery, konstruktory)                                                                                                                                                                      |
-| spring-dotenv               | 5.1.0                       | Czyta plik `../.env.stary` z głównego katalogu projektu                                                                                                                                                                        |
+| spring-dotenv               | 5.1.0                       | Czyta plik `.env` z głównego katalogu projektu                                                                                                                                                                        |
 | DevTools                    | w Spring Boot               | Automatyczny restart podczas pracy lokalnej                                                                                                                                                                                    |
 
 Hibernate nie tworzy tabel: `spring.jpa.hibernate.ddl-auto` jest ustawione na `validate`, więc przy starcie tylko
@@ -201,7 +201,7 @@ w [04](04-nauka-testy-fiszki-fsrs.md#ochrona-przed-podwójnym-wysłaniem).
 
 ## Testy
 
-W `src/test` jest **76 klas testowych** (ok. 867 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
+W `src/test` jest **81 klas testowych** (ok. 902 testów) i 5 klas pomocniczych (`testsupport`: zegar do sterowania
 czasem, „fałszywe” repozytoria i repozytoria w pamięci, gotowe pule pytań i uproszczone pytania). Większość to testy
 jednostkowe
 czystej logiki (`*RulesTest`, `FsrsEngineTest`, `ExamScoringTest`, `SourceFilterTest`…) oraz serwisów na repozytoriach w

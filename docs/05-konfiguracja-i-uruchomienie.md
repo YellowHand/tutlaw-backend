@@ -39,7 +39,7 @@ Maven nie musi być zainstalowany: projekt ma wrapper (`./mvnw`, na Windows `mvn
 
 ## Szybki start (lokalnie)
 
-1. **Zmienne środowiskowe.** W głównym katalogu projektu skopiuj `.env.example` do `../.env.stary` (plik `../.env.stary`
+1. **Zmienne środowiskowe.** W głównym katalogu projektu skopiuj `.env.example` do `.env` (plik `.env`
    jest w
    `.gitignore` i nie trafia do repozytorium). Domyślne wartości z szablonu działają lokalnie bez zmian. Czyta go
    `docker compose` (dane bazy) i aplikacja (biblioteka `spring-dotenv`).
@@ -60,7 +60,7 @@ Maven nie musi być zainstalowany: projekt ma wrapper (`./mvnw`, na Windows `mvn
 
    W IntelliJ: *Run > Edit Configurations > Active profiles: `dev`* (albo zmienna środowiskowa
    `SPRING_PROFILES_ACTIVE=dev`
-   ustawiona w konfiguracji uruchomieniowej; sam plik `../.env.stary` do włączenia profilu nie wystarcza). Przy
+   ustawiona w konfiguracji uruchomieniowej; sam plik `.env` do włączenia profilu nie wystarcza). Przy
    pierwszym starcie Flyway sam wykona migracje `V1` (schemat) i `V2` (dane słownikowe:
    dziedziny prawa, ścieżki, terminy egzaminów, źródło „Pytania autorskie”). Backend nasłuchuje na
    `http://localhost:8080`.
@@ -99,16 +99,18 @@ każda ma wartość domyślną z `application-dev.yml`. Wzory plików: `.env.exa
 
 ### Dodatkowe (opcjonalne)
 
-| Zmienna                    | Do czego                                                                                                                                                     | Domyślnie                  |
-|----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|
-| `APP_JWT_EXPIRATION_MS`    | Ważność tokenu dostępu JWT w milisekundach                                                                                                                   | `1800000` (30 minut)       |
-| `APP_JWT_REFRESH_DAYS`     | Ważność tokenu odświeżającego w dniach                                                                                                                       | `30`                       |
-| `DB_POOL_SIZE`             | Maksymalna liczba połączeń z bazą                                                                                                                            | `10`                       |
-| `PORT`                     | Port backendu                                                                                                                                                | `8080`                     |
-| `APP_TIMEZONE`             | Strefa czasowa „doby” aplikacji                                                                                                                              | `Europe/Warsaw`            |
-| `FORWARD_HEADERS_STRATEGY` | `native` za serwerem pośredniczącym (Caddy, nginx, balanser): limiter prób logowania widzi wtedy prawdziwy adres klienta, a nie adres proxy                  | `native` (w `dev`: `none`) |
-| `SENTRY_DSN`               | Adres projektu w Sentry (raportowanie nieoczekiwanych błędów). Puste = wyłączone, nic nie jest wysyłane. Tylko błędy 500 i wpisy ERROR, bez danych osobowych | puste                      |
-| `SENTRY_ENVIRONMENT`       | Nazwa środowiska w Sentry                                                                                                                                    | `production`               |
+| Zmienna                    | Do czego                                                                                                                                                                                                                                        | Domyślnie                  |
+|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|
+| `APP_JWT_EXPIRATION_MS`    | Ważność tokenu dostępu JWT w milisekundach                                                                                                                                                                                                      | `1800000` (30 minut)       |
+| `APP_JWT_REFRESH_DAYS`     | Ważność tokenu odświeżającego w dniach                                                                                                                                                                                                          | `30`                       |
+| `DB_POOL_SIZE`             | Maksymalna liczba połączeń z bazą                                                                                                                                                                                                               | `10`                       |
+| `PORT`                     | Port backendu                                                                                                                                                                                                                                   | `8080`                     |
+| `APP_TIMEZONE`             | Strefa czasowa „doby” aplikacji                                                                                                                                                                                                                 | `Europe/Warsaw`            |
+| `SENTRY_DSN`               | Adres projektu w Sentry (raportowanie nieoczekiwanych błędów). Puste = wyłączone, nic nie jest wysyłane. Tylko błędy 500 i wpisy ERROR, bez danych osobowych                                                                                    | puste                      |
+| `SENTRY_ENVIRONMENT`       | Nazwa środowiska w Sentry                                                                                                                                                                                                                       | `production`               |
+| `TURNSTILE_SECRET`         | Sekret Cloudflare Turnstile (sprawdzenie „czy to człowiek” przy rejestracji, logowaniu, resecie hasła i ponownej wysyłce maila weryfikacyjnego). Puste = wyłączone. Frontend przysyła token w nagłówku `X-Turnstile-Token`                      | puste                      |
+| `REFRESH_COOKIE_SECURE`    | Czy ciasteczko sesji `gradus_refresh` ma flagę `Secure` (tylko HTTPS). Na produkcji **musi być `true`**: przy `false` aplikacja odmawia startu (`ProductionSafetyCheck`). W profilu `dev` domyślnie `false`, bo `http://localhost` nie ma HTTPS | `true` (w `dev`: `false`)  |
+| `FORWARD_HEADERS_STRATEGY` | `native` za serwerem pośredniczącym (Caddy, nginx, balanser): limiter prób logowania widzi wtedy prawdziwy adres klienta, a nie adres proxy                                                                                                     | `native` (w `dev`: `none`) |
 
 ## Ustawienia aplikacji w plikach `application*.yml`
 
@@ -228,11 +230,14 @@ Katalog `deploy/` zawiera wszystko, czego potrzebuje serwer produkcyjny (maszyna
 | `deploy/deploy-backend.sh`        | Wdrożenie jednym poleceniem: budowa JAR, wysyłka wydania, start, czekanie na „healthy”, automatyczny powrót przy błędzie |
 | `deploy/rollback.sh`              | Ręczne cofnięcie do poprzedniego wydania                                                                                 |
 
-Wdrożenie: `SSH_TARGET=ubuntu@api.gradusiuris.pl SSH_KEY=~/.ssh/gradusiuris.pem ./deploy/deploy-backend.sh`.
+Wdrożenie: `SSH_TARGET=ubuntu@<adres IP serwera> SSH_KEY=~/.ssh/gradusiuris.pem ./deploy/deploy-backend.sh`.
+**Podaj adres IP, nie nazwę `api.gradusiuris.pl`:** po włączeniu Cloudflare (proxy) nazwa nie przepuszcza SSH i połączenie kończy
+się timeoutem (szczegóły: [03](03-bezpieczenstwo-i-konta.md), „Ochrona przed botami”). To samo dotyczy `rollback.sh`.
+`FRONTEND_URL` na serwerze musi być dokładnie adresem strony (np. `https://gradusiuris.pl`, bez `/` na końcu), bo od niego zależą CORS
+i sprawdzanie nagłówka `Origin` przy odświeżaniu sesji; przy działającym `www` dodaj `CORS_ALLOWED_ORIGINS`.
 Migracje bazy wykonują się same przy starcie aplikacji. Cofnięcie kodu **nie** cofa migracji, dlatego migracje mają być
 wstecznie zgodne (dokładanie kolumn i tabel, bez usuwania w tym samym wydaniu).
 
-Rzeczy, które były „zostawione na koniec” (sekret JWT, CORS, link aktywacyjny, `show-sql`, Swagger, Actuator, plik
-`../.env.stary`
+Rzeczy, które były „zostawione na koniec” (sekret JWT, CORS, link aktywacyjny, `show-sql`, Swagger, Actuator, plik `.env`
 w repozytorium), są od Etapu 37 załatwione konfiguracją i bezpiecznikiem przy starcie. Co jeszcze zostaje:
 [07. Znane ograniczenia](07-znane-ograniczenia.md).

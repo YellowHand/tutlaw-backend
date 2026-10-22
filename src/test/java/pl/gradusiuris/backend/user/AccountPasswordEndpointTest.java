@@ -2,10 +2,14 @@ package pl.gradusiuris.backend.user;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import pl.gradusiuris.backend.auth.AuthRateLimiter;
 import pl.gradusiuris.backend.auth.AuthService;
 import pl.gradusiuris.backend.auth.WrongPasswordException;
+import pl.gradusiuris.backend.auth.RefreshCookie;
+import pl.gradusiuris.backend.auth.dto.AccessTokenResponse;
 import pl.gradusiuris.backend.auth.dto.AuthResponse;
 import pl.gradusiuris.backend.common.exception.TooManyRequestsException;
 import pl.gradusiuris.backend.testsupport.FakeRepos;
@@ -30,7 +34,8 @@ class AccountPasswordEndpointTest {
 
     private final AuthService authService = mock(AuthService.class);
     private final AccountController controller = new AccountController(
-            mock(AccountService.class), authService, new AuthRateLimiter(MutableClock.at("2026-10-13T08:00:00Z")));
+            mock(AccountService.class), authService, new AuthRateLimiter(MutableClock.at("2026-10-13T08:00:00Z")),
+            new RefreshCookie(true, 30));
 
     private static ChangePasswordRequest request() {
         return new ChangePasswordRequest("stare-haslo", "nowe-haslo-99");
@@ -41,9 +46,12 @@ class AccountPasswordEndpointTest {
         when(authService.changePassword("jan@gmail.com", "stare-haslo", "nowe-haslo-99"))
                 .thenReturn(new AuthResponse("nowy-token", "nowy-odswiezajacy"));
 
-        AuthResponse response = controller.changePassword(request(), JAN, HTTP);
+        ResponseEntity<AccessTokenResponse> response = controller.changePassword(request(), JAN, HTTP);
 
-        assertThat(response.accessToken()).isEqualTo("nowy-token");
+        assertThat(response.getBody().accessToken()).isEqualTo("nowy-token");
+        // Nowy token odświeżający trafia do ciasteczka HttpOnly, nie do treści odpowiedzi.
+        assertThat(response.getHeaders().getFirst(HttpHeaders.SET_COOKIE))
+                .startsWith("gradus_refresh=nowy-odswiezajacy;").contains("HttpOnly");
     }
 
     @Test
@@ -87,6 +95,6 @@ class AccountPasswordEndpointTest {
             assertThatThrownBy(() -> controller.changePassword(request(), JAN, HTTP))
                     .isInstanceOf(WrongPasswordException.class);
         }
-        assertThat(controller.changePassword(request(), JAN, HTTP).accessToken()).isEqualTo("nowy-token");
+        assertThat(controller.changePassword(request(), JAN, HTTP).getBody().accessToken()).isEqualTo("nowy-token");
     }
 }

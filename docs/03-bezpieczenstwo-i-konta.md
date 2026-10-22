@@ -10,9 +10,10 @@ limity prób oraz usuwanie konta i eksport danych. Konkretne endpointy z przykł
 ## W skrócie
 
 - Logujesz się **prywatnym adresem e-mail** i hasłem. Konto trzeba **aktywować linkiem wysłanym na adres uczelniany**.
-- Po zalogowaniu dostajesz **parę tokenów**: krótki **token dostępu** JWT (30 minut), który frontend dołącza do każdego
-  żądania, i **token odświeżający** (30 dni), którym przeglądarka po cichu zdobywa kolejny token dostępu. Dzięki temu
-  nikt nie jest wylogowywany co pół godziny, a skradziony token dostępu szybko przestaje działać.
+- Po zalogowaniu dostajesz **parę tokenów**: krótki **token dostępu** JWT (30 minut), który frontend trzyma w pamięci i
+  dołącza do żądań, i **token odświeżający** (30 dni) w **ciasteczku `HttpOnly`**, którym przeglądarka po cichu zdobywa
+  kolejny token dostępu. Skrypty na stronie nie widzą ciasteczka, więc ewentualny atak XSS nie wykradnie sesji na stałe.
+  Nikt nie jest wylogowywany co pół godziny, a skradziony token dostępu szybko przestaje działać.
 - Hasła są zapisane jako skrót **BCrypt**. Tokeny z maila (reset hasła) w bazie są zapisane tylko jako skrót SHA-256.
 - Zmiana albo reset hasła **wylogowuje wszystkie urządzenia**; wylogowanie unieważnia sesję na serwerze.
 - Odpowiedzi na rejestrację, „wyślij link ponownie” i „zapomniałem hasła” są **zawsze takie same**, niezależnie od tego,
@@ -79,7 +80,7 @@ flowchart TD
     F -- "nie" --> E400
     F -- "tak" --> G{"Konto aktywne?"}
     G -- "nie" --> E409["409: Konto nie zostało jeszcze aktywowane...<br/>(nie liczy się jako nieudana próba)"]
-    G -- "tak" --> H["200: { accessToken: JWT, refreshToken }"]
+    G -- "tak" --> H["200: { accessToken: JWT } + ciasteczko z tokenem odświeżającym"]
 ```
 
 Ważne szczegóły:
@@ -124,7 +125,7 @@ dostępu od tej chwili dają 401, a tokeny odświeżające przestają działać.
 ## Sesja: token dostępu i token odświeżający
 
 Token dostępu jest krótki, bo jest bezstanowy: serwer nie może go „cofnąć” przed czasem (poza zmianą hasła). Żeby
-mimo to nie wylogowywać co 30 minut, logowanie zwraca drugi token, **odświeżający**, którego ważność jest sprawdzana w
+mimo to nie wylogowywać co 30 minut, logowanie ustawia drugi token, **odświeżający** (w ciasteczku), którego ważność jest sprawdzana w
 bazie (`RefreshTokenService`, tabela `refresh_tokens`).
 
 ```mermaid
@@ -134,10 +135,10 @@ sequenceDiagram
     participant DB as Baza
     F->>B: żądanie z wygasłym tokenem dostępu
     B-->>F: 401
-    F->>B: POST /api/auth/refresh { refreshToken: R1 }
+    F->>B: POST /api/auth/refresh (przeglądarka dołącza ciasteczko z R1)
     B->>DB: szuka skrótu SHA-256 tokenu R1
     B->>DB: R1 zużyty (rotated_at), zapis R2 w tej samej rodzinie
-    B-->>F: 200 { accessToken: nowy, refreshToken: R2 }
+    B-->>F: 200 { accessToken: nowy } + Set-Cookie z R2
     F->>B: to samo żądanie z nowym tokenem dostępu
     B-->>F: 200
 ```
@@ -160,13 +161,25 @@ Zasady:
 - **Limit.** `refresh` i `logout` mają wspólny limit 300 żądań / 5 min z jednego adresu IP (hojny, bo wiele osób siedzi
   za jednym adresem uczelni).
 
-Frontend trzyma oba tokeny w `localStorage`. Jedno wspólne odświeżenie obsługuje wszystkie równoległe żądania w karcie,
-a
-między kartami pilnuje tego blokada Web Locks. Zapis w `localStorage` jest wygodny, ale dostępny dla skryptów strony,
-więc
-przy ataku XSS token da się wykraść. Docelowo token odświeżający powinien być w ciasteczku `HttpOnly; Secure; SameSite`,
-niedostępnym dla skryptów; wymaga to zmian w CORS i wdrożeniu (adres frontendu i backendu w jednej domenie), więc
-czeka na etap wdrożenia ([Znane ograniczenia](07-znane-ograniczenia.md)).
+### Ciasteczko z tokenem odświeżającym
+
+Token odświeżający jest **wyłącznie w ciasteczku** `gradus_refresh` (klasa `RefreshCookie`), nigdy w treści odpowiedzi:
+
+- `HttpOnly`: skrypt na stronie nie może go odczytać, więc atak XSS nie wykradnie długiej sesji,
+- `Secure`: wędruje tylko przez HTTPS (wyłączane wyłącznie lokalnie, `REFRESH_COOKIE_SECURE=false` w profilu dev; poza dev
+  aplikacja nie wstanie z taką wartością, zob. `ProductionSafetyCheck`),
+- `SameSite=Strict`: przeglądarka wyśle je tylko ze strony z tej samej witryny. `gradusiuris.pl` i `api.gradusiuris.pl` to jedna
+  witryna, więc zwykłe użycie działa, a obca strona nie może wymusić odświeżenia ani wylogowania,
+- `Path=/api/auth`: dołączane tylko do żądań logowania, odświeżania i wylogowania,
+- bez atrybutu `Domain`: ciasteczko należy do hosta API.
+
+Dodatkowo `refresh` i `logout` odrzucają (403) żądania, w których nagłówek `Origin` wskazuje stronę inną niż nasz frontend
+(`TrustedOrigins`). CORS dopuszcza ciasteczka (`allowCredentials`) tylko dla adresu frontendu z `FRONTEND_URL`.
+
+Frontend trzyma token dostępu **tylko w pamięci** (po odświeżeniu strony zdobywa go przez `POST /api/auth/refresh`) i nie zapisuje
+żadnych tokenów w `localStorage`. Jedno wspólne odświeżenie obsługuje wszystkie równoległe żądania w karcie, a między kartami
+pilnuje tego blokada Web Locks. Atak XSS nadal pozwoliłby działać w otwartej karcie do jej zamknięcia, ale nie da się
+wykraść sesji i używać jej z innego komputera.
 
 ## Reset i zmiana hasła
 
@@ -268,6 +281,27 @@ Z limitu logowania korzystają też zmiana hasła i usunięcie konta (błędne h
 > `FORWARD_HEADERS_STRATEGY=native`, inaczej wszyscy użytkownicy mają jeden adres IP i wspólny limit (patrz
 > [05](05-konfiguracja-i-uruchomienie.md)).
 
+## Ochrona przed botami: Cloudflare, Turnstile i adres klienta
+
+Trzy warstwy, od zewnętrznej:
+
+| Warstwa | Co robi | Gdzie jest ustawiona |
+|---------|---------|----------------------|
+| **Cloudflare przed API** (rekord `api` w trybie Proxied, SSL „Full (strict)”) | Ukrywa prawdziwy adres serwera, odcina ataki na łącze (DDoS), uruchamia darmowe reguły WAF. Do serwera dociera tylko ruch przez Cloudflare | Panel Cloudflare: DNS, SSL/TLS, Security → Security rules |
+| **Reguły w Cloudflare** | Reguła własna nr 1: serwer przyjmuje tylko `/api/...`, `/actuator/health` i `/.well-known/acme-challenge/` (odnowienie certyfikatu), resztę blokuje (akcja Block). Reguła limitu żądań nr 2 dla logowania i rejestracji: 20 żądań na 10 sekund z jednego adresu. Wszystkie używają **Block**, nigdy „Managed Challenge”, „Bot Fight Mode” ani „Under Attack”: wywołania XHR z aplikacji nie umieją rozwiązać wyzwania i nikt by się nie zalogował | Panel Cloudflare: Security → Security rules |
+| **Turnstile** (pole „Potwierdź, że nie jesteś robotem”) | Wymagane przy rejestracji, logowaniu, „zapomniałem hasła” i „wyślij link ponownie”. Token jest jednorazowy i idzie w nagłówku `X-Turnstile-Token`; serwer sprawdza go w Cloudflare (`TurnstileInterceptor`, `TurnstileVerifier`). Awaria Cloudflare = `503` (blokujemy, nie przepuszczamy). Bez `TURNSTILE_SECRET` sprawdzenie jest wyłączone | Kod backendu; sekret w `.env.prod` |
+
+**Prawdziwy adres klienta.** Za Cloudflare i Caddy adres, z którego przychodzi połączenie, to adres Cloudflare, więc limity prób
+(poprzednia sekcja) liczyłyby wszystkich razem. Dlatego `Caddyfile` ufa nagłówkowi `CF-Connecting-IP` tylko wtedy, gdy połączenie
+przyszło z adresu Cloudflare (lista `trusted_proxies`), i przekazuje backendowi jeden pewny adres w `X-Forwarded-For`; Tomcat
+bierze go przez `FORWARD_HEADERS_STRATEGY=native`. Lista adresów Cloudflare zmienia się rzadko (https://www.cloudflare.com/ips/):
+po zmianie zaktualizuj `Caddyfile`, wdróż i przeładuj Caddy (`docker exec gradusiuris-caddy caddy reload --config /etc/caddy/Caddyfile`).
+
+**Dostęp administracyjny (SSH).** Cloudflare przekazuje tylko HTTP i HTTPS, więc po włączeniu proxy **SSH nie działa po nazwie
+`api.gradusiuris.pl`** (połączenie kończy się timeoutem). Łączymy się po adresie IP serwera (Elastic IP z konsoli AWS), np.
+`SSH_TARGET=ubuntu@<adres IP> ./deploy/deploy-backend.sh`. Nie dodajemy osobnego rekordu DNS „bez proxy” (np. `ssh.…`), bo
+ujawniłby prawdziwy adres serwera. Port 22 w grupie zabezpieczeń powinien przepuszczać tylko Twój adres („My IP”).
+
 ## Eksport danych i usuwanie konta (RODO)
 
 **`GET /api/users/me/export`** zwraca jeden plik JSON z **wszystkimi danymi**, które serwis trzyma o użytkowniku:
@@ -288,5 +322,5 @@ tokenów odświeżających z wykrywaniem kradzieży, unieważnianie sesji, jedna
 odpowiedzi chroniące przed sprawdzaniem cudzych kont, limity prób, ochrona endpointów rolami, walidacja wejścia.
 
 Zostawione celowo na koniec (przed wdrożeniem na prawdziwy serwer): domyślny sekret JWT w `application.yml`, plik
-`../.env.stary` w repozytorium, konfiguracja CORS, link aktywacyjny wpisany na stałe, `show-sql`, szczegóły zdrowia w
+`.env` w repozytorium, konfiguracja CORS, link aktywacyjny wpisany na stałe, `show-sql`, szczegóły zdrowia w
 Actuatorze i otwarty Swagger. Pełna lista z wyjaśnieniami: [Znane ograniczenia](07-znane-ograniczenia.md).
